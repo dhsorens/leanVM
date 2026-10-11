@@ -23,7 +23,8 @@ use flock::Tables;
 use flock::lincheck::MatrixClaim;
 use flock::reduction::{self, Instance};
 use parallel::SendPtr;
-use pcs::verifier::OpeningVerifier;
+use pcs::merkle::Openings;
+use pcs::verifier::{OpeningVerifier, Recording};
 use primitives::field::{F64, F192};
 use std::borrow::Cow;
 use std::mem::MaybeUninit;
@@ -303,11 +304,13 @@ impl Circuit {
         session: &SessionId,
         rate: Rate,
         proof: &ProofTranscript,
-    ) -> Result<(), RecError> {
+    ) -> Result<Vec<Openings>, RecError> {
         self.verify_absorbing(statement, session, statement, rate, proof, None)
     }
 
-    /// Verify a proof with the circuit's fixed columns at its heights.
+    /// Verify a proof with the circuit's fixed columns at its heights, returning every opening it authenticated.
+    ///
+    /// A recursive verifier of the proof hashes those openings rather than decoding the hints again.
     ///
     /// # Errors
     ///
@@ -319,7 +322,7 @@ impl Circuit {
         rate: Rate,
         proof: &ProofTranscript,
         fixed: &FixedColumns,
-    ) -> Result<(), RecError> {
+    ) -> Result<Vec<Openings>, RecError> {
         self.verify_absorbing(statement, session, statement, rate, proof, Some(fixed))
     }
 
@@ -332,7 +335,7 @@ impl Circuit {
         rate: Rate,
         proof: &ProofTranscript,
         fixed: Option<&FixedColumns>,
-    ) -> Result<(), RecError> {
+    ) -> Result<Vec<Openings>, RecError> {
         if statement.len() != self.statement_len {
             return Err(RecError::StatementLength {
                 expected: self.statement_len,
@@ -340,11 +343,11 @@ impl Circuit {
             });
         }
         let layout = RecLayout::new(self)?;
-        let mut vs = VerifierState::new(session, &instance(absorbed), proof);
+        let mut v = Recording::new(VerifierState::new(session, &instance(absorbed), proof));
         let fixed = fixed.map_or_else(|| Cow::Owned(FixedColumns::of(self, &layout.taus)), Cow::Borrowed);
-        let matrices = TableArgument::of(&fixed, statement, &layout).verify_core(&mut vs, rate)?;
+        let matrices = TableArgument::of(&fixed, statement, &layout).verify_core(&mut v, rate)?;
         matrices.check(HashFlock::circuit()).map_err(FlockError::Lincheck)?;
-        Ok(())
+        Ok(v.into_openings())
     }
 }
 
@@ -369,7 +372,7 @@ mod tests {
     }
 
     fn verify_run(circuit: &Circuit, statement: &[Limbs], proof: &ProofTranscript) -> Result<(), RecError> {
-        circuit.verify(statement, &session(), Rate::MIN, proof)
+        circuit.verify(statement, &session(), Rate::MIN, proof).map(drop)
     }
 
     // Wires of the every-kind circuit a test forges.

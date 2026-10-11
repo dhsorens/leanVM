@@ -13,6 +13,7 @@ use super::witness::Witness;
 use super::{Output, Proof};
 use crate::class_flock::FlockId;
 use crate::constraints::{Claims, Columns};
+use crate::leaf::PublicColumns;
 use crate::pcs::{Committed, Rate};
 use crate::rv::{ElfError, Guest, Machine, ProgramError, Region, RiscvProgram};
 use crate::tables::{ClassTable, Clock, PerTable, TableId};
@@ -20,6 +21,8 @@ use crate::{constraints, leaf};
 use fiat_shamir::arith::Native;
 use fiat_shamir::{ProverState, SessionId, VerifierState};
 use flock::reduction;
+use pcs::merkle::Openings;
+use pcs::verifier::{OpeningVerifier, Recording};
 use primitives::field::{F64, F192};
 use primitives::hash::Hasher;
 use std::cmp::Reverse;
@@ -360,13 +363,37 @@ impl Program {
     pub fn verify_core(&self, output: Output, proof: &Proof) -> Result<DeferredClaims, CpuError> {
         // The session names the program, and the output is the instance, as on the prover's side.
         let mut vs = VerifierState::new(&self.session(), output.words(), &proof.0);
+        self.core(output, &mut vs)
+    }
 
+    /// Verify a proof, keeping every Merkle opening it authenticates, phase by phase.
+    ///
+    /// A recursive verifier of the proof hashes those openings rather than decoding the hints again.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first stage that refuses the proof.
+    #[tracing::instrument(name = "Verify", skip_all)]
+    #[doc(hidden)]
+    pub fn verify_recording(&self, output: Output, proof: &Proof) -> Result<Vec<Openings>, VerifyError> {
+        let mut recording = Recording::new(VerifierState::new(&self.session(), output.words(), &proof.0));
+        let claims = self.core(output, &mut recording)?;
+        self.check_deferred(&claims)?;
+        Ok(recording.into_openings())
+    }
+
+    /// The verifier's core over a verifier reading the proof: the announcement, its layout, then every check.
+    fn core<V: OpeningVerifier<E = F192> + PublicColumns>(
+        &self,
+        output: Output,
+        v: &mut V,
+    ) -> Result<DeferredClaims, CpuError> {
         // The announced sizes, then the layout they describe, then the core.
-        let announcement = Announcement::read(&mut vs)?;
+        let announcement = Announcement::read(v)?;
         let l = announcement.layout(&self.rv)?;
         let clock = F192::from(F64(announcement.ts_final));
         let output = output.words().map(|o| F192::from(F64(o)));
-        l.verify_core(&mut vs, clock, &output, announcement.rate)
+        l.verify_core(v, clock, &output, announcement.rate)
     }
 
     /// The decoded text, memory image and region sizes.

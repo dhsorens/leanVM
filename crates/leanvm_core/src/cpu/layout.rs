@@ -19,8 +19,8 @@ use crate::witness::{Placement, Source, StackShape, Window};
 use crate::{class_flock, witness};
 use Coord::{Col, Const, IntIndex, Sparse};
 use fiat_shamir::ProofOfWork;
-use fiat_shamir::arith::Arith;
-use fiat_shamir::{ProverState, VerifierState};
+use fiat_shamir::ProverState;
+use fiat_shamir::arith::{Arith, Verifier};
 use primitives::field::{F64, F192};
 use std::sync::{Arc, OnceLock};
 
@@ -736,7 +736,7 @@ impl Announcement {
     /// # Errors
     ///
     /// Refuses a short stream, then what decoding refuses.
-    pub(super) fn read(vs: &mut VerifierState) -> Result<Self, CpuError> {
+    pub(super) fn read(vs: &mut impl Verifier<E = F192>) -> Result<Self, CpuError> {
         let mut scalars = [F192::ZERO; Self::LEN];
         for x in &mut scalars {
             *x = vs.prover_message()?;

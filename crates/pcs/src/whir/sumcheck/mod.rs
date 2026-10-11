@@ -72,7 +72,7 @@ pub(crate) struct SumcheckMessage {
 /// Sends the constant and quadratic coefficients; the claim fixes the linear one, so it is not sent.
 pub(super) fn send_msg(ps: &mut ProverState, m: SumcheckMessage, claim: F192) {
     RoundPolynomial {
-        coeffs: vec![m.u_0, claim + m.u_2, m.u_2],
+        coeffs: [m.u_0, claim + m.u_2, m.u_2],
     }
     .send(ps, false);
 }

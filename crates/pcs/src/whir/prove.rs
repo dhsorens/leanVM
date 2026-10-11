@@ -106,9 +106,6 @@ pub(crate) fn prove(
     // - The target is `sum_i lambda^i * claim_i`, its claim values bound when read and `lambda` drawn from the state.
     // So a caller must transmit its root before opening against it: that makes the fold challenges depend on it.
 
-    // A codeword row interleaves the committed lanes only, lane `t` being stack block `n_lanes - 1 - t`.
-    // So a row is the tail of the leaf image, whose leading zeros are the absent lanes, and only it rides the proof.
-    let l0_row = |q: usize| -> Vec<F64> { l0_codeword[q * n_lanes..(q + 1) * n_lanes].to_vec() };
     // The same row for the induce, which folds a lane-ascending row against the lane eq table.
     // Reversed, block `b` sits at index `b` and the absent lanes' zeros at the end, where they add nothing.
     let l0_fold_row = |q: usize| -> Vec<F64> {
@@ -171,7 +168,13 @@ pub(crate) fn prove(
     let opened_rows_0: Vec<Vec<F64>> = queries_0.iter().map(|&q| l0_fold_row(q)).collect();
     // The proof stores each distinct row once, with one pruned path set over the distinct positions.
     // The verifier expands them back to query order.
-    ps.prover_hint(&PrunedMerklePaths::prune(l0_tree, block_len_0, &queries_0, l0_row).to_hint());
+    // A stored row is the committed lanes alone: the leaf image's tail, its leading zeros the absent lanes.
+    ps.prover_hint(
+        &PrunedMerklePaths::prune(l0_tree, block_len_0, &queries_0, |q| {
+            &l0_codeword[q * n_lanes..(q + 1) * n_lanes]
+        })
+        .to_hint(),
+    );
     drop(span);
 
     // Induce the L0 consistency weight, and its claimed sum from the opened rows.

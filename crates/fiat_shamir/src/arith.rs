@@ -246,20 +246,20 @@ pub trait Verifier: Arith {
 /// Either way the fixed coefficient is a sum, and no inverse is needed.
 ///
 /// The fixed coefficient is a function of the claim and the sent ones, so binding it would add nothing.
+///
+/// The coefficients are any slice-like storage: the prover sends from an array, the verifier reads into a vector.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RoundPolynomial<E> {
+pub struct RoundPolynomial<C> {
     /// The coefficients, constant first.
-    pub coeffs: Vec<E>,
+    pub coeffs: C,
 }
 
-impl<E> RoundPolynomial<E> {
-    /// The index of the coefficient the claim fixes: the constant with an eq weight, else the linear one.
-    const fn fixed(weighted: bool) -> usize {
-        if weighted { 0 } else { 1 }
-    }
+/// The index of the coefficient the claim fixes: the constant with an eq weight, else the linear one.
+const fn fixed_coefficient(weighted: bool) -> usize {
+    if weighted { 0 } else { 1 }
 }
 
-impl RoundPolynomial<F192> {
+impl<C: AsRef<[F192]>> RoundPolynomial<C> {
     /// Send every coefficient but the one the claim fixes.
     ///
     /// `weighted` says whether the round's eq weight was factored out.
@@ -268,12 +268,10 @@ impl RoundPolynomial<F192> {
     ///
     /// Panics on fewer than two coefficients.
     pub fn send<H: DuplexSponge>(&self, ps: &mut ProverState<H>, weighted: bool) {
-        assert!(
-            self.coeffs.len() >= 2,
-            "a round polynomial has at least two coefficients"
-        );
-        let fixed = Self::fixed(weighted);
-        for (i, c) in self.coeffs.iter().enumerate() {
+        let coeffs = self.coeffs.as_ref();
+        assert!(coeffs.len() >= 2, "a round polynomial has at least two coefficients");
+        let fixed = fixed_coefficient(weighted);
+        for (i, c) in coeffs.iter().enumerate() {
             if i != fixed {
                 ps.prover_message(c);
             }
@@ -281,7 +279,7 @@ impl RoundPolynomial<F192> {
     }
 }
 
-impl<E: Copy> RoundPolynomial<E> {
+impl<E: Copy> RoundPolynomial<Vec<E>> {
     /// Read a round polynomial of `n_coeffs` coefficients: the sent ones, then the fixed one from `claim`.
     ///
     /// `eq` is the round's eq weight `r`, when it was factored out.
@@ -302,7 +300,7 @@ impl<E: Copy> RoundPolynomial<E> {
         assert!(n_coeffs >= 2, "a round polynomial has at least two coefficients");
 
         // Read the sent coefficients, then put the fixed one in its place.
-        let fixed = Self::fixed(eq.is_some());
+        let fixed = fixed_coefficient(eq.is_some());
         let mut coeffs = v.prover_messages(n_coeffs - 1)?;
         coeffs.insert(fixed, claim);
 

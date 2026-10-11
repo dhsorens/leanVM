@@ -430,10 +430,7 @@ pub(crate) fn prove(inputs: &[ZerocheckInput<'_>], ps: &mut ProverState) -> Vec<
                 *m += lambda * c;
             }
         }
-        RoundPolynomial {
-            coeffs: message.to_vec(),
-        }
-        .send(ps, true);
+        RoundPolynomial { coeffs: message }.send(ps, true);
         let chi = ps.verifier_message();
         for prover in provers.iter_mut().filter(|p| j < p.n_mlv()) {
             prover.bind(chi);

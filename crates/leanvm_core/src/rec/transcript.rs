@@ -8,30 +8,22 @@
 //!
 //! Every message the rows absorb is whole 64-bit words, so the native byte framing is a word framing here.
 
-use super::circuit::{Builder, Compression, Dw, Ew, Kw, Limbs, PARAM_IV, digest_limbs, zero_prefix};
+use super::circuit::{Builder, Compression, Dw, Ew, Kw, PARAM_IV, digest_limbs, zero_prefix};
 use fiat_shamir::{FromNarg, MAX_SQUEEZE, ProofOfWork, ProofTranscript, Role, SessionId};
-use pcs::merkle::PrunedMerklePaths;
+use pcs::merkle::Openings;
 use primitives::field::F192;
-use std::collections::VecDeque;
 
 /// What the circuit reads: the proof when it has one, zeros when it is built from the shape alone.
 ///
 /// The rows never depend on what is read, so both sources give one circuit.
 #[derive(Clone, Copy, Debug)]
 pub enum ProofSource<'a> {
-    /// The proof the native verifier accepted.
-    Proof(&'a ProofTranscript),
+    /// The proof the native verifier accepted, and every opening it authenticated, phase by phase.
+    ///
+    /// The openings are the hints decoded once, natively, so the rows never decode or hash them again.
+    Proof(&'a ProofTranscript, &'a [Openings]),
     /// No proof: every message and opening is zero.
     Shape,
-}
-
-/// One Merkle opening as the circuit reads it: the leaf's image and the sibling path.
-#[derive(Clone, Debug, Default)]
-struct MerkleOpening {
-    /// The leaf image's words.
-    image: Vec<u64>,
-    /// The siblings, lowest first.
-    path: Vec<Limbs>,
 }
 
 /// The duplex state in rows, and the cursors into the proof it reads.
@@ -57,8 +49,12 @@ pub struct Transcript<'a> {
     narg_read: usize,
     /// Hint bytes read so far.
     hints_read: usize,
-    /// Openings decoded from the last hint, not yet hashed.
-    openings: VecDeque<MerkleOpening>,
+    /// The phase whose openings the rows hash, none when there is no such phase.
+    openings: Option<&'a Openings>,
+    /// Phases read so far.
+    phases_read: usize,
+    /// The next of the phase's openings to hash.
+    next_opening: usize,
 }
 
 impl<'a> Transcript<'a> {
@@ -89,7 +85,9 @@ impl<'a> Transcript<'a> {
             source,
             narg_read: 0,
             hints_read: 0,
-            openings: VecDeque::new(),
+            openings: None,
+            phases_read: 0,
+            next_opening: 0,
         };
         for &word in instance {
             t.absorb_word(b, word);
@@ -100,7 +98,7 @@ impl<'a> Transcript<'a> {
     /// Whether every message and hint of the proof was read, and nothing past them.
     pub const fn finished(&self) -> bool {
         match self.source {
-            ProofSource::Proof(p) => self.narg_read == p.narg.len() && self.hints_read == p.hints.len(),
+            ProofSource::Proof(p, _) => self.narg_read == p.narg.len() && self.hints_read == p.hints.len(),
             ProofSource::Shape => true,
         }
     }
@@ -151,7 +149,7 @@ impl<'a> Transcript<'a> {
         // The rows frame whole words, so a message of a partial word would diverge from the native framing.
         assert!(len.is_multiple_of(8), "a replayed message is whole words");
         let value = match self.source {
-            ProofSource::Proof(p) => (p.narg.get(self.narg_read..)).and_then(|mut rest| T::from_narg(&mut rest)),
+            ProofSource::Proof(p, _) => (p.narg.get(self.narg_read..)).and_then(|mut rest| T::from_narg(&mut rest)),
             ProofSource::Shape => None,
         };
         self.narg_read += len;
@@ -224,42 +222,24 @@ impl<'a> Transcript<'a> {
         }
     }
 
-    /// Read the next hint as Merkle paths, and queue the openings it gives these queries.
+    /// Take the next opening phase: its hint is skipped, its openings are the next the native verifier authenticated.
     ///
-    /// The paths are opened natively, against the root's value, so that each query gets its full path.
-    /// A hint that does not open queues nothing: the rows that hash the openings then fail.
-    pub fn read_openings(&mut self, b: &Builder, root: Dw, queries: &[Vec<Kw>], row_words: usize, leaf_words: usize) {
-        self.openings.clear();
-        let ProofSource::Proof(p) = self.source else {
+    /// A phase with no such openings, from a proof that was not verified, hashes zeros: its rows then fail.
+    pub fn next_openings(&mut self) {
+        self.next_opening = 0;
+        let phase = self.phases_read;
+        self.phases_read += 1;
+        self.openings = None;
+        let ProofSource::Proof(p, openings) = self.source else {
             return;
         };
 
-        // The hint: a four-byte little-endian length, then the paths.
-        let hint = (p.hints.get(self.hints_read..))
-            .and_then(|rest| rest.split_first_chunk::<4>())
-            .and_then(|(len, rest)| rest.get(..u32::from_le_bytes(*len) as usize));
-        self.hints_read += 4 + hint.map_or(0, <[u8]>::len);
-
-        // The queries' values, their distinct count, and the root's bytes.
-        let values: Vec<usize> = (queries.iter())
-            .map(|bits| (bits.iter().enumerate()).fold(0, |acc, (i, &bit)| acc | (b.k(bit) as usize) << i))
-            .collect();
-        let mut distinct = values.clone();
-        distinct.sort_unstable();
-        distinct.dedup();
-        let limbs = b.d(root);
-        let root: [u8; 32] = std::array::from_fn(|i| (limbs[i / 8] >> (8 * (i % 8))) as u8);
-        let depth = queries.first().map_or(0, Vec::len);
-
-        let opened = hint
-            .and_then(|hint| PrunedMerklePaths::from_hint(hint, distinct.len(), row_words))
-            .and_then(|paths| paths.open(&root, 1 << depth, &values, row_words, leaf_words));
-        self.openings = (opened.into_iter().flatten())
-            .map(|o| MerkleOpening {
-                image: o.leaf_data.iter().map(|w| w.0).collect(),
-                path: o.path.iter().map(digest_limbs).collect(),
-            })
-            .collect();
+        // The hint: a four-byte little-endian length, then the paths, which the openings already hold.
+        let len = (p.hints.get(self.hints_read..))
+            .and_then(|rest| rest.first_chunk::<4>())
+            .map_or(0, |len| u32::from_le_bytes(*len) as usize);
+        self.hints_read += 4 + len;
+        self.openings = openings.get(phase);
     }
 
     /// Hash the next queued row up its path's lowest `bits.len()` levels, returning the node reached and the row's words.
@@ -284,10 +264,12 @@ impl<'a> Transcript<'a> {
             "a leaf of whole blocks holds the row"
         );
 
-        // The next queued opening, zero filled to the shape.
-        let mut opening = self.openings.pop_front().unwrap_or_default();
-        opening.image.resize(leaf_words, 0);
-        opening.path.resize(bits.len(), [0; 4]);
+        // The next opening, or zeros: a word or sibling past what was opened reads zero, so the shape never moves.
+        let i = self.next_opening;
+        self.next_opening += 1;
+        let opened = self.openings.filter(|o| i < o.len());
+        let image = |w: usize| opened.and_then(|o| o.image(i).get(w)).map_or(0, |x| x.0);
+        let sibling = |l: usize| opened.and_then(|o| o.path(i).get(l)).map_or([0; 4], digest_limbs);
 
         // The image's whole zero blocks are one constant state, its other words free.
         let prefix = leaf_words - row_words;
@@ -295,15 +277,15 @@ impl<'a> Transcript<'a> {
         let mut h = b.d_const(zero_prefix(zero_blocks));
         let zero = b.k_const(0);
         let words: Vec<Kw> = (zero_blocks * 8..leaf_words)
-            .map(|i| if i < prefix { zero } else { b.free_k(opening.image[i]) })
+            .map(|w| if w < prefix { zero } else { b.free_k(image(w)) })
             .collect();
         let n_blocks = leaf_words / 8;
         for (j, m) in words.as_chunks::<8>().0.iter().enumerate() {
             let index = zero_blocks + j;
             h = b.leaf_block(h, *m, 64 * (index as u64 + 1), index + 1 == n_blocks);
         }
-        for (&bit, sibling) in bits.iter().zip(&opening.path) {
-            h = b.node(h, bit, *sibling);
+        for (l, &bit) in bits.iter().enumerate() {
+            h = b.node(h, bit, sibling(l));
         }
         (h, words[prefix - zero_blocks * 8..].to_vec())
     }
@@ -315,14 +297,15 @@ mod tests {
     use crate::rec::circuit::Unsatisfied;
     use fiat_shamir::ProverState;
     use pcs::merkle::{Hash, hash_leaf, hash_pair};
+    use primitives::field::F64;
 
     const INSTANCE: [u64; 2] = [3, 4];
 
-    impl Transcript<'_> {
-        // Queue an opening as a hint would, for rows built without one.
-        pub(crate) fn queue_opening(&mut self, image: Vec<u64>, path: &[Hash]) {
-            let path = path.iter().map(digest_limbs).collect();
-            self.openings.push_back(MerkleOpening { image, path });
+    impl<'a> Transcript<'a> {
+        // Set the openings the next rows hash, as a decoded hint would, for rows built without one.
+        pub(crate) fn queue_openings(&mut self, openings: &'a Openings) {
+            self.openings = Some(openings);
+            self.next_opening = 0;
         }
     }
 
@@ -389,7 +372,7 @@ mod tests {
     fn the_rows_replay_the_native_transcript() {
         // Same proof, same challenges, and every row satisfied.
         let (proof, expected) = native();
-        let (circuit, challenges, failures) = rows(ProofSource::Proof(&proof));
+        let (circuit, challenges, failures) = rows(ProofSource::Proof(&proof, &[]));
         assert!(failures.is_empty(), "{failures:?}");
         assert_eq!(challenges, expected);
 
@@ -407,7 +390,7 @@ mod tests {
         let missed = (0..64u8).find_map(|bit| {
             let mut forged = proof.clone();
             forged.narg[last + usize::from(bit / 8)] ^= 1 << (bit % 8);
-            let (_, _, failures) = rows(ProofSource::Proof(&forged));
+            let (_, _, failures) = rows(ProofSource::Proof(&forged, &[]));
             (!failures.is_empty()).then_some(failures)
         });
         assert!(missed.is_some(), "no forged nonce failed");
@@ -415,12 +398,18 @@ mod tests {
 
     // Opens one row of eight words at index 0 of a tree of the given depth, returning the rows' failures.
     fn open(leaf: &[u64; 8], path: &[Hash], root: &Hash, depth: usize) -> Vec<Unsatisfied> {
+        let openings = Openings {
+            leaf_words: 8,
+            height: path.len(),
+            images: leaf.map(F64).to_vec(),
+            paths: path.to_vec(),
+        };
         let mut b = Builder::new();
         let root = b.d_const(digest_limbs(root));
         let bits = vec![b.k_const(0); depth];
         let instance = [b.k_const(0)];
         let mut t = Transcript::new(&mut b, &session(), &instance, ProofSource::Shape);
-        t.queue_opening(leaf.to_vec(), path);
+        t.queue_openings(&openings);
         let (node, _) = t.open_row(&mut b, &bits, 8, 8);
         b.eq_d(node, root);
         b.finish().failures

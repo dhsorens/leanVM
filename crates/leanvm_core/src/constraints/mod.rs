@@ -465,7 +465,7 @@ fn prove_with<S: Summand>(
         }
         // Bind the current message before sampling the challenge used by its fold.
         let h = round_polynomial(msg, zeta[m], claim, u);
-        RoundPolynomial { coeffs: h.to_vec() }.send(ps, false);
+        RoundPolynomial { coeffs: h }.send(ps, false);
         let rk = ps.verifier_message();
         claim = poly_eval(&h, rk);
         chi[m] = rk;
@@ -819,7 +819,7 @@ mod tests {
             shrink_eq_high(&mut eqr);
             let h = round_polynomial(msg, zeta[m], claim, u);
             // Bind the message before drawing the challenge for its fold.
-            RoundPolynomial { coeffs: h.to_vec() }.send(ps, false);
+            RoundPolynomial { coeffs: h }.send(ps, false);
             let rk = ps.verifier_message();
             claim = poly_eval(&h, rk);
             chi[m] = rk;

@@ -329,10 +329,7 @@ pub(crate) fn prove(inputs: &[LincheckInput<'_>], ps: &mut ProverState) -> Vec<L
                 *m += weight * c;
             }
         }
-        RoundPolynomial {
-            coeffs: message.to_vec(),
-        }
-        .send(ps, false);
+        RoundPolynomial { coeffs: message }.send(ps, false);
         let r = ps.verifier_message();
         r_rounds.push(r);
         for prover in &mut provers {

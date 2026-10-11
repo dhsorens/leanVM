@@ -19,7 +19,8 @@ use flock::FlockError;
 use flock::Witness;
 use flock::reduction::{self, Block, Instance, ReductionReplay, Shape};
 use flock::zerocheck::K_SKIP;
-use pcs::merkle::{Hash, hash_leaf, hash_pair};
+use pcs::merkle::{Hash, Openings, hash_leaf, hash_pair};
+use pcs::verifier::Recording;
 use pcs::whir::{WhirError, inner_product_base_ext, strata};
 use primitives::field::{F64, F192};
 use primitives::test_util::Rng;
@@ -43,6 +44,7 @@ fn small_program() -> Program {
 struct Fixture {
     program: Program,
     proof: ProofTranscript,
+    openings: Vec<Openings>,
     output: Output,
     taus: PerTable<usize>,
     native: DeferredClaims,
@@ -55,10 +57,12 @@ fn fixture() -> &'static Fixture {
         let program = small_program();
         let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN).prove(&program, &[]).expect("the run halts");
         let native = program.verify_core(output, &proof).expect("an honest proof");
+        let openings = program.verify_recording(output, &proof).expect("an honest proof");
         let taus = heights(&proof.0);
         Fixture {
             program,
             proof: proof.0,
+            openings,
             output,
             taus,
             native,
@@ -81,18 +85,6 @@ fn set_scalar(proof: &mut ProofTranscript, i: usize, x: F192) {
     proof.narg[24 * i..24 * i + 24].copy_from_slice(&x.encode());
 }
 
-// Where each hint's bytes start and end, past its 4-byte length.
-fn hints(proof: &ProofTranscript) -> Vec<std::ops::Range<usize>> {
-    let mut ranges = Vec::new();
-    let mut at = 0;
-    while at < proof.hints.len() {
-        let len = u32::from_le_bytes(proof.hints[at..at + 4].try_into().unwrap()) as usize;
-        ranges.push(at + 4..at + 4 + len);
-        at += 4 + len;
-    }
-    ranges
-}
-
 // The byte where the bus's first message starts: past the announcement, then the commitment's root.
 const BUS_START: usize = 24 * (N_TABLES + 2) + 32;
 
@@ -106,9 +98,9 @@ impl Fixture {
         (b, core.claims)
     }
 
-    // The checks a forged proof fails, in the order the rows meet them.
-    fn failures(&self, proof: &ProofTranscript) -> Vec<String> {
-        let failures = self.build(ProofSource::Proof(proof)).0.finish().failures;
+    // The checks a forged proof or forged openings fail, in the order the rows meet them.
+    fn failures(&self, proof: &ProofTranscript, openings: &[Openings]) -> Vec<String> {
+        let failures = self.build(ProofSource::Proof(proof, openings)).0.finish().failures;
         failures.iter().map(Unsatisfied::to_string).collect()
     }
 }
@@ -120,7 +112,7 @@ fn values(b: &Builder, claims: &DeferredClaims<Ew>) -> DeferredClaims {
 #[test]
 fn the_core_leaves_the_native_deferred_claims() {
     let f = fixture();
-    let (b, claims) = f.build(ProofSource::Proof(&f.proof));
+    let (b, claims) = f.build(ProofSource::Proof(&f.proof, &f.openings));
     let got = values(&b, &claims);
     assert_eq!(got.program, f.native.program, "the program claim");
     for (i, (got, native)) in got.circuits.iter().zip(&f.native.circuits).enumerate() {
@@ -139,25 +131,28 @@ fn the_core_leaves_the_native_deferred_claims() {
 #[test]
 fn a_tampered_proof_fails_where_the_native_verifier_does() {
     let f = fixture();
-    let first = |proof: &ProofTranscript| f.failures(proof).into_iter().next().unwrap_or_default();
+    let first = |proof: &ProofTranscript, openings: &[Openings]| {
+        f.failures(proof, openings).into_iter().next().unwrap_or_default()
+    };
 
     // The GKR's root, the bus's first message: one bit of its second limb.
     let mut forged = f.proof.clone();
     forged.narg[BUS_START + 8] ^= 1;
-    assert!(first(&forged).starts_with("bus and tables"), "{}", first(&forged));
+    let failure = first(&forged, &f.openings);
+    assert!(failure.starts_with("bus and tables"), "{failure}");
 
-    // A row word and a sibling of the first and the last opening: each hint is rows, then siblings.
-    let ranges = hints(&f.proof);
-    for range in [&ranges[0], &ranges[ranges.len() - 1]] {
-        for byte in [range.start, range.end - 1] {
-            let mut forged = f.proof.clone();
-            forged.hints[byte] ^= 1;
-            assert!(
-                first(&forged).starts_with("opening / whir / rows"),
-                "{}",
-                first(&forged)
-            );
-        }
+    // The openings are the rows' witness: a sibling or the last leaf word of the first and the last phase.
+    for phase in [0, f.openings.len() - 1] {
+        let mut forged = f.openings.clone();
+        forged[phase].paths[1][0] ^= 1;
+        let failure = first(&f.proof, &forged);
+        assert!(failure.starts_with("opening / whir / rows"), "{failure}");
+
+        let mut forged = f.openings.clone();
+        let last = forged[phase].leaf_words - 1;
+        forged[phase].images[last].0 ^= 1;
+        let failure = first(&f.proof, &forged);
+        assert!(failure.starts_with("opening / whir / rows"), "{failure}");
     }
 }
 
@@ -191,13 +186,21 @@ fn a_wrong_sibling_under_the_shared_subtree_is_refused() {
         let mut b = Builder::new();
         let instance = [b.k_const(0)];
         let mut t = Transcript::new(&mut b, &SessionId::new(LABEL), &instance, ProofSource::Shape);
+        let mut openings = Openings {
+            leaf_words: 8,
+            height: depth,
+            images: Vec::new(),
+            paths: Vec::new(),
+        };
         for (i, &q) in queries.iter().enumerate() {
             let mut path = path(q);
             if forge == Some(i) {
                 path[depth - strata[i].bits - 1][0] ^= 1;
             }
-            t.queue_opening((0..8).map(|j| 8 * q as u64 + j).collect(), &path);
+            openings.images.extend((0..8).map(|j| F64(8 * q as u64 + j)));
+            openings.paths.extend(path);
         }
+        t.queue_openings(&openings);
         let bits: Vec<Vec<Kw>> = (queries.iter())
             .map(|&q| (0..depth).map(|l| b.k_const((q >> l) as u64 & 1)).collect())
             .collect();
@@ -223,7 +226,7 @@ fn a_forged_announcement_is_refused_first() {
     let forge = |edit: &dyn Fn(&mut ProofTranscript)| {
         let mut forged = f.proof.clone();
         edit(&mut forged);
-        f.failures(&forged).into_iter().next().unwrap_or_default()
+        f.failures(&forged, &f.openings).into_iter().next().unwrap_or_default()
     };
     for t in 0..N_TABLES {
         let failure = forge(&|p| set_scalar(p, t, F192::new(scalar(p, t).c0 + 1, 0, 0)));
@@ -261,6 +264,7 @@ fn a_large_programs_rows_check_its_grinding() {
     let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN).prove(&program, &[]).expect("the run halts");
     let f = Fixture {
         native: program.verify_core(output, &proof).expect("an honest proof"),
+        openings: program.verify_recording(output, &proof).expect("an honest proof"),
         taus: heights(&proof.0),
         proof: proof.0.clone(),
         program,
@@ -268,7 +272,7 @@ fn a_large_programs_rows_check_its_grinding() {
     };
 
     // The rows leave the native claims, and the shape builds the same circuit.
-    let (b, claims) = f.build(ProofSource::Proof(&f.proof));
+    let (b, claims) = f.build(ProofSource::Proof(&f.proof, &f.openings));
     assert_eq!(values(&b, &claims), f.native);
     let Finished { circuit, failures, .. } = b.finish();
     assert!(failures.is_empty(), "{failures:?}");
@@ -284,7 +288,11 @@ fn a_large_programs_rows_check_its_grinding() {
         })
         .find(|forged| f.program.verify_core(f.output, forged).err() == Some(missed.clone()))
         .expect("half the nonces miss one bit of work");
-    let failure = f.failures(&forged.0).into_iter().next().unwrap_or_default();
+    let failure = f
+        .failures(&forged.0, &f.openings)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
     assert!(failure.starts_with("bus and tables"), "{failure}");
 }
 
@@ -305,7 +313,7 @@ fn a_non_boolean_merkle_selector_is_refused() {
     let session = SessionId::new(b"selector-test");
     let statement = a.statement().to_vec();
     let prove = |a: &Assignment| circuit.prove(a, &session, Rate::MIN).expect("the circuit fits");
-    let verify = |proof: &ProofTranscript| circuit.verify(&statement, &session, Rate::MIN, proof);
+    let verify = |proof: &ProofTranscript| circuit.verify(&statement, &session, Rate::MIN, proof).map(drop);
     assert_eq!(verify(&prove(&a)), Ok(()));
     a.values[bit.0 as usize][0] = 2;
     assert_eq!(
@@ -375,7 +383,7 @@ fn check_reductions(batches: &[Batch]) {
             replay.matrices.value
         );
     }
-    let (b, _, finished) = rows(ProofSource::Proof(&proof));
+    let (b, _, finished) = rows(ProofSource::Proof(&proof, &[]));
     assert!(finished, "the rows read the whole proof");
     let Finished { circuit, failures, .. } = b.finish();
     assert!(failures.is_empty(), "{failures:?}");
@@ -410,7 +418,7 @@ fn check_reductions(batches: &[Batch]) {
             Ok(_) => "",
         };
         assert_eq!(refused, stage, "the native verifier refuses scalar {index}");
-        let failures = rows(ProofSource::Proof(&forged)).0.finish().failures;
+        let failures = rows(ProofSource::Proof(&forged, &[])).0.finish().failures;
         assert!(
             failures.first().is_some_and(|f| f.scope()[0] == stage),
             "scalar {index}: {failures:?}"
@@ -603,18 +611,20 @@ fn check_opening(mu: usize, log_inv_rate: u8, seed: u64) {
         .expect("the committed witness");
     let proof = ps.into_proof();
     let native = |slots: &[StackClaim], rings: &[RingSwitch], proof: &ProofTranscript| {
-        let mut vs = VerifierState::new(&SessionId::new(LABEL), &0u64, proof);
-        let commitment = Commitment::read(&mut vs, shape, rate).expect("a root");
-        commitment.verify(&mut vs, slots, rings)?;
-        vs.check_eof().expect("the native verifier reads the whole proof");
-        Ok::<_, WhirError>(())
+        let mut v = Recording::new(VerifierState::new(&SessionId::new(LABEL), &0u64, proof));
+        let commitment = Commitment::read(&mut v, shape, rate).expect("a root");
+        commitment.verify(&mut v, slots, rings)?;
+        v.transcript()
+            .check_eof()
+            .expect("the native verifier reads the whole proof");
+        Ok::<_, WhirError>(v.into_openings())
     };
-    native(&slots, &rings, &proof).expect("the native verifier accepts");
+    let openings = native(&slots, &rings, &proof).expect("the native verifier accepts");
 
     let rows = |slots: &[StackClaim], rings: &[RingSwitch], source: ProofSource<'_>| {
         opening_rows(shape, rate, slots, rings, source)
     };
-    let (circuit, failures, finished) = rows(&slots, &rings, ProofSource::Proof(&proof));
+    let (circuit, failures, finished) = rows(&slots, &rings, ProofSource::Proof(&proof, &openings));
     assert!(failures.is_empty(), "{what}: {failures:?}");
     assert!(finished, "{what}: the rows left part of the proof unread");
     assert!(
@@ -625,7 +635,7 @@ fn check_opening(mu: usize, log_inv_rate: u8, seed: u64) {
     let terminal = |failures: &[Unsatisfied]| failures.iter().any(|f| f.scope().iter().any(|s| s == "terminal"));
     let refused = |slots: &[StackClaim], rings: &[RingSwitch]| {
         native(slots, rings, &proof).err() == Some(WhirError::TerminalMismatch)
-            && terminal(&rows(slots, rings, ProofSource::Proof(&proof)).1)
+            && terminal(&rows(slots, rings, ProofSource::Proof(&proof, &openings)).1)
     };
     for i in 0..slots.len() {
         let mut forged = slots.clone();
@@ -651,7 +661,9 @@ fn check_opening(mu: usize, log_inv_rate: u8, seed: u64) {
     let mid = forged.narg.len() / 2;
     forged.narg[mid] ^= 1;
     assert!(
-        !rows(&slots, &rings, ProofSource::Proof(&forged)).1.is_empty(),
+        !rows(&slots, &rings, ProofSource::Proof(&forged, &openings))
+            .1
+            .is_empty(),
         "{what}: a forged scalar passes"
     );
 }
@@ -707,13 +719,13 @@ fn a_recursion_proof_in_rows_is_its_verifier() {
     assert!(failures.is_empty(), "{failures:?}");
     let session = SessionId::new(LABEL);
     let proof = circuit.prove(&a, &session, Rate::MIN).expect("the circuit fits");
-    circuit
+    let openings = circuit
         .verify(a.statement(), &session, Rate::MIN, &proof)
         .expect("an honest proof");
     let taus = circuit.heights();
     let columns = FixedColumns::of(&circuit, &taus);
 
-    let (b, rows) = recursion_rows(&circuit, a.statement(), &columns, ProofSource::Proof(&proof));
+    let (b, rows) = recursion_rows(&circuit, a.statement(), &columns, ProofSource::Proof(&proof, &openings));
     let form = rows.matrix.point.map(|w| b.e(w));
     let hash = HashFlock::FLOCK.circuit();
     assert_eq!(
@@ -739,10 +751,15 @@ fn a_recursion_proof_in_rows_is_its_verifier() {
     // A tampered scalar, and a statement word the proof is not of.
     let mut forged = proof.clone();
     forged.narg[24 * 7 + 8] ^= 1;
-    let (b, _) = recursion_rows(&circuit, a.statement(), &columns, ProofSource::Proof(&forged));
+    let (b, _) = recursion_rows(
+        &circuit,
+        a.statement(),
+        &columns,
+        ProofSource::Proof(&forged, &openings),
+    );
     assert!(!b.finish().failures.is_empty(), "a forged scalar passes");
     let mut statement = a.statement().to_vec();
     statement[1][2] ^= 1;
-    let (b, _) = recursion_rows(&circuit, &statement, &columns, ProofSource::Proof(&proof));
+    let (b, _) = recursion_rows(&circuit, &statement, &columns, ProofSource::Proof(&proof, &openings));
     assert!(!b.finish().failures.is_empty(), "another statement passes");
 }

@@ -21,6 +21,7 @@ use crate::rec::transcript::{ProofSource, Transcript};
 use crate::rec::verifier::{FixedHint, ProofShape, RecShape, Rows, infallible};
 use fiat_shamir::arith::Arith;
 use fiat_shamir::{ProofTranscript, SessionId};
+use pcs::merkle::Openings;
 
 use pcs::ring_switch::inverse_frobenius_ladder;
 use primitives::field::F192;
@@ -57,6 +58,8 @@ pub(crate) struct Design<'p> {
 pub(crate) struct LeafWitness<'a> {
     /// The proof.
     pub(crate) proof: &'a ProofTranscript,
+    /// Every opening its native verifier authenticated, phase by phase.
+    pub(crate) openings: Vec<Openings>,
     /// The output it proves.
     pub(crate) output: [u64; 4],
 }
@@ -67,6 +70,8 @@ pub(crate) struct ChildWitness<'a> {
     pub(crate) statement: &'a TreeStatement,
     /// The proof, which the native verifier accepted.
     pub(crate) proof: &'a ProofTranscript,
+    /// Every opening its native verifier authenticated, phase by phase.
+    pub(crate) openings: Vec<Openings>,
     /// The fixed columns of its circuit.
     pub(crate) columns: &'a FixedColumns,
 }
@@ -189,7 +194,7 @@ impl<'p> Design<'p> {
         for i in 0..self.arity_0 {
             let leaf = inputs.item(i);
             let output = leaf.map_or([0; 4], |l| l.output).map(|o| b.free_k(o));
-            let source = leaf.map_or(ProofSource::Shape, |l| ProofSource::Proof(l.proof));
+            let source = leaf.map_or(ProofSource::Shape, |l| ProofSource::Proof(l.proof, &l.openings));
             let core = b.scope(format!("leaf {i}"), |b| self.leaf.verify_core(b, output, source));
             claims.bind_state(&mut b, core.state);
             b.scope(format!("leaf {i} program"), |b| {
@@ -234,7 +239,7 @@ impl<'p> Design<'p> {
                 })
                 .collect();
             let columns = child.map_or_else(|| zeros.as_ref().expect("zero columns from a shape"), |c| c.columns);
-            let source = child.map_or(ProofSource::Shape, |c| ProofSource::Proof(c.proof));
+            let source = child.map_or(ProofSource::Shape, |c| ProofSource::Proof(c.proof, &c.openings));
             let rows = b.scope(format!("child {i}"), |b| {
                 self.child.verify(b, &self.session, &limbs, columns, source)
             });

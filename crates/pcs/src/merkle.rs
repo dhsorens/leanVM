@@ -438,27 +438,11 @@ const fn digests_as_bytes(out: &mut [MaybeUninit<Hash>]) -> &mut [u8] {
     unsafe { std::slice::from_raw_parts_mut(out.as_mut_ptr().cast(), out.len() * OUT_LEN) }
 }
 
-/// Restore a stored row's omitted zero prefix.
-fn leaf_image(row: &[F64], leaf_words: usize) -> Vec<F64> {
-    let mut image = vec![F64::ZERO; leaf_words];
-    image[leaf_words - row.len()..].copy_from_slice(row);
-    image
-}
-
-/// The committer's leaf preimage: the image's words, little-endian.
-fn hash_words(image: &[F64]) -> Hash {
-    let mut bytes = vec![0u8; 8 * image.len()];
-    for (dst, word) in bytes.as_chunks_mut::<8>().0.iter_mut().zip(image) {
-        *dst = word.0.to_le_bytes();
-    }
-    hash_leaf(&bytes)
-}
-
-/// Hash each pair of children into its parent, all pairs together.
-fn hash_pairs(pairs: &[[Hash; 2]]) -> Vec<Hash> {
-    let mut parents = vec![[0u8; 32]; pairs.len()];
+/// Hash each pair of children into its parent, all pairs together, into `parents`.
+fn hash_pairs(pairs: &[[Hash; 2]], parents: &mut Vec<Hash>) {
+    parents.clear();
+    parents.resize(pairs.len(), [0; 32]);
     hash_many::<{ 2 * OUT_LEN }>(pairs.as_flattened().as_flattened(), parents.as_flattened_mut());
-    parents
 }
 
 /// Query positions with duplicates removed, ascending: the order a phase stores
@@ -482,7 +466,9 @@ fn sorted_unique(queries: &[usize]) -> Vec<usize> {
 /// proof.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PrunedMerklePaths {
-    pub leaf_data: Vec<Vec<F64>>,
+    /// The distinct rows, ascending by position, one after another.
+    pub rows: Vec<F64>,
+    /// The octopus: every sibling no queried subtree supplies, bottom level first.
     pub sibling_hashes: Vec<Hash>,
 }
 
@@ -492,8 +478,12 @@ impl PrunedMerklePaths {
     /// No length is written: the verifier knows how many rows and how wide.
     #[must_use]
     pub fn to_hint(&self) -> Vec<u8> {
-        let words = self.leaf_data.iter().flatten().flat_map(|w| w.0.to_le_bytes());
-        words.chain(self.sibling_hashes.iter().flatten().copied()).collect()
+        let mut hint = Vec::with_capacity(8 * self.rows.len() + 32 * self.sibling_hashes.len());
+        for word in &self.rows {
+            hint.extend_from_slice(&word.0.to_le_bytes());
+        }
+        hint.extend_from_slice(self.sibling_hashes.as_flattened());
+        hint
     }
 
     /// The paths a hint holds, given its number of rows and their width in words.
@@ -510,9 +500,8 @@ impl PrunedMerklePaths {
         let (siblings, []) = siblings.as_chunks::<32>() else {
             return None;
         };
-        let words: Vec<F64> = words.iter().map(|w| F64(u64::from_le_bytes(*w))).collect();
         Some(Self {
-            leaf_data: words.chunks(row_words.max(1)).map(<[F64]>::to_vec).collect(),
+            rows: words.iter().map(|w| F64(u64::from_le_bytes(*w))).collect(),
             sibling_hashes: siblings.to_vec(),
         })
     }
@@ -523,7 +512,12 @@ impl PrunedMerklePaths {
     /// For `q` queries in a tree of depth `d` the octopus is at most `q · d`
     /// hashes (what `q` independent paths would cost) and typically much
     /// smaller, since a sibling shared by several paths is emitted once.
-    pub fn prune(tree: &[Hash], num_leaves: usize, positions: &[usize], row: impl Fn(usize) -> Vec<F64>) -> Self {
+    pub fn prune<R: AsRef<[F64]>>(
+        tree: &[Hash],
+        num_leaves: usize,
+        positions: &[usize],
+        row: impl Fn(usize) -> R,
+    ) -> Self {
         assert!(num_leaves.is_power_of_two() && num_leaves > 0);
         assert_eq!(tree.len(), 2 * num_leaves - 1);
         let sorted = sorted_unique(positions);
@@ -554,29 +548,12 @@ impl PrunedMerklePaths {
             level_len >>= 1;
         }
 
-        Self {
-            leaf_data: sorted.iter().map(|&q| row(q)).collect(),
-            sibling_hashes,
+        // The distinct rows, one after another.
+        let mut rows = Vec::new();
+        for &q in &sorted {
+            rows.extend_from_slice(row(q).as_ref());
         }
-    }
-
-    /// The stored rows' leaf hashes, or `None` if any row is not `row_words` wide.
-    fn leaf_hashes(&self, queries: &[usize], row_words: usize, leaf_words: usize) -> Option<(Vec<usize>, Vec<Hash>)> {
-        let sorted = sorted_unique(queries);
-        if sorted.len() != self.leaf_data.len() || row_words > leaf_words {
-            return None;
-        }
-        if self.leaf_data.iter().any(|row| row.len() != row_words) {
-            return None;
-        }
-        // The rows, one after another, hashed as the committer hashed them: zero prefix shared, leaves batched.
-        let bytes: Vec<u8> = (self.leaf_data.iter().flatten())
-            .flat_map(|word| word.0.to_le_bytes())
-            .collect();
-        let mut hashes = Box::new_uninit_slice(self.leaf_data.len());
-        LeafHasher::new(8 * row_words, 8 * leaf_words).hash(&bytes, &mut hashes);
-        // SAFETY: the hasher wrote one digest per row.
-        Some((sorted, unsafe { hashes.assume_init() }.into_vec()))
+        Self { rows, sibling_hashes }
     }
 
     /// Verifier side: authenticate this phase against `root` and expand it into
@@ -597,25 +574,37 @@ impl PrunedMerklePaths {
         queries: &[usize],
         row_words: usize,
         leaf_words: usize,
-    ) -> Option<Vec<RawMerklePath>> {
-        if !num_leaves.is_power_of_two() || num_leaves == 0 || queries.is_empty() {
+    ) -> Option<Openings> {
+        if !num_leaves.is_power_of_two() || num_leaves == 0 || queries.is_empty() || row_words > leaf_words {
             return None;
         }
         let height = num_leaves.trailing_zeros() as usize;
-        let (sorted, leaf_hashes) = self.leaf_hashes(queries, row_words, leaf_words)?;
-        if sorted.last().is_some_and(|&p| p >= num_leaves) {
+        let sorted = sorted_unique(queries);
+        if sorted.last().is_some_and(|&p| p >= num_leaves) || self.rows.len() != sorted.len() * row_words {
             return None;
         }
 
+        // The rows, one after another, hashed as the committer hashed them: zero prefix shared, leaves batched.
+        let bytes: Vec<u8> = self.rows.iter().flat_map(|word| word.0.to_le_bytes()).collect();
+        let mut leaf_hashes = Box::new_uninit_slice(sorted.len());
+        LeafHasher::new(8 * row_words, 8 * leaf_words).hash(&bytes, &mut leaf_hashes);
+        // SAFETY: the hasher wrote one digest per row.
+        let leaf_hashes = unsafe { leaf_hashes.assume_init() };
+
         // Rebuild every node on the queried paths bottom-up, pulling a stored
         // sibling only where that sibling is not itself a queried subtree.
+        //
+        // Every level's known nodes go into one buffer, level `l` at `starts[l]..starts[l + 1]`:
+        // both children of each parent, ascending by index.
         let mut supplied = self.sibling_hashes.iter();
-        let mut known: Vec<Vec<(usize, Hash)>> = Vec::with_capacity(height);
+        let mut known: Vec<(usize, Hash)> = Vec::new();
+        let mut starts = Vec::with_capacity(height + 1);
         let mut nodes: Vec<(usize, Hash)> = sorted.iter().copied().zip(leaf_hashes).collect();
+        let (mut parents, mut pairs, mut digests) = (Vec::new(), Vec::new(), Vec::new());
         for _ in 0..height {
-            let mut level = Vec::with_capacity(2 * nodes.len());
-            let mut parents = Vec::with_capacity(nodes.len());
-            let mut pairs = Vec::with_capacity(nodes.len());
+            starts.push(known.len());
+            parents.clear();
+            pairs.clear();
             let mut i = 0;
             while i < nodes.len() {
                 let idx = nodes[i].0;
@@ -629,72 +618,84 @@ impl PrunedMerklePaths {
                 };
                 parents.push(idx >> 1);
                 pairs.push([left, right]);
-                level.push((idx & !1, left));
-                level.push((idx | 1, right));
+                known.push((idx & !1, left));
+                known.push((idx | 1, right));
                 i += if paired { 2 } else { 1 };
             }
-            known.push(level);
-            nodes = parents.into_iter().zip(hash_pairs(&pairs)).collect();
+            hash_pairs(&pairs, &mut digests);
+            nodes.clear();
+            nodes.extend(parents.iter().copied().zip(digests.iter().copied()));
         }
+        starts.push(known.len());
         // The last fold leaves exactly the root, and nothing may be left over.
-        if supplied.next().is_some() || nodes[0].1 != *root {
+        if supplied.next().is_some() || nodes.first().map(|n| n.1) != Some(*root) {
             return None;
         }
 
-        let per_distinct: Vec<Vec<Hash>> = sorted
-            .iter()
-            .map(|&leaf| {
-                (0..height)
-                    .map(|lvl| {
-                        let level = &known[lvl];
-                        let pos = level.binary_search_by_key(&((leaf >> lvl) ^ 1), |&(j, _)| j).ok()?;
-                        Some(level[pos].1)
-                    })
-                    .collect::<Option<Vec<_>>>()
-            })
-            .collect::<Option<Vec<_>>>()?;
+        // Each query's image and path, in query order.
+        let mut openings = Openings {
+            leaf_words,
+            height,
+            images: vec![F64::ZERO; queries.len() * leaf_words],
+            paths: Vec::with_capacity(queries.len() * height),
+        };
+        for (q, image) in queries.iter().zip(openings.images.chunks_exact_mut(leaf_words)) {
+            // The query's row is the image's tail, after the zero prefix.
+            let slot = sorted.binary_search(q).ok()?;
+            image[leaf_words - row_words..].copy_from_slice(&self.rows[slot * row_words..][..row_words]);
 
-        queries
-            .iter()
-            .map(|q| {
-                let slot = sorted.binary_search(q).ok()?;
-                Some(RawMerklePath {
-                    leaf_index: *q,
-                    leaf_data: leaf_image(&self.leaf_data[slot], leaf_words),
-                    path: per_distinct[slot].clone(),
-                })
-            })
-            .collect()
+            // Its sibling at each level is a known node of that level.
+            for (lvl, bounds) in starts.windows(2).enumerate() {
+                let level = &known[bounds[0]..bounds[1]];
+                let pos = level.binary_search_by_key(&((q >> lvl) ^ 1), |&(j, _)| j).ok()?;
+                openings.paths.push(level[pos].1);
+            }
+        }
+        Some(openings)
     }
 }
 
-/// One query's opening, unpruned: the leaf's FULL image (zero prefix included) and
-/// the full sibling path from that leaf up to the root.
+/// A phase's openings, unpruned and in query order: each query's full leaf image and full sibling path.
 ///
-/// The redundant form. Several queries of one phase repeat whatever siblings
-/// they share, which is exactly what makes it simple to consume: recomputing
-/// the root is a walk up one path, with no dedup bookkeeping.
+/// Several queries repeat the siblings they share, which is what makes each one simple to consume:
+/// recomputing the root is a walk up one path.
 ///
-/// Recursion consumes this form. The wire format ([`PrunedMerklePaths`]) sends each shared sibling once.
+/// All images sit in one buffer and all paths in another, so a phase costs a fixed number of allocations.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RawMerklePath {
-    /// Transcript-derived position.
-    pub leaf_index: usize,
-    pub leaf_data: Vec<F64>,
-    pub path: Vec<Hash>,
+pub struct Openings {
+    /// Words of a leaf image.
+    pub leaf_words: usize,
+    /// Siblings on a path: the tree's height.
+    pub height: usize,
+    /// The images, one after another, each with its zero prefix.
+    pub images: Vec<F64>,
+    /// The paths, one after another, each lowest sibling first.
+    pub paths: Vec<Hash>,
 }
 
-impl RawMerklePath {
-    /// Recompute the root this opening claims, from its leaf and path.
-    pub fn root(&self, leaf_index: usize) -> Hash {
-        let mut acc = hash_words(&self.leaf_data);
-        let mut idx = leaf_index;
-        for sibling in &self.path {
-            let (left, right) = if idx & 1 == 0 { (acc, *sibling) } else { (*sibling, acc) };
-            acc = hash_pair(&left, &right);
-            idx >>= 1;
-        }
-        acc
+impl Openings {
+    /// The number of queries opened.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.images.len() / self.leaf_words
+    }
+
+    /// Whether no query was opened.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.images.is_empty()
+    }
+
+    /// Query `i`'s full leaf image, its zero prefix included.
+    #[must_use]
+    pub fn image(&self, i: usize) -> &[F64] {
+        &self.images[i * self.leaf_words..][..self.leaf_words]
+    }
+
+    /// Query `i`'s siblings, lowest first.
+    #[must_use]
+    pub fn path(&self, i: usize) -> &[Hash] {
+        &self.paths[i * self.height..][..self.height]
     }
 }
 
@@ -852,6 +853,22 @@ mod tests {
         builder.absorb(8, &data[..64]);
     }
 
+    // A leaf's hash: its words' little-endian bytes.
+    fn hash_words(image: &[F64]) -> Hash {
+        hash_leaf(&image.iter().flat_map(|w| w.0.to_le_bytes()).collect::<Vec<u8>>())
+    }
+
+    // The root a leaf image and its path reach, the direction at each level the index's bit.
+    fn walk(image: &[F64], path: &[Hash], index: usize) -> Hash {
+        (path.iter().enumerate()).fold(hash_words(image), |acc, (lvl, sibling)| {
+            if index >> lvl & 1 == 0 {
+                hash_pair(&acc, sibling)
+            } else {
+                hash_pair(sibling, &acc)
+            }
+        })
+    }
+
     fn tree_of(rows: &[Vec<F64>]) -> Vec<Hash> {
         let mut tree: Vec<Hash> = rows.iter().map(|r| hash_words(r)).collect();
         let (mut start, mut len) = (0usize, rows.len());
@@ -876,14 +893,18 @@ mod tests {
         let queries = [5usize, 1, 5, 3, 1];
 
         let paths = PrunedMerklePaths::prune(&tree, num_leaves, &queries, |q| rows[q].clone());
-        assert_eq!(paths.leaf_data.len(), 3, "one row per distinct query");
+        assert_eq!(paths.rows.len(), 3 * width, "one row per distinct query");
 
         let openings = paths.open(&root, num_leaves, &queries, width, width).expect("open");
         assert_eq!(openings.len(), queries.len());
-        for (opening, &q) in openings.iter().zip(&queries) {
-            assert_eq!(opening.leaf_data, rows[q], "row must follow query order");
-            assert_eq!(opening.path.len(), height);
-            assert_eq!(opening.root(q), root, "each unpruned path must reach the root");
+        for (i, &q) in queries.iter().enumerate() {
+            assert_eq!(openings.image(i), rows[q], "row must follow query order");
+            assert_eq!(openings.path(i).len(), height);
+            assert_eq!(
+                walk(openings.image(i), openings.path(i), q),
+                root,
+                "each unpruned path must reach the root"
+            );
         }
     }
 
@@ -916,11 +937,11 @@ mod tests {
         );
 
         let mut bad_row = good.clone();
-        bad_row.leaf_data[0][0] = F64(bad_row.leaf_data[0][0].0 ^ 1);
+        bad_row.rows[0].0 ^= 1;
         assert!(open(&bad_row, &queries, width, num_leaves).is_none(), "tampered row");
 
         let mut wide = good.clone();
-        wide.leaf_data[0].push(F64(0));
+        wide.rows.push(F64(0));
         assert!(open(&wide, &queries, width, num_leaves).is_none(), "wrong row width");
 
         assert!(

@@ -229,7 +229,7 @@ fn proven_circuit(f: &Fixture, rows: NodeRows) -> Circuit {
     let reduction = honest_reduction(f, &rows);
     let Finished {
         mut circuit, failures, ..
-    } = rows.reduce(&f.tree.design, ProofSource::Proof(&reduction));
+    } = rows.reduce(&f.tree.design, ProofSource::Proof(&reduction, &[]));
     assert!(failures.is_empty(), "{failures:?}");
     circuit.floor = f.tree.design.taus;
     circuit
@@ -240,12 +240,10 @@ fn a_proven_circuit_is_the_shapes() {
     let f = fixture();
     let d = &f.tree.design;
     let leaves: Vec<LeafWitness> = (f.leaves[..2].iter())
-        .map(|(proof, output)| {
-            program().verify(*output, proof).expect("an honest leaf");
-            LeafWitness {
-                proof: &proof.0,
-                output: *output.words(),
-            }
+        .map(|(proof, output)| LeafWitness {
+            proof: &proof.0,
+            openings: program().verify_recording(*output, proof).expect("an honest leaf"),
+            output: *output.words(),
         })
         .collect();
     let rows = d.first(&NodeInputs::Prove {
@@ -264,10 +262,8 @@ fn a_proven_circuit_is_the_shapes() {
     let items: Vec<ChildWitness<'_>> = (f.firsts.iter().zip(&statements))
         .map(|(p, statement)| ChildWitness {
             statement,
-            proof: {
-                f.tree.read(p).expect("an honest child");
-                &p.proof
-            },
+            proof: &p.proof,
+            openings: f.tree.read(p).expect("an honest child"),
             columns: &f.tree.columns[Kind::First as usize],
         })
         .collect();
@@ -328,7 +324,8 @@ fn a_fake_child_circuit_is_refused_at_the_root() {
         "natively, the fake is no first-level node"
     );
     let limbs: Vec<[u64; 4]> = child.words.iter().map(|w| [w.c0, w.c1, w.c2, 0]).collect();
-    fake.verify(&limbs, &d.session, d.rate, &child.proof)
+    let openings = fake
+        .verify(&limbs, &d.session, d.rate, &child.proof)
         .expect("the fake proves its own circuit");
 
     // The prover hands the rows the fake's fixed columns, and its fixed polynomial the fake's half.
@@ -340,6 +337,7 @@ fn a_fake_child_circuit_is_refused_at_the_root() {
         .map(|_| ChildWitness {
             statement: &statement,
             proof: &child.proof,
+            openings: openings.clone(),
             columns: &columns,
         })
         .collect();
@@ -363,7 +361,7 @@ fn a_fake_child_circuit_is_refused_at_the_root() {
     let reduction = rows.claim_values().prove(&d.session, &d.vars, &tables);
     let Finished {
         assignment, failures, ..
-    } = rows.reduce(d, ProofSource::Proof(&reduction));
+    } = rows.reduce(d, ProofSource::Proof(&reduction, &[]));
     assert!(failures.is_empty(), "{failures:?}");
     let root = TreeProof {
         kind: Kind::Node,
@@ -459,12 +457,10 @@ fn forged_reduction(
 fn forged_first(f: &Fixture, forge: Forge) -> TreeProof {
     let d = &f.tree.design;
     let items: Vec<LeafWitness> = (f.leaves[..2].iter())
-        .map(|(proof, output)| {
-            program().verify(*output, proof).expect("an honest leaf");
-            LeafWitness {
-                proof: &proof.0,
-                output: *output.words(),
-            }
+        .map(|(proof, output)| LeafWitness {
+            proof: &proof.0,
+            openings: program().verify_recording(*output, proof).expect("an honest leaf"),
+            output: *output.words(),
         })
         .collect();
     let rows = d.first(&NodeInputs::Prove {
@@ -474,7 +470,7 @@ fn forged_first(f: &Fixture, forge: Forge) -> TreeProof {
     let reduction = forged_reduction(&d.session, &d.vars, &f.tree.tables, &rows.claim_values(), forge);
     let Finished {
         assignment, failures, ..
-    } = rows.reduce(d, ProofSource::Proof(&reduction));
+    } = rows.reduce(d, ProofSource::Proof(&reduction, &[]));
     assert!(failures.is_empty(), "{forge:?}: {failures:?}");
     TreeProof {
         kind: Kind::First,

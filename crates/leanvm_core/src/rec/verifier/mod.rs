@@ -243,7 +243,7 @@ impl OpeningVerifier for Rows<'_, '_> {
     }
 }
 
-/// Each query's row, its opening read from the next hint, then authenticated against the root.
+/// Each query's row, its opening the next phase's, then authenticated against the root.
 fn authenticate(
     r: &mut Rows<'_, '_>,
     root: Dw,
@@ -251,7 +251,7 @@ fn authenticate(
     row_words: usize,
     leaf_words: usize,
 ) -> Vec<Vec<Kw>> {
-    r.t.read_openings(r.b, root, queries, row_words, leaf_words);
+    r.t.next_openings();
     authenticate_queued(r, root, queries, row_words, leaf_words)
 }
 

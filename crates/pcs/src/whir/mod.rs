@@ -401,7 +401,7 @@ mod tests {
                 let distinct = (full.len() - thin.len()) / (8 * (leaf_words - n_lanes).max(1));
                 let thin = PrunedMerklePaths::from_hint(thin, distinct, n_lanes).unwrap();
                 let full = PrunedMerklePaths::from_hint(full, distinct, leaf_words).unwrap();
-                for (thin, full) in thin.leaf_data.iter().zip(&full.leaf_data) {
+                for (thin, full) in thin.rows.chunks(n_lanes).zip(full.rows.chunks(leaf_words)) {
                     assert_eq!(thin[..], full[leaf_words - n_lanes..], "stored row is the image tail");
                     assert!(
                         full[..leaf_words - n_lanes].iter().all(|w| *w == F64::ZERO),

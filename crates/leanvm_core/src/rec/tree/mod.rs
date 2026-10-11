@@ -29,6 +29,7 @@ use crate::rec::verifier::ProofShape;
 use crate::tables::PerTable;
 use design::{ChildWitness, Design, LeafWitness, NodeInputs, NodeRows};
 use fiat_shamir::{FromNarg, ProofTranscript};
+use pcs::merkle::Openings;
 use primitives::field::{F64, F192};
 use primitives::multilinear::{eq_table, mle_eval_par};
 use reduce::DenseTables;
@@ -460,11 +461,11 @@ impl<'p> Tree<'p> {
                 if LeafShape::announced(proof) != Some(shape) {
                     return Err(TreeError::ForeignLeaf { index });
                 }
-                program
-                    .verify(output, proof)
-                    .map_err(|error| TreeError::Leaf { index, error })?;
+                let openings =
+                    (program.verify_recording(output, proof)).map_err(|error| TreeError::Leaf { index, error })?;
                 Ok(LeafWitness {
                     proof: &proof.0,
+                    openings,
                     output: *output.words(),
                 })
             })
@@ -490,16 +491,17 @@ impl<'p> Tree<'p> {
                 got: children.len(),
             });
         }
-        for (index, c) in children.iter().enumerate() {
-            self.read(c).map_err(|error| TreeError::Child { index, error })?;
-        }
+        let openings = (children.iter().enumerate())
+            .map(|(index, c)| self.read(c).map_err(|error| TreeError::Child { index, error }))
+            .collect::<Result<Vec<_>, _>>()?;
         let statements: Vec<TreeStatement> = (children.iter())
             .map(|c| TreeStatement::new(d.statement, c.words.clone()))
             .collect();
-        let items: Vec<ChildWitness<'_>> = (children.iter().zip(&statements))
-            .map(|(c, statement)| ChildWitness {
+        let items: Vec<ChildWitness<'_>> = (children.iter().zip(&statements).zip(openings))
+            .map(|((c, statement), openings)| ChildWitness {
                 statement,
                 proof: &c.proof,
+                openings,
                 columns: &self.columns[c.kind as usize],
             })
             .collect();
@@ -574,17 +576,18 @@ impl<'p> Tree<'p> {
         level[0]
     }
 
-    /// Verify a tree proof's recursion proof, short of its claims.
-    fn read(&self, p: &TreeProof) -> Result<(), VerifyError> {
+    /// Verify a tree proof's recursion proof, short of its claims, returning every opening it authenticated.
+    fn read(&self, p: &TreeProof) -> Result<Vec<Openings>, VerifyError> {
         let limbs: Vec<[u64; 4]> = p.words.iter().map(|w| [w.c0, w.c1, w.c2, 0]).collect();
-        self.circuit(p.kind).verify_with(
-            &limbs,
-            &self.design.session,
-            self.design.rate,
-            &p.proof,
-            &self.columns[p.kind as usize],
-        )?;
-        Ok(())
+        self.circuit(p.kind)
+            .verify_with(
+                &limbs,
+                &self.design.session,
+                self.design.rate,
+                &p.proof,
+                &self.columns[p.kind as usize],
+            )
+            .map_err(Into::into)
     }
 
     /// Prove a circuit's rows: its reduction, then its recursion proof.
@@ -593,7 +596,7 @@ impl<'p> Tree<'p> {
         let reduction = rows.claim_values().prove(&d.session, &d.vars, &self.tables);
         let Finished {
             assignment, failures, ..
-        } = info_span!("Reduce in rows").in_scope(|| rows.reduce(d, ProofSource::Proof(&reduction)));
+        } = info_span!("Reduce in rows").in_scope(|| rows.reduce(d, ProofSource::Proof(&reduction, &[])));
         if let Some(first) = failures.into_iter().next() {
             return Err(TreeError::Unsatisfied(first));
         }
