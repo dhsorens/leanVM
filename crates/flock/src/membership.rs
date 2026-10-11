@@ -51,7 +51,8 @@ const SWAP: usize = 48;
 const DIRECTION: usize = 56 * 32;
 const HIDING: [usize; 3] = [57 * 32, 58 * 32, 59 * 32];
 const N_HIDING: usize = 6;
-/// `S`: the zerocheck's mask, three limbs a coefficient, free wires. Compression 0's are the ones used.
+/// `S`: the zerocheck's mask, three limbs a coefficient. Compression 0's are free, in no row and on no row's
+/// right-hand side (`C` is the identity but for them); the other compressions' are zero.
 const MASK: usize = DIRECTION + 112;
 /// The mask is `c + sum_i (g_i x_i + h_i x_i^2)`.
 const MASK_COEFFS: usize = 2 * N_VARS + 1;
@@ -233,9 +234,6 @@ impl Block {
             (block.a[v], block.b[v]) = (one(v), one(CONST));
             (block.a[w], block.b[w]) = (one(u), one(v));
         }
-        for local in MASK..MASK + 3 * MASK_COEFFS {
-            (block.a[local], block.b[local]) = (one(local), one(CONST));
-        }
         block
     }
 
@@ -345,6 +343,31 @@ pub struct Witness {
     mask: Vec<F192>,
 }
 
+impl Witness {
+    /// `C z`: `z` without the mask wires.
+    fn c(&self) -> Vec<F192> {
+        let mut c = lift(&self.z);
+        c[mask_wires()].fill(F192::ZERO);
+        c
+    }
+
+    fn satisfied(&self) -> bool {
+        (0..N_WIRES).all(|i| {
+            self.a[i] * self.b[i]
+                == if mask_wires().contains(&i) {
+                    F64::ZERO
+                } else {
+                    self.z[i]
+                }
+        })
+    }
+}
+
+/// The wires holding the zerocheck's mask.
+fn mask_wires() -> std::ops::Range<usize> {
+    wire(0, 0, MASK)..wire(0, 0, MASK) + 3 * MASK_COEFFS
+}
+
 /// A compression's free inputs: its sibling, its direction bit, and `x`.
 type Inputs = ([u8; 32], bool, [u8; 32]);
 
@@ -451,16 +474,16 @@ impl Circuit {
                     for j in 0..MASK_COEFFS {
                         let limbs: [u64; 3] = std::array::from_fn(|_| random());
                         for (limb, &value) in limbs.iter().enumerate() {
-                            let at = base + MASK + 3 * j + limb;
-                            (z[at], a[at]) = (F64(value), F64(value));
+                            z[base + MASK + 3 * j + limb] = F64(value);
                         }
                         mask.push(F192::new(limbs[0], limbs[1], limbs[2]));
                     }
                 }
             }
         }
-        debug_assert!((0..N_WIRES).all(|i| a[i] * b[i] == z[i]));
-        Witness { z, a, b, mask }
+        let witness = Witness { z, a, b, mask };
+        debug_assert!(witness.satisfied());
+        witness
     }
 }
 
@@ -641,8 +664,10 @@ fn comb_table(
             comb[base + j] += pin_weight(batching, &pi, r, bits.len(), j);
         }
     }
-    for (k, weight) in mask_weights(rho).into_iter().enumerate() {
-        comb[wire(0, 0, MASK) + k] += alpha[4] * weight;
+    // A mask wire carries its weight in the mask's value, and none in `C z`.
+    let unit = compressions[0] * slots[0];
+    for (at, weight) in mask_wires().zip(mask_weights(rho)) {
+        comb[at] += alpha[4] * weight + alpha[2] * unit * local[at];
     }
     (comb, marginals)
 }
@@ -699,14 +724,14 @@ fn comb_at(rho: &[F192], q: &[F192], batching: &Batching, pins: &[(usize, Vec<bo
             power * eq_eval(&batching.pi, &q[..8]) * eq_index(base >> 8, &q[8..])
         }
     }));
-    // The mask wires sit in one aligned run of 256, in the first block.
-    let low = eq_table(&q[..8]);
-    let mask = alpha[4]
-        * eq_index(MASK >> 8, &q[8..])
-        * sum(&mut mask_weights(rho)
-            .iter()
-            .enumerate()
-            .map(|(k, &w)| w * low[MASK % 256 + k]));
+    // The mask wires sit in one aligned run of 256, in the first block. Each leaves `C z` and enters the mask's value.
+    let (low_r, low_q) = (eq_table(&rho[..8]), eq_table(&q[..8]));
+    let leaves = alpha[2] * eq_index(MASK >> 8, &rho[8..]);
+    let mask = eq_index(MASK >> 8, &q[8..])
+        * sum(&mut mask_weights(rho).iter().enumerate().map(|(k, &w)| {
+            let at = MASK % 256 + k;
+            (alpha[4] * w + leaves * low_r[at]) * low_q[at]
+        }));
     same_compression * (blocks + constants) + alpha[2] * eq_eval(rho, q) + wiring + pinned + mask
 }
 
@@ -795,7 +820,7 @@ pub fn prove(
     let (rho, a_eval, b_eval, claim) = zerocheck::prove_tables(
         lift(&witness.a),
         lift(&witness.b),
-        lift(&witness.z),
+        witness.c(),
         &r,
         lambda * mask_sum,
         &mut |point| {
@@ -809,7 +834,7 @@ pub fn prove(
     let c_eval = claim + a_eval * b_eval + lambda * gamma;
     drop(span);
 
-    // Lincheck on the witness plus a random element of the masks' span: a uniformly random table.
+    // Lincheck on the witness plus a combination of the masks that is a uniformly random table.
     let span = tracing::info_span!("Lincheck").entered();
     let batching = Batching::sample(&mut ps);
     let pins = pins(statement);
@@ -830,7 +855,7 @@ pub fn prove(
         .each_ref()
         .map(|m| parallel::map_reduce(N_WIRES, || F192::ZERO, |i| comb[i].mul_base(m[i]), |x, y| x + y));
     ps.add_scalars(&mask_sums);
-    let lambdas = [ps.sample(), ps.sample()];
+    let lambdas = mask_challenges(&mut ps);
     let weights = [lambdas[0], lambdas[1], lambdas[0] * lambdas[1]];
     let masked = parallel::map_collect(N_WIRES, |i| {
         (0..3).fold(F192::from(witness.z[i]), |acc, k| {
@@ -853,6 +878,12 @@ pub fn prove(
         index: index_claim(&rho, &q, &kinds, alpha[1], &values),
     };
     (ps.into_proof(), claims)
+}
+
+/// `(l, l^2)`: the three masks enter with `l, l^2, l^3`, a basis of the field over `GF(2^64)` unless `l` is in it.
+fn mask_challenges(ch: &mut impl Challenger) -> [F192; 2] {
+    let lambda = ch.sample();
+    [lambda, lambda.square()]
 }
 
 fn index_claim(rho: &[F192], q: &[F192], kinds: &[F192], alpha: F192, values: &[F192]) -> Claim {
@@ -883,7 +914,7 @@ pub fn verify(index_root: &Hash, statement: &Statement, proof: &Proof) -> Result
     let pins = pins(statement);
     let alpha = batching.alpha;
     let mask_sums = vs.next_scalars(3).map_err(transcript)?;
-    let lambdas = [vs.sample(), vs.sample()];
+    let lambdas = mask_challenges(&mut vs);
     let mut claim = a_eval
         + alpha[1] * b_eval
         + alpha[2] * c_eval
@@ -967,7 +998,7 @@ mod tests {
         let secret = secret(&mut rng);
         let statement = secret.statement();
         let witness = Circuit::new().witness(&secret, &mut || rng.next_u64());
-        assert!((0..N_WIRES).all(|i| witness.a[i] * witness.b[i] == witness.z[i]));
+        assert!(witness.satisfied());
         assert_eq!(bytes_at(&witness, wire(0, F_SLOT, 32 * OUT)), statement.y);
         assert_eq!(bytes_at(&witness, wire(N_HASHES - 1, F_SLOT, 32 * OUT)), statement.root);
     }
@@ -1106,7 +1137,7 @@ mod tests {
         ];
         for (case, inputs) in tampered.into_iter().enumerate() {
             let witness = circuit.run(inputs, &mut || rng.next_u64());
-            assert!((0..N_WIRES).all(|i| witness.a[i] * witness.b[i] == witness.z[i]));
+            assert!(witness.satisfied());
             let statement = Statement {
                 y: bytes_at(&witness, wire(0, F_SLOT, 32 * OUT)),
                 root: bytes_at(&witness, wire(N_HASHES - 1, F_SLOT, 32 * OUT)),
