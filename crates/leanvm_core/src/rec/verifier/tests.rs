@@ -27,6 +27,7 @@ use pcs::whir::{WhirError, inner_product_base_ext, strata};
 use primitives::field::{F64, F192};
 use primitives::test_util::Rng;
 use std::sync::OnceLock;
+use zk::Randomness;
 
 // A program with a loop, so that every framework block is read.
 fn small_program() -> Program {
@@ -93,7 +94,7 @@ const FLOCK_START: usize = 24 * (N_TABLES + 2) + 32;
 impl Fixture {
     // The core's rows over `source`: the builder, holding the wires' values, and the claims the core leaves.
     fn build(&self, source: ProofSource<'_>) -> (Builder, DeferredClaims<Ew>) {
-        let shape = ProofShape::new(&self.program, self.taus, Rate::MIN).expect("an honest shape");
+        let shape = ProofShape::new(&self.program, self.taus, Rate::MIN, ProofKind::Plain).expect("an honest shape");
         let mut b = Builder::new();
         let output = self.output.words().map(|o| b.free_k(o));
         let core = shape.verify_core(&mut b, output, source);
@@ -783,4 +784,85 @@ fn a_recursion_proof_in_rows_is_its_verifier() {
     statement[1][2] ^= 1;
     let (b, _) = recursion_rows(&circuit, &statement, &columns, ProofSource::Proof(&proof, &openings));
     assert!(!b.finish().failures.is_empty(), "another statement passes");
+}
+
+// One honest zero-knowledge proof of the small program.
+struct ZkFixture {
+    program: Program,
+    proof: ProofTranscript,
+    openings: Vec<Openings>,
+    output: Output,
+    taus: PerTable<usize>,
+    native: DeferredClaims,
+}
+
+// Proven once, shared by the zero-knowledge tests.
+fn zk_fixture() -> &'static ZkFixture {
+    static FIXTURE: OnceLock<ZkFixture> = OnceLock::new();
+    FIXTURE.get_or_init(|| {
+        let program = small_program();
+        let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN)
+            .zero_knowledge(Randomness::Fixed([11; 32]))
+            .prove(&program, &[])
+            .expect("the run halts");
+        let native = program.verify_core(output, &proof).expect("an honest proof");
+        let openings = program.verify_recording(output, &proof).expect("an honest proof");
+        // A zero-knowledge proof announces its heights first too.
+        let taus = heights(&proof.0);
+        ZkFixture {
+            program,
+            proof: proof.0,
+            openings,
+            output,
+            taus,
+            native,
+        }
+    })
+}
+
+impl ZkFixture {
+    // The zero-knowledge core's rows over `source`, and the claims it leaves.
+    fn build(&self, source: ProofSource<'_>) -> (Builder, DeferredClaims<Ew>) {
+        let shape =
+            ProofShape::new(&self.program, self.taus, Rate::MIN, ProofKind::ZeroKnowledge).expect("an honest shape");
+        let mut b = Builder::new();
+        let output = self.output.words().map(|o| b.free_k(o));
+        let core = shape.verify_core(&mut b, output, source);
+        (b, core.claims)
+    }
+}
+
+#[test]
+fn a_zero_knowledge_core_leaves_the_native_deferred_claims() {
+    // Invariant: the recorder over rows makes the record the native recorder makes, so the rows leave its claims.
+    //
+    // Those claims are already batched into the plain shape, and settle as a plain proof's.
+    let f = zk_fixture();
+    let (b, claims) = f.build(ProofSource::Proof(&f.proof, &f.openings));
+    let got = values(&b, &claims);
+    assert_eq!(got, f.native);
+    f.program.check_deferred(&got).expect("the rows' claims settle");
+    let Finished { circuit, failures, .. } = b.finish();
+    assert!(failures.is_empty(), "{failures:?}");
+
+    // The record depends on the shape alone: zeros in place of the proof build the same circuit.
+    assert!(
+        circuit == f.build(ProofSource::Shape).0.finish().circuit,
+        "the shape builds another circuit"
+    );
+}
+
+#[test]
+fn a_tampered_zero_knowledge_proof_fails_in_rows() {
+    // Mutation: one bit of a hidden scalar, the first past the shape and the two roots; then one of the key opening's.
+    //
+    //     narg = [N_TABLES + 1 sizes | stack root | key root | hidden scalars ... | outer proof, key opening]
+    let f = zk_fixture();
+    let first_hidden = 24 * (N_TABLES + 1) + 2 * 32;
+    for at in [first_hidden + 8, f.proof.narg.len() - 24] {
+        let mut forged = f.proof.clone();
+        forged.narg[at] ^= 1;
+        let failures = f.build(ProofSource::Proof(&forged, &f.openings)).0.finish().failures;
+        assert!(!failures.is_empty(), "byte {at} tampered and the rows hold");
+    }
 }

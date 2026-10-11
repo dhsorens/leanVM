@@ -29,7 +29,7 @@
 //! at heights of its own ([`Tier`]): small proofs then never pay for the largest node's union and children.
 
 use crate::class_flock::FlockId;
-use crate::cpu::{Announcement, DecodeError, Lookup, Output, Program, Proof, ProvenRun, Stats, VerifyError};
+use crate::cpu::{Announcement, DecodeError, Lookup, Output, Program, Proof, ProofKind, ProvenRun, Stats, VerifyError};
 use crate::envelope::Envelope;
 use crate::pcs::Rate;
 use crate::rec::circuit::{Circuit, Finished, chain};
@@ -38,7 +38,7 @@ use crate::rec::layout::RecLayout;
 use crate::rec::table::PerRecTable;
 use crate::rec::transcript::ProofSource;
 use crate::rec::verifier::ProofShape;
-use crate::tables::PerTable;
+use crate::tables::{N_TABLES, PerTable};
 use design::{ChildWitness, Design, LARGE, LeafWitness, Level, NodeInputs, NodeRows, SMALL};
 use fiat_shamir::{FromNarg, ProofTranscript};
 use pcs::merkle::Openings;
@@ -86,6 +86,8 @@ pub struct LeafShape {
     taus: PerTable<usize>,
     /// The commitment's rate.
     rate: Rate,
+    /// The leaf proofs' kind.
+    kind: ProofKind,
 }
 
 /// One leaf of a tree: a proof of a run, and the output it proves.
@@ -342,8 +344,23 @@ pub enum TreeError {
 
 impl LeafShape {
     /// The shape of proofs with these table heights at this rate.
-    pub(crate) const fn new(taus: PerTable<usize>, rate: Rate) -> Self {
-        Self { taus, rate }
+    pub(crate) const fn new(taus: PerTable<usize>, rate: Rate, kind: ProofKind) -> Self {
+        Self { taus, rate, kind }
+    }
+
+    /// The same shape, of zero-knowledge proofs.
+    #[must_use]
+    pub const fn zero_knowledge(self) -> Self {
+        Self {
+            kind: ProofKind::ZeroKnowledge,
+            ..self
+        }
+    }
+
+    /// Whether the leaf proofs are zero knowledge.
+    #[must_use]
+    pub fn is_zero_knowledge(&self) -> bool {
+        self.kind == ProofKind::ZeroKnowledge
     }
 
     /// The shape a proof announces.
@@ -361,21 +378,23 @@ impl LeafShape {
     #[must_use]
     pub fn measured(stats: &Stats, rate: Rate) -> Self {
         // Every proven table height is a power of two, so its logarithm is exact.
-        Self::new(stats.counts.map(|rows| rows.ilog2() as usize), rate)
+        Self::new(stats.counts.map(|rows| rows.ilog2() as usize), rate, ProofKind::Plain)
     }
 
     /// The shape a proof's first scalars announce, if they are a valid announcement.
     ///
-    /// A zero-knowledge proof has none here: no node verifies one yet.
+    /// A zero-knowledge proof announces its heights and rate alone: its final clock is hidden.
     fn announced(proof: &Proof) -> Option<Self> {
-        if proof.is_zero_knowledge() {
-            return None;
-        }
         let mut narg = proof.0.narg.as_slice();
+        if proof.is_zero_knowledge() {
+            let scalars: [F192; N_TABLES + 1] = std::array::from_fn(|_| F192::from_narg(&mut narg).unwrap_or_default());
+            let (taus, rate) = Announcement::decode_shape(&scalars).ok()?;
+            return Some(Self::new(taus, rate, ProofKind::ZeroKnowledge));
+        }
         let scalars: [F192; Announcement::LEN] =
             std::array::from_fn(|_| F192::from_narg(&mut narg).unwrap_or_default());
         let announcement = Announcement::decode(&scalars).ok()?;
-        Some(Self::new(announcement.taus, announcement.rate))
+        Some(Self::new(announcement.taus, announcement.rate, ProofKind::Plain))
     }
 }
 
@@ -548,7 +567,9 @@ impl<'p> Tree<'p> {
             return Err(TreeError::SmallTier { arity: a, capacity });
         }
         let tiers = claims.map_or(1, |c| c.tiers());
-        let leaf = || ProofShape::new(program, leaves.taus, leaves.rate).map_err(|e| TreeError::LeafShape(e.into()));
+        let leaf = || {
+            ProofShape::new(program, leaves.taus, leaves.rate, leaves.kind).map_err(|e| TreeError::LeafShape(e.into()))
+        };
         let design = |taus: &[PerRecTable<usize>]| Design::new(leaf()?, arity_0, arity, rate, claims, taus);
         let (design, circuits) = Self::converge(tiers, design)?;
         let columns: Vec<FixedColumns> = (circuits.iter().zip(&design.places))
@@ -674,7 +695,7 @@ impl<'p> Tree<'p> {
                 got: leaves.len(),
             });
         }
-        let shape = LeafShape::new(*d.leaf.taus(), d.leaf.rate());
+        let shape = LeafShape::new(*d.leaf.taus(), d.leaf.rate(), d.leaf.kind());
         let program = d.leaf.program();
         (leaves.iter().enumerate())
             .map(|(index, &Leaf { proof, output })| {

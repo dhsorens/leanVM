@@ -77,7 +77,11 @@ pub fn run(
     // The leaf's run, measured, gives the shape its proofs announce: the tree is checked before anything is proven.
     let stats = leaf.measure();
     let shape = TreeShape {
-        leaf: LeafShape::measured(&stats, leaf_prover.rate()),
+        leaf: if leaf_prover.is_zero_knowledge() {
+            LeafShape::measured(&stats, leaf_prover.rate()).zero_knowledge()
+        } else {
+            LeafShape::measured(&stats, leaf_prover.rate())
+        },
         arity_0,
         arity,
         rate,
