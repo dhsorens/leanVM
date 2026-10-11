@@ -4,7 +4,9 @@
 //! A wire is `local + 2^11 * slot + 2^16 * compression`: 64 compressions of 32 blocks of 2048 wires. A compression's
 //! slots are one `S` block, twenty `H` blocks (half a round each) and one `F` block; the rest are empty.
 
-use fiat_shamir::transcript::{Challenger, ProverState, Receiver, Transmitter, VerifierState};
+use fiat_shamir::merkle::Hash;
+use fiat_shamir::transcript::{Challenger, Proof, ProverState, Receiver, Transmitter, VerifierState};
+use pcs::whir::INITIAL_FOLDING_FACTOR;
 use primitives::field::{F64, F192};
 use primitives::hash::{IV, PARAM_IV, SIGMA, hash};
 use primitives::multilinear::{eq_eval, eq_table, poly_eval};
@@ -19,6 +21,8 @@ pub const DEPTH: usize = 32;
 pub const N_VARS: usize = LOG_BLOCK + LOG_SLOTS + LOG_COMPRESSIONS;
 /// Variables of the committed local matrices: a row, a column, a block type, and `A` or `A + B`.
 pub const INDEX_VARS: usize = 2 * LOG_BLOCK + 3;
+/// Variables of the committed polynomial: the witness and three masks of its size.
+pub const COMMITTED_VARS: usize = N_VARS + 2;
 
 const LOG_BLOCK: usize = 11;
 const LOG_SLOTS: usize = 5;
@@ -47,6 +51,10 @@ const SWAP: usize = 48;
 const DIRECTION: usize = 56 * 32;
 const HIDING: [usize; 3] = [57 * 32, 58 * 32, 59 * 32];
 const N_HIDING: usize = 6;
+/// `S`: the zerocheck's mask, three limbs a coefficient, free wires. Compression 0's are the ones used.
+const MASK: usize = DIRECTION + 112;
+/// The mask is `c + sum_i (g_i x_i + h_i x_i^2)`.
+const MASK_COEFFS: usize = 2 * N_VARS + 1;
 /// `H`: its carry products.
 const PRODUCTS: usize = 40 * 32;
 const CONST: usize = BLOCK - 1;
@@ -138,7 +146,7 @@ impl Block {
         self.row(local, form, one(CONST));
     }
 
-    /// The eight or sixteen words at `base` copy wires of other blocks.
+    /// The `words` words at `base` copy wires of other blocks.
     fn copies(&mut self, base: usize, words: usize) {
         for local in 32 * base..32 * (base + words) {
             self.routed[local] = true;
@@ -224,6 +232,9 @@ impl Block {
             (block.a[u], block.b[u]) = (one(u), one(CONST));
             (block.a[v], block.b[v]) = (one(v), one(CONST));
             (block.a[w], block.b[w]) = (one(u), one(v));
+        }
+        for local in MASK..MASK + 3 * MASK_COEFFS {
+            (block.a[local], block.b[local]) = (one(local), one(CONST));
         }
         block
     }
@@ -330,7 +341,12 @@ pub struct Witness {
     pub z: Vec<F64>,
     a: Vec<F64>,
     b: Vec<F64>,
+    /// The zerocheck mask's coefficients, which `z` holds as wires.
+    mask: Vec<F192>,
 }
+
+/// A compression's free inputs: its sibling, its direction bit, and `x`.
+type Inputs = ([u8; 32], bool, [u8; 32]);
 
 impl Default for Circuit {
     fn default() -> Self {
@@ -366,21 +382,27 @@ impl Circuit {
         table
     }
 
-    /// Run the circuit on `secret`. `random` supplies the hiding wires.
+    /// Run the circuit on `secret`. `random` supplies the hiding wires and the zerocheck's mask.
     pub fn witness(&self, secret: &Secret, random: &mut dyn FnMut() -> u64) -> Witness {
+        // Padding compressions hash zeros.
+        let inputs = |c: usize| match c {
+            0 => (CONSTANTS[0], false, secret.x),
+            1 => (CONSTANTS[1], false, [0; 32]),
+            2..N_HASHES => (secret.siblings[c - 2], (secret.directions >> (c - 2)) & 1 == 1, [0; 32]),
+            _ => ([0; 32], false, [0; 32]),
+        };
+        self.run(&inputs, random)
+    }
+
+    /// Run the circuit on each compression's free inputs.
+    fn run(&self, inputs: &dyn Fn(usize) -> Inputs, random: &mut dyn FnMut() -> u64) -> Witness {
         let mut z = vec![F64::ZERO; N_WIRES];
         let mut a = vec![F64::ZERO; N_WIRES];
         let mut b = vec![F64::ZERO; N_WIRES];
+        let mut mask = Vec::with_capacity(MASK_COEFFS);
         let bit = |v: bool| F64(v as u64);
         for c in 0..1 << LOG_COMPRESSIONS {
-            // The free inputs of this compression. Padding compressions hash zeros.
-            let sibling = match c {
-                0 | 1 => CONSTANTS[c],
-                2..N_HASHES => secret.siblings[c - 2],
-                _ => [0; 32],
-            };
-            let direction = (2..N_HASHES).contains(&c) && (secret.directions >> (c - 2)) & 1 == 1;
-            let x = if c == 0 { secret.x } else { [0; 32] };
+            let (sibling, direction, x) = inputs(c);
             // `S` reads `x` from the `F` block, which comes later.
             for i in 0..256 {
                 z[wire(c, F_SLOT, 32 * AUX + i)] = bit(bit_of(&x, i));
@@ -425,34 +447,53 @@ impl Circuit {
                         (a[u], a[v], a[w], b[w]) = (z[u], z[v], z[u], z[v]);
                     }
                 }
+                if k == S && c == 0 {
+                    for j in 0..MASK_COEFFS {
+                        let limbs: [u64; 3] = std::array::from_fn(|_| random());
+                        for (limb, &value) in limbs.iter().enumerate() {
+                            let at = base + MASK + 3 * j + limb;
+                            (z[at], a[at]) = (F64(value), F64(value));
+                        }
+                        mask.push(F192::new(limbs[0], limbs[1], limbs[2]));
+                    }
+                }
             }
         }
         debug_assert!((0..N_WIRES).all(|i| a[i] * b[i] == z[i]));
-        Witness { z, a, b }
+        Witness { z, a, b, mask }
     }
 }
 
-/// The committed polynomial: the witness, then the mask, then (the second half) nothing.
+/// Variables of the table [`committed`] returns.
+pub const HIDDEN_VARS: usize = COMMITTED_VARS + 2;
+/// The top variable inside a lane of that table's commitment, which the lanes' variables follow.
+const LANE_TOP: usize = HIDDEN_VARS - INITIAL_FOLDING_FACTOR - 1;
+
+/// The committed polynomial `P = (z, m_0, m_1, m_2)`, laid out so that opening it at one point reveals one value.
 ///
-/// Its opening must reveal one value only, so it is committed with a variable of random values below and one above,
-/// the polynomial itself at `(0, ., 1)`: [`hidden_point`] is where a claim on it lands.
-pub fn committed(witness: &Witness, mask: &[F64], random: &mut dyn FnMut() -> u64) -> Vec<F64> {
-    assert_eq!(mask.len(), N_WIRES);
-    let mut table: Vec<F64> = (0..8 * N_WIRES).map(|_| F64(random())).collect();
-    for (i, &value) in witness.z.iter().chain(mask).enumerate() {
-        table[2 * i + 4 * N_WIRES] = value;
-    }
-    table
+/// Two variables of uniformly random values surround it, placed for this commitment's structure: a leaf holds each
+/// lane at one position, so `P` takes the high half of every lane and the random low half hides the leaves; and
+/// the first variable the opening folds pairs `P` with a random twin. [`hidden_point`] is where a claim lands.
+pub fn committed(witness: &Witness, masks: &[Vec<F64>; 3], random: &mut dyn FnMut() -> u64) -> Vec<F64> {
+    assert!(masks.iter().all(|m| m.len() == N_WIRES));
+    let tables = [&witness.z, &masks[0], &masks[1], &masks[2]];
+    (0..1usize << HIDDEN_VARS)
+        .map(|at| {
+            if (at >> LANE_TOP) & 0b11 == 0b01 {
+                let i = at & ((1 << LANE_TOP) - 1) | at >> (LANE_TOP + 2) << LANE_TOP;
+                tables[i >> N_VARS][i % N_WIRES]
+            } else {
+                F64(random())
+            }
+        })
+        .collect()
 }
 
-/// A claim on `(z ‖ m)` as a claim on what [`committed`] returns.
+/// A claim on `P` as a claim on what [`committed`] returns.
 pub fn hidden_point(claim: &Claim) -> Claim {
+    let (low, high) = claim.point.split_at(LANE_TOP);
     Claim {
-        point: [F192::ZERO]
-            .into_iter()
-            .chain(claim.point.iter().copied())
-            .chain([F192::ONE])
-            .collect(),
+        point: [low, &[F192::ONE, F192::ZERO], high].concat(),
         value: claim.value,
     }
 }
@@ -460,7 +501,7 @@ pub fn hidden_point(claim: &Claim) -> Claim {
 /// What a proof leaves to the two commitments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Claims {
-    /// On `(z ‖ m)`, `N_VARS + 1` variables.
+    /// On `P`, [`COMMITTED_VARS`] variables.
     pub witness: Claim,
     /// On [`Circuit::index`].
     pub index: Claim,
@@ -470,7 +511,7 @@ pub struct Claims {
 pub enum VerifyError {
     Zerocheck(zerocheck::VerifyError),
     Transcript(fiat_shamir::transcript::Error),
-    /// The witness and the mask meet the final claim with weights summing to zero.
+    /// A denominator of the final claim is zero.
     Degenerate,
 }
 
@@ -600,7 +641,18 @@ fn comb_table(
             comb[base + j] += pin_weight(batching, &pi, r, bits.len(), j);
         }
     }
+    for (k, weight) in mask_weights(rho).into_iter().enumerate() {
+        comb[wire(0, 0, MASK) + k] += alpha[4] * weight;
+    }
     (comb, marginals)
+}
+
+/// The weight of each mask wire in the mask's value at `rho`: a coefficient's own weight, times each limb's.
+fn mask_weights(rho: &[F192]) -> Vec<F192> {
+    let coefficients = [F192::ONE].into_iter().chain(rho.iter().flat_map(|&x| [x, x.square()]));
+    coefficients
+        .flat_map(|w| [w, w * F192::Y, w * F192::Y.square()])
+        .collect()
 }
 
 /// [`comb_table`]'s multilinear extension at `q`, from the three local-matrix evaluations `values` and the wiring.
@@ -647,63 +699,56 @@ fn comb_at(rho: &[F192], q: &[F192], batching: &Batching, pins: &[(usize, Vec<bo
             power * eq_eval(&batching.pi, &q[..8]) * eq_index(base >> 8, &q[8..])
         }
     }));
-    same_compression * (blocks + constants) + alpha[2] * eq_eval(rho, q) + wiring + pinned
+    // The mask wires sit in one aligned run of 256, in the first block.
+    let low = eq_table(&q[..8]);
+    let mask = alpha[4]
+        * eq_index(MASK >> 8, &q[8..])
+        * sum(&mut mask_weights(rho)
+            .iter()
+            .enumerate()
+            .map(|(k, &w)| w * low[MASK % 256 + k]));
+    same_compression * (blocks + constants) + alpha[2] * eq_eval(rho, q) + wiring + pinned + mask
 }
 
-/// The mask's share of the zerocheck: its summand is `eq(tau, x) * m(x)` under the zerocheck's own `eq(r, x)`.
-struct Mask {
-    /// `m`, with the bound variables folded away.
-    table: Vec<F192>,
-    r: Vec<F192>,
-    tau: Vec<F192>,
-    /// `eq(tau, .)` on the bound variables.
-    bound: F192,
+/// The zerocheck's mask `g(x) = c + sum_i (g_i x_i + h_i x_i^2)`, summed under the zerocheck's own `eq(r, x)`.
+///
+/// Round `i` meets `g_i` and `h_i` for the first time, so its two scalars are uniform whatever the witness.
+/// A multilinear mask times a public factor cannot do this: its round polynomial has a root a verifier knows.
+struct ZeroMask<'a> {
+    /// `c`, then `(g_i, h_i)` for each variable.
+    coeffs: &'a [F192],
+    r: &'a [F192],
 }
 
-impl Mask {
-    /// `sum_x' eq(r, x') eq(tau, x') m(b, x')` for `b = 0, 1`, over the variables past `i`.
-    fn halves(&self, i: usize) -> (F192, F192) {
-        let mut weights = vec![F192::ONE];
-        for (&r, &tau) in self.r[i + 1..].iter().zip(&self.tau[i + 1..]) {
-            let (lo, hi) = ((F192::ONE + r) * (F192::ONE + tau), r * tau);
-            let len = weights.len();
-            weights.extend_from_within(..);
-            for k in 0..len {
-                weights[len + k] = weights[k] * hi;
-                weights[k] *= lo;
-            }
-        }
-        parallel::map_reduce(
-            weights.len(),
-            || (F192::ZERO, F192::ZERO),
-            |k| (weights[k] * self.table[2 * k], weights[k] * self.table[2 * k + 1]),
-            |x, y| (x.0 + y.0, x.1 + y.1),
-        )
+impl ZeroMask<'_> {
+    fn pair(&self, i: usize) -> (F192, F192) {
+        (self.coeffs[1 + 2 * i], self.coeffs[2 + 2 * i])
     }
 
-    /// The whole sum.
+    /// `g` summed over the variables from `from` on, each under its eq weight: `g_i(0) = 0`, so `r_i * g_i(1)`.
+    fn tail(&self, from: usize) -> F192 {
+        (from..self.r.len()).fold(F192::ZERO, |acc, i| {
+            let (g, h) = self.pair(i);
+            acc + self.r[i] * (g + h)
+        })
+    }
+
     fn sum(&self) -> F192 {
-        let (q0, q1) = self.halves(0);
-        let (r, tau) = (self.r[0], self.tau[0]);
-        (F192::ONE + r) * (F192::ONE + tau) * q0 + r * tau * q1
+        self.coeffs[0] + self.tail(0)
     }
 
-    fn bind(&mut self, chi: F192) {
-        let table = &self.table;
-        self.table = parallel::map_collect(table.len() / 2, |k| {
-            table[2 * k] + chi * (table[2 * k] + table[2 * k + 1])
-        });
-        self.bound *= F192::ONE + self.tau[self.r.len() - self.table.len().trailing_zeros() as usize - 1] + chi;
+    fn eval(&self, point: &[F192]) -> F192 {
+        point.iter().enumerate().fold(self.coeffs[0], |acc, (i, &x)| {
+            let (g, h) = self.pair(i);
+            acc + x * (g + x * h)
+        })
     }
 
-    /// `(G(1), G(inf))` of the round after `point`, where `G(X) = bound * eq(tau_i, X) * (q0 + X (q0 + q1))`.
-    fn round(&mut self, point: &[F192]) -> (F192, F192) {
-        if let Some(&chi) = point.last() {
-            self.bind(chi);
-        }
+    /// `(G(1), G(inf))` of the round after `point`: `G(X) = g(point) + g_i X + h_i X^2 + (the later variables)`.
+    fn round(&self, point: &[F192]) -> (F192, F192) {
         let i = point.len();
-        let (q0, q1) = self.halves(i);
-        (self.bound * self.tau[i] * q1, self.bound * (q0 + q1))
+        let (g, h) = self.pair(i);
+        (self.eval(point) + g + h + self.tail(i + 1), h)
     }
 }
 
@@ -711,26 +756,40 @@ fn lift(table: &[F64]) -> Vec<F192> {
     parallel::map_collect(table.len(), |i| F192::from(table[i]))
 }
 
-/// Prove `statement` from a witness of it. The caller has bound the statement and both commitments into `ps`, and
-/// committed `(witness.z ‖ mask)`, `mask` uniformly random.
+/// The transcript's seed: the circuit and the statement.
+fn label(index_root: &Hash, statement: &Statement) -> Vec<u8> {
+    [
+        b"flock-membership".as_slice(),
+        index_root,
+        &statement.y,
+        &statement.root,
+    ]
+    .concat()
+}
+
+/// Prove `statement` from a witness of it, against the circuit committed as `index_root`.
+///
+/// `root` commits `P = (witness.z, masks)` ([`committed`]), the masks uniformly random. Returns the proof and the
+/// two claims it leaves.
 pub fn prove(
     circuit: &Circuit,
+    index_root: &Hash,
     statement: &Statement,
+    root: &Hash,
     witness: &Witness,
-    mask: &[F64],
-    ps: &mut ProverState,
-) -> Claims {
+    masks: &[Vec<F64>; 3],
+) -> (Proof, Claims) {
+    let mut ps = ProverState::from_label(&label(index_root, statement));
+    ps.add_root(root);
+
     // Zerocheck, masked.
     let span = tracing::info_span!("Zerocheck").entered();
     let r = ps.sample_vec(N_VARS);
-    let tau = ps.sample_vec(N_VARS);
-    let mut masking = Mask {
-        table: lift(mask),
-        r: r.clone(),
-        tau: tau.clone(),
-        bound: F192::ONE,
+    let mask = ZeroMask {
+        coeffs: &witness.mask,
+        r: &r,
     };
-    let mask_sum = masking.sum();
+    let mask_sum = mask.sum();
     ps.add_scalar(mask_sum);
     let lambda = ps.sample();
     let (rho, a_eval, b_eval, claim) = zerocheck::prove_tables(
@@ -740,25 +799,22 @@ pub fn prove(
         &r,
         lambda * mask_sum,
         &mut |point| {
-            let (g1, g_inf) = masking.round(point);
+            let (g1, g_inf) = mask.round(point);
             (lambda * g1, lambda * g_inf)
         },
-        ps,
+        &mut ps,
     );
-    masking.bind(rho[N_VARS - 1]);
-    let mu = masking.table[0];
-    ps.add_scalars(&[a_eval, b_eval, mu]);
-    let c_eval = claim + a_eval * b_eval + lambda * eq_eval(&tau, &rho) * mu;
+    let gamma = mask.eval(&rho);
+    ps.add_scalars(&[a_eval, b_eval, gamma]);
+    let c_eval = claim + a_eval * b_eval + lambda * gamma;
     drop(span);
 
-    // Lincheck over every wire, the mask's claim riding it.
+    // Lincheck on the witness plus a random element of the masks' span: a uniformly random table.
     let span = tracing::info_span!("Lincheck").entered();
-    let batching = Batching::sample(ps);
+    let batching = Batching::sample(&mut ps);
     let pins = pins(statement);
     let (comb, marginals) = comb_table(circuit, &rho, &batching, &pins);
     let alpha = batching.alpha;
-    let mut mask_weight = eq_table(&rho);
-    parallel::for_each_mut(&mut mask_weight, |_, e| *e *= alpha[4]);
     debug_assert_eq!(
         comb.iter()
             .zip(&witness.z)
@@ -768,25 +824,35 @@ pub fn prove(
             + alpha[2] * c_eval
             + alpha[3] * used_slots(&instance_tables(&rho)[0])
             + pin_target(&batching, &pins)
+            + alpha[4] * gamma
     );
-    let (q, finals) = lincheck::sum_of_products_sumcheck(vec![(comb, lift(&witness.z)), (mask_weight, lift(mask))], ps);
+    let mask_sums = masks
+        .each_ref()
+        .map(|m| parallel::map_reduce(N_WIRES, || F192::ZERO, |i| comb[i].mul_base(m[i]), |x, y| x + y));
+    ps.add_scalars(&mask_sums);
+    let lambdas = [ps.sample(), ps.sample()];
+    let weights = [lambdas[0], lambdas[1], lambdas[0] * lambdas[1]];
+    let masked = parallel::map_collect(N_WIRES, |i| {
+        (0..3).fold(F192::from(witness.z[i]), |acc, k| {
+            acc + weights[k].mul_base(masks[k][i])
+        })
+    });
+    let (q, _, masked_eval, _) = lincheck::product_sumcheck(comb, masked, 0, &mut ps);
     let local = eq_table(&q[..LOG_BLOCK]);
     let values = marginals.map(|marginal| pcs::ring_switch::inner_product_ext(&marginal, &local));
     ps.add_scalars(&values);
     let kinds = ps.sample_vec(2);
     drop(span);
 
-    let [(w0, z_eval), (w1, mask_eval)] = finals[..] else {
-        unreachable!("two products")
-    };
-    let t = w1 * (w0 + w1).inv();
-    Claims {
+    let [d0, d1] = lambdas.map(|l| F192::ONE + l);
+    let claims = Claims {
         witness: Claim {
-            point: q.iter().copied().chain([t]).collect(),
-            value: z_eval + t * (z_eval + mask_eval),
+            point: [&q[..], &[lambdas[0] * d0.inv(), lambdas[1] * d1.inv()]].concat(),
+            value: masked_eval * (d0 * d1).inv(),
         },
         index: index_claim(&rho, &q, &kinds, alpha[1], &values),
-    }
+    };
+    (ps.into_proof(), claims)
 }
 
 fn index_claim(rho: &[F192], q: &[F192], kinds: &[F192], alpha: F192, values: &[F192]) -> Claim {
@@ -798,28 +864,35 @@ fn index_claim(rho: &[F192], q: &[F192], kinds: &[F192], alpha: F192, values: &[
     Claim { point, value }
 }
 
-/// Verify a proof of `statement` down to its two claims: it holds if both are true of the committed polynomials.
-pub fn verify(statement: &Statement, vs: &mut VerifierState<'_>) -> Result<Claims, VerifyError> {
+/// Verify a proof of `statement` against the circuit committed as `index_root`, down to the witness commitment it
+/// names and two claims: it holds if both are true, one of that commitment and one of the circuit's.
+pub fn verify(index_root: &Hash, statement: &Statement, proof: &Proof) -> Result<(Hash, Claims), VerifyError> {
     let transcript = VerifyError::Transcript;
+    let mut vs = VerifierState::from_label(&label(index_root, statement), proof);
+    let root = vs.next_root().map_err(transcript)?;
     let r = vs.sample_vec(N_VARS);
-    let tau = vs.sample_vec(N_VARS);
     let mask_sum = vs.next_scalar().map_err(transcript)?;
     let lambda = vs.sample();
-    let (rho, claim) = zerocheck::verify_tables(&r, lambda * mask_sum, vs).map_err(VerifyError::Zerocheck)?;
-    let [a_eval, b_eval, mu] = vs.next_scalars(3).map_err(transcript)?[..] else {
+    let (rho, claim) = zerocheck::verify_tables(&r, lambda * mask_sum, &mut vs).map_err(VerifyError::Zerocheck)?;
+    let [a_eval, b_eval, gamma] = vs.next_scalars(3).map_err(transcript)?[..] else {
         unreachable!("three scalars")
     };
-    let c_eval = claim + a_eval * b_eval + lambda * eq_eval(&tau, &rho) * mu;
+    let c_eval = claim + a_eval * b_eval + lambda * gamma;
 
-    let batching = Batching::sample(vs);
+    let batching = Batching::sample(&mut vs);
     let pins = pins(statement);
     let alpha = batching.alpha;
+    let mask_sums = vs.next_scalars(3).map_err(transcript)?;
+    let lambdas = [vs.sample(), vs.sample()];
     let mut claim = a_eval
         + alpha[1] * b_eval
         + alpha[2] * c_eval
         + alpha[3] * used_slots(&instance_tables(&rho)[0])
         + pin_target(&batching, &pins)
-        + alpha[4] * mu;
+        + alpha[4] * gamma
+        + lambdas[0] * mask_sums[0]
+        + lambdas[1] * mask_sums[1]
+        + lambdas[0] * lambdas[1] * mask_sums[2];
     let mut q = Vec::with_capacity(N_VARS);
     for _ in 0..N_VARS {
         let round = vs.next_round_poly(3, claim, None).map_err(transcript)?;
@@ -830,20 +903,28 @@ pub fn verify(statement: &Statement, vs: &mut VerifierState<'_>) -> Result<Claim
     q.reverse();
     let values = vs.next_scalars(N_KINDS).map_err(transcript)?;
     let kinds = vs.sample_vec(2);
+    vs.finish().map_err(transcript)?;
 
-    let w0 = comb_at(&rho, &q, &batching, &pins, &values);
-    let w1 = alpha[4] * eq_eval(&rho, &q);
-    if w0 + w1 == F192::ZERO {
+    // The sumcheck ends on `comb~(q) * (z + l_0 m_0 + l_1 m_1 + l_0 l_1 m_2)~(q)`: one evaluation of `P`, its two
+    // top coordinates at `l_k / (1 + l_k)`, scaled by `(1 + l_0)(1 + l_1)`.
+    let comb = comb_at(&rho, &q, &batching, &pins, &values);
+    let [d0, d1] = lambdas.map(|l| F192::ONE + l);
+    if comb * d0 * d1 == F192::ZERO {
         return Err(VerifyError::Degenerate);
     }
-    let inverse = (w0 + w1).inv();
-    Ok(Claims {
+    let inverse = (comb * d0 * d1).inv();
+    let claims = Claims {
         witness: Claim {
-            point: q.iter().copied().chain([w1 * inverse]).collect(),
+            point: [
+                &q[..],
+                &[lambdas[0] * inverse * comb * d1, lambdas[1] * inverse * comb * d0],
+            ]
+            .concat(),
             value: claim * inverse,
         },
         index: index_claim(&rho, &q, &kinds, alpha[1], &values),
-    })
+    };
+    Ok((root, claims))
 }
 
 #[cfg(test)]
@@ -852,8 +933,6 @@ mod tests {
     use crate::standalone::opening;
     use primitives::multilinear::mle_eval;
     use primitives::test_rng::Rng;
-
-    const LABEL: &[u8] = b"membership-test";
 
     fn secret(rng: &mut Rng) -> Secret {
         let mut bytes = || std::array::from_fn(|_| rng.next_u64() as u8);
@@ -864,6 +943,23 @@ mod tests {
         }
     }
 
+    fn masks(rng: &mut Rng) -> [Vec<F64>; 3] {
+        std::array::from_fn(|_| (0..N_WIRES).map(|_| F64(rng.next_u64())).collect())
+    }
+
+    fn stacked(witness: &Witness, masks: &[Vec<F64>; 3]) -> Vec<F64> {
+        [&witness.z, &masks[0], &masks[1], &masks[2]]
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect()
+    }
+
+    /// The 32 bytes the wires from `base` hold.
+    fn bytes_at(witness: &Witness, base: usize) -> [u8; 32] {
+        std::array::from_fn(|byte| (0..8).fold(0, |acc, i| acc | (witness.z[base + 8 * byte + i].0 as u8) << i))
+    }
+
     /// The circuit computes the hashes the statement names: its `y` and `root` wires are the native ones.
     #[test]
     fn circuit_computes_the_statement() {
@@ -872,11 +968,8 @@ mod tests {
         let statement = secret.statement();
         let witness = Circuit::new().witness(&secret, &mut || rng.next_u64());
         assert!((0..N_WIRES).all(|i| witness.a[i] * witness.b[i] == witness.z[i]));
-        for (base, bits) in pins(&statement) {
-            for (j, &bit) in bits.iter().enumerate() {
-                assert_eq!(witness.z[base + j], F64(bit as u64), "wire {base} + {j}");
-            }
-        }
+        assert_eq!(bytes_at(&witness, wire(0, F_SLOT, 32 * OUT)), statement.y);
+        assert_eq!(bytes_at(&witness, wire(N_HASHES - 1, F_SLOT, 32 * OUT)), statement.root);
     }
 
     /// The verifier's closed form of the lincheck weight is the extension of the table the prover sums against.
@@ -902,46 +995,131 @@ mod tests {
         assert_eq!(comb_at(&rho, &q, &batching, &pins, &values), want);
     }
 
-    /// An honest proof leaves two true claims, and a different statement turns the witness claim false.
+    /// An honest proof leaves two true claims, which the commitments open; under any other statement the same
+    /// proof leaves a false one.
     #[test]
     fn proof_leaves_true_claims() {
         let mut rng = Rng::new(0x3E3B);
         let circuit = Circuit::new();
+        let index = circuit.index();
+        let (index_root, _) = opening::commit(&index);
         let secret = secret(&mut rng);
         let statement = secret.statement();
         let witness = circuit.witness(&secret, &mut || rng.next_u64());
-        let mask: Vec<F64> = (0..N_WIRES).map(|_| F64(rng.next_u64())).collect();
-
-        let mut ps = ProverState::from_label(LABEL);
-        let claims = prove(&circuit, &statement, &witness, &mask, &mut ps);
-        let proof = ps.into_proof();
-        assert_eq!(proof.stream.len(), (2 * N_VARS + 4) + (2 * N_VARS + N_KINDS));
-        let verify_with = |statement: &Statement| {
-            let mut vs = VerifierState::from_label(LABEL, &proof);
-            let claims = verify(statement, &mut vs);
-            assert!(vs.finish().is_ok());
-            claims
-        };
-        assert_eq!(verify_with(&statement), Ok(claims.clone()));
-
-        let stacked: Vec<F64> = witness.z.iter().chain(&mask).copied().collect();
-        assert_eq!(mle_eval(&stacked, &claims.witness.point), claims.witness.value);
-        let index = circuit.index();
-        assert_eq!(mle_eval(&index, &claims.index.point), claims.index.value);
-
-        let mut wrong = statement;
-        wrong.root[7] ^= 1;
-        let claim = verify_with(&wrong).expect("a reduction").witness;
-        assert_ne!(mle_eval(&stacked, &claim.point), claim.value);
-
-        // The hidden commitment answers the same claim.
-        let table = committed(&witness, &mask, &mut || rng.next_u64());
+        let masks = masks(&mut rng);
+        let table = committed(&witness, &masks, &mut || rng.next_u64());
         let (root, data) = opening::commit(&table);
+
+        let (proof, claims) = prove(&circuit, &index_root, &statement, &root, &witness, &masks);
+        assert_eq!(proof.stream.len(), 2 + (2 * N_VARS + 4) + (2 * N_VARS + 3 + N_KINDS));
+        assert_eq!(verify(&index_root, &statement, &proof), Ok((root, claims.clone())));
+
+        let stacked = stacked(&witness, &masks);
+        assert_eq!(mle_eval(&stacked, &claims.witness.point), claims.witness.value);
+        assert_eq!(mle_eval(&index, &claims.index.point), claims.index.value);
         let hidden = hidden_point(&claims.witness);
         assert!(opening::verify(
             &root,
             &hidden,
             &opening::open(&table, &root, &data, &hidden)
         ));
+
+        for flip in 0..2 {
+            let mut wrong = statement;
+            [&mut wrong.y, &mut wrong.root][flip][7] ^= 1;
+            let (_, claims) = verify(&index_root, &wrong, &proof).expect("a reduction");
+            assert_ne!(
+                mle_eval(&stacked, &claims.witness.point),
+                claims.witness.value,
+                "flip {flip}"
+            );
+        }
+    }
+
+    /// The property [`committed`]'s layout rests on: whatever leaves an opening shows, the random low half of a
+    /// lane makes its values there independent. Checked on a small commitment, for adjacent leaves and for random
+    /// ones: the low coefficients' codewords, restricted to as many positions as there are coefficients, have full rank.
+    #[test]
+    fn random_low_half_masks_any_leaves() {
+        use pcs::whir::{LOG_INV_RATE_0, commit};
+        let log_n = 14;
+        let lanes = 1usize << INITIAL_FOLDING_FACTOR;
+        let half = (1usize << log_n) / lanes / 2;
+        let codewords: Vec<Vec<F64>> = (0..half)
+            .map(|coefficient| {
+                let mut table = vec![F64::ZERO; 1 << log_n];
+                table[coefficient] = F64::ONE;
+                let (_, data) = commit(&table, log_n, INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0);
+                // The first block is the last lane of every leaf.
+                data.codeword.chunks(lanes).map(|leaf| leaf[lanes - 1]).collect()
+            })
+            .collect();
+        let mut rng = Rng::new(0x1EAF);
+        let n_leaves = codewords[0].len();
+        for adjacent in [true, false] {
+            let mut leaves: Vec<usize> = if adjacent { (0..half).collect() } else { Vec::new() };
+            while leaves.len() < half {
+                let leaf = rng.next_u64() as usize % n_leaves;
+                if !leaves.contains(&leaf) {
+                    leaves.push(leaf);
+                }
+            }
+            // Gaussian elimination: every column finds a pivot.
+            let mut rows: Vec<Vec<F64>> = leaves
+                .iter()
+                .map(|&l| codewords.iter().map(|c| c[l]).collect())
+                .collect();
+            for col in 0..half {
+                let pivot = (col..half).find(|&r| rows[r][col] != F64::ZERO).expect("full rank");
+                rows.swap(col, pivot);
+                let (inverse, pivot_row) = (rows[col][col].inv(), rows[col].clone());
+                for row in rows.iter_mut().skip(col + 1) {
+                    let factor = row[col] * inverse;
+                    for (value, &p) in row.iter_mut().zip(&pivot_row) {
+                        *value += factor * p;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Each pinned input is enforced: a witness that satisfies every row but swaps in the first compression, or
+    /// hashes `x` with another constant in the second, leaves a false claim, even for the hashes it does reach.
+    #[test]
+    fn pinned_inputs_are_enforced() {
+        let mut rng = Rng::new(0x9175);
+        let circuit = Circuit::new();
+        let secret = secret(&mut rng);
+        let tampered: [&dyn Fn(usize) -> Inputs; 2] = [
+            &|c| {
+                if c == 0 {
+                    (CONSTANTS[0], true, secret.x)
+                } else {
+                    ([0; 32], false, [0; 32])
+                }
+            },
+            &|c| match c {
+                0 => (CONSTANTS[0], false, secret.x),
+                1 => ([0x33; 32], false, [0; 32]),
+                _ => ([0; 32], false, [0; 32]),
+            },
+        ];
+        for (case, inputs) in tampered.into_iter().enumerate() {
+            let witness = circuit.run(inputs, &mut || rng.next_u64());
+            assert!((0..N_WIRES).all(|i| witness.a[i] * witness.b[i] == witness.z[i]));
+            let statement = Statement {
+                y: bytes_at(&witness, wire(0, F_SLOT, 32 * OUT)),
+                root: bytes_at(&witness, wire(N_HASHES - 1, F_SLOT, 32 * OUT)),
+            };
+            let masks = masks(&mut rng);
+            let (proof, _) = prove(&circuit, &[1; 32], &statement, &[2; 32], &witness, &masks);
+            let (_, claims) = verify(&[1; 32], &statement, &proof).expect("a reduction");
+            let stacked = stacked(&witness, &masks);
+            assert_ne!(
+                mle_eval(&stacked, &claims.witness.point),
+                claims.witness.value,
+                "case {case}"
+            );
+        }
     }
 }

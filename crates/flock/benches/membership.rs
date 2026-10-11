@@ -10,7 +10,7 @@
 use std::time::Instant;
 
 use bench::{Plan, Timing};
-use fiat_shamir::transcript::{Proof, ProverState, Receiver, Transmitter, VerifierState};
+use fiat_shamir::transcript::Proof;
 use flock::membership::{self, Circuit, DEPTH, N_VARS, Secret};
 use flock::standalone::opening;
 use primitives::{field::F64, test_rng::Rng};
@@ -18,7 +18,14 @@ use primitives::{field::F64, test_rng::Rng};
 #[global_allocator]
 static ALLOCATOR: bench::Jemalloc = bench::Jemalloc;
 
-const STAGES: [&str; 5] = ["witness", "commit", "sumchecks", "open witness", "open circuit"];
+const STAGES: [&str; 6] = [
+    "witness",
+    "randomness (test generator)",
+    "commit",
+    "sumchecks",
+    "open witness",
+    "open circuit",
+];
 
 fn opening_bytes(proof: &Proof) -> usize {
     let merkle = |m: &fiat_shamir::merkle::PrunedMerklePaths| {
@@ -44,7 +51,6 @@ fn main() {
     let index = circuit.index();
     let (index_root, index_data) = opening::commit(&index);
     let setup_s = t.elapsed().as_secs_f64();
-    let label = [b"membership".as_slice(), &index_root, &statement.y, &statement.root].concat();
 
     let prove_pass = |rng: &mut Rng| {
         let _span = tracing::info_span!("Membership prove").entered();
@@ -59,17 +65,18 @@ fn main() {
         let witness = circuit.witness(&secret, &mut || rng.next_u64());
         timed(&mut secs, t);
 
+        // A prover's masks and padding come from a cryptographic generator; this one is not, and is timed apart.
         let t = Instant::now();
-        let mask: Vec<F64> = (0..1 << N_VARS).map(|_| F64(rng.next_u64())).collect();
-        let table = membership::committed(&witness, &mask, &mut || rng.next_u64());
+        let masks: [Vec<F64>; 3] = std::array::from_fn(|_| (0..1 << N_VARS).map(|_| F64(rng.next_u64())).collect());
+        let table = membership::committed(&witness, &masks, &mut || rng.next_u64());
+        timed(&mut secs, t);
+
+        let t = Instant::now();
         let (root, data) = opening::commit(&table);
         timed(&mut secs, t);
 
         let t = Instant::now();
-        let mut ps = ProverState::from_label(&label);
-        ps.add_root(&root);
-        let claims = membership::prove(&circuit, &statement, &witness, &mask, &mut ps);
-        let proof = ps.into_proof();
+        let (proof, claims) = membership::prove(&circuit, &index_root, &statement, &root, &witness, &masks);
         timed(&mut secs, t);
 
         let t = Instant::now();
@@ -95,13 +102,8 @@ fn main() {
         out
     });
 
-    let ((root, claims), verify_time) = Plan::new(plan.repeat, 0).measure_quiet(|_| {
-        let mut vs = VerifierState::from_label(&label, &proof);
-        let root = vs.next_root().expect("witness root");
-        let claims = membership::verify(&statement, &mut vs).expect("the sumchecks verify");
-        vs.finish().expect("proof fully consumed");
-        (root, claims)
-    });
+    let ((root, claims), verify_time) = Plan::new(plan.repeat, 0)
+        .measure_quiet(|_| membership::verify(&index_root, &statement, &proof).expect("the sumchecks verify"));
     let (_, openings_time) = Plan::new(plan.repeat, 0).measure_quiet(|_| {
         assert!(opening::verify(
             &root,

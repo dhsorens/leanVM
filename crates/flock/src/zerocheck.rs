@@ -448,6 +448,7 @@ fn table_message(a: &[F192], b: &[F192], c: &[F192], r_eq: &[F192]) -> (F192, F1
 /// `extra` adds `(G(1), G(inf))` of another summand under the same eq factor to each round, given the challenges so far:
 /// a mask, whose sum the caller folded into `claim`. Returns the point, `(â, b̂)` and the final claim.
 /// `r` must be sampled: a table of field elements, unlike one of bits, leaves no room for fixed coordinates.
+/// Panics on a coordinate equal to one, which a sampled point meets with negligible probability.
 pub fn prove_tables(
     mut a: Vec<F192>,
     mut b: Vec<F192>,
@@ -459,6 +460,8 @@ pub fn prove_tables(
 ) -> (Vec<F192>, F192, F192, F192) {
     let n = r.len();
     assert!(n >= 1 && [&a, &b, &c].iter().all(|t| t.len() == 1 << n));
+    // At an eq coordinate of 1 the claim no longer fixes `G(0)`, which no round here computes.
+    assert!(r.iter().all(|&x| x != F192::ONE), "an eq coordinate of 1");
     let mut point = Vec::with_capacity(n);
     let (mut a_nxt, mut b_nxt, mut c_nxt) = (Vec::new(), Vec::new(), Vec::new());
     if a.len() >= 1024 {
