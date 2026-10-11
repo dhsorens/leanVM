@@ -22,6 +22,9 @@
 //! [`standalone`] runs the same reduction with no embedding protocol: every round multilinear, the matrices
 //! behind a commitment instead of a walk, and two plain evaluation claims left to open.
 //!
+//! [`membership`] is a different circuit under the same two sumchecks: a zero-knowledge proof of a preimage and
+//! a Merkle path, with one bit a wire of `GF(2^64)`.
+//!
 //! BLAKE2s is a 32-bit ARX round whose XORs and rotations are free over GF(2),
 //! so its only nonlinear constraints are the product bits of the modular ADDs.
 //! The private `gf2` module owns that part: the wire word and the two adder
@@ -31,6 +34,7 @@
 mod gf2;
 pub mod hash;
 pub mod lincheck;
+pub mod membership;
 /// The circuit driven through the whole reduction. A `src` module rather than
 /// its own test binary so it shares the process, and so the slow
 /// [`hash::matrices`] build, with the unit tests.

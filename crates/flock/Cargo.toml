@@ -25,3 +25,7 @@ harness = false
 [[bench]]
 name = "standalone"
 harness = false
+
+[[bench]]
+name = "membership"
+harness = false
