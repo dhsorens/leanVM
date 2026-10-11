@@ -25,6 +25,7 @@
 //! Every subspace-polynomial value lives in `K`; it is lifted into `E` only where it scales an accumulator in `E`.
 
 use crate::ntt::{AdditiveNttF64, transposed_butterfly_lanes};
+use fiat_shamir::arith::{Arith, Native};
 use parallel::SendPtr;
 use primitives::field::{F64, F192, F192Unreduced};
 use primitives::multilinear::{eq_table, inner_product, inner_product_base};
@@ -76,6 +77,87 @@ impl Normalizers {
                 s *= s + self.at_roots[k - 1];
             }
             *o = s * self.inverses[k];
+        }
+    }
+}
+
+/// `W_m(s)` for `s = F64(2^(m + r))`, the first basis element past a `2^(m + r)`-point domain.
+///
+/// A hiding commitment multiplies its padding by `W_m(X + s) = W_m(X) + W_m(s)`.
+///
+/// Why the shift: that factor must vanish nowhere on the domain.
+///
+/// - `W_m` vanishes on the domain's first `2^m` points.
+/// - It is `F_2`-linear and injective on the span of the basis elements from `m` up.
+/// - So it maps the domain onto the span of `W_m(2^b)`, `m <= b < m + r`, which `W_m(s)` lies outside.
+pub(crate) fn padding_shift(log_msg_cols: usize, log_inv_rate: usize) -> F64 {
+    let mut w = vec![F64::ZERO; log_msg_cols + 1];
+    Normalizers::new(log_msg_cols).normalized_at(F64(1 << (log_msg_cols + log_inv_rate)), &mut w);
+    w[log_msg_cols]
+}
+
+/// The padding of a hiding commitment's level-0 lanes, as both sides take its share off a folded row.
+///
+/// A lane of `2^m` words is padded by `W_m(X + s) R(X)`, `R` of degree below `k` in the novel basis.
+pub(crate) struct Padding {
+    /// The log of a lane's words, `m`.
+    log_msg_cols: usize,
+    /// `W_m(s)`, the padding factor's shift.
+    shift: F64,
+    /// The normalizers of the subspace polynomials up to `W_m`.
+    normalizers: Normalizers,
+}
+
+impl Padding {
+    /// The padding of lanes of `2^log_msg_cols` words at rate `2^-log_inv_rate`.
+    pub(crate) fn new(log_msg_cols: usize, log_inv_rate: usize) -> Self {
+        Self {
+            log_msg_cols,
+            shift: padding_shift(log_msg_cols, log_inv_rate),
+            normalizers: Normalizers::new(log_msg_cols),
+        }
+    }
+
+    /// The share at `x` of a padding whose lane fold is `g1`.
+    ///
+    /// ```text
+    ///     W_m(x + s) * sum_j g1[j] X_j(x)
+    /// ```
+    ///
+    /// Adding it, which in characteristic two takes it off, leaves the folded data's codeword.
+    ///
+    /// The same code runs natively, in the verifier, and in the recursion machine's rows.
+    pub(crate) fn share<A: Arith>(&self, ar: &mut A, x: A::E, g1: &[A::E]) -> A::E {
+        let m = self.log_msg_cols;
+        let (sks, inverses) = (self.normalizers.at_roots(), self.normalizers.inverses());
+        // W_b(x) for the bits of j < k, then W_m(x), by the subspace polynomials' recurrence.
+        let bits = g1.len().next_power_of_two().trailing_zeros() as usize;
+        let mut s = x;
+        let mut w = Vec::with_capacity(bits);
+        for b in 0..=m {
+            if b > 0 {
+                let u = ar.mul_const(s, F192::from(sks[b - 1]));
+                s = ar.mul_add(s, s, u);
+            }
+            if b < bits {
+                w.push(ar.mul_const(s, F192::from(inverses[b])));
+            }
+        }
+        let w_m = ar.mul_const(s, F192::from(inverses[m]));
+        let w_m = ar.add_const(w_m, F192::from(self.shift));
+        // sum_j g1[j] X_j(x), folding the top bit of j at a time: X_j is the product of W_b over the bits b of j.
+        let mut g = g1.to_vec();
+        while g.len() > 1 {
+            let half = g.len().next_power_of_two() >> 1;
+            let w_b = w[half.trailing_zeros() as usize];
+            for j in 0..g.len() - half {
+                g[j] = ar.mul_add(w_b, g[j + half], g[j]);
+            }
+            g.truncate(half);
+        }
+        match g.first() {
+            Some(&p) => ar.mul(w_m, p),
+            None => ar.zero(),
         }
     }
 }
@@ -147,6 +229,14 @@ impl<'a> QueryBatch<'a> {
         } else {
             self.expanded(log_msg_cols)
         }
+    }
+
+    /// What a padding whose lane fold is `g1` adds to the batch's claimed sum: each query's share, weighted.
+    pub(crate) fn padding_correction(&self, padding: &Padding, g1: &[F192]) -> F192 {
+        (self.positions.iter().zip(self.weights)).fold(F192::ZERO, |acc, (&q, &weight)| {
+            let x = F192::from(F64(q as u64));
+            acc + weight * padding.share(&mut Native, x, g1)
+        })
     }
 
     /// Whether the transposed encode computes the induced weight.

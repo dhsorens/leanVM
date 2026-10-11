@@ -15,7 +15,7 @@
 
 use crate::verifier::OpeningVerifier;
 use crate::whir::config::{Config, ConfigError};
-use crate::whir::query::Normalizers;
+use crate::whir::query::{Normalizers, Padding};
 use fiat_shamir::TranscriptError;
 use fiat_shamir::arith::RoundPolynomial;
 use primitives::field::F192;
@@ -62,6 +62,12 @@ pub enum WhirError {
     /// The final folded value does not match the claimed evaluation.
     #[error("the final sumcheck claim does not match the opening")]
     TerminalMismatch,
+    /// The running claim a hiding opening reveals after the lane fold is not the one its rounds reach.
+    #[error("the revealed running claim does not match the lane fold")]
+    RevealedClaim,
+    /// A weighted claim's weight is no power of two of committed words.
+    #[error("a weighted claim's weight is no power of two of committed words")]
+    WeightedClaim,
 }
 
 /// A round's quadratic `c + b X + a X^2`.
@@ -151,6 +157,14 @@ struct WhirReplay<'c, V: OpeningVerifier> {
 /// The level-0 rows a query batch opened, one per query, of committed words.
 struct BaseRows<K>(Vec<Vec<K>>);
 
+/// A hiding opening's padding, folded by the lane challenges.
+struct FoldedPadding<E> {
+    /// The fold `g_1`, one element per padding coefficient.
+    g1: Vec<E>,
+    /// The padding, whose share each query takes off.
+    padding: Padding,
+}
+
 /// A later level's rows a query batch opened, one per query, of elements of `E`.
 struct ExtRows<E>(Vec<Vec<E>>);
 
@@ -170,10 +184,15 @@ struct ExtRows<E>(Vec<Vec<E>>);
 /// - A level's induced weight: its sum is recomputed from its opened rows, its value taken in closed form.
 /// - The absent lanes: the L0 rows the proof stores are the `n_lanes` committed ones.
 ///
+/// Under a configuration that pads, the commitment is a hiding one, and after the lane fold's last challenge:
+///
+/// - a transcript still hidden is revealed: the verifier reads the running claim and checks it;
+/// - it reads the padding's lane fold, and each level-0 query takes the padding's share off its folded row.
+///
 /// # Errors
 ///
 /// - A lane count a leaf cannot hold, or a configuration that does not fit the witness.
-/// - A malformed stream, or a terminal claim the opening does not reproduce.
+/// - A malformed stream, a revealed claim the lane fold does not reach, or a terminal claim the opening does not reproduce.
 pub(crate) fn verify<V: OpeningVerifier>(
     v: &mut V,
     config: &Config,
@@ -319,7 +338,16 @@ impl<'c, V: OpeningVerifier> WhirReplay<'c, V> {
         let mut n_current = log_n
             .checked_sub(initial_k)
             .ok_or(WhirError::InvalidShape { level: 0 })?;
-        let lane_fold = w.fold_rounds(v, initial_k)?;
+        // The lane fold.
+        // A hiding opening reveals between its last challenge and the next round's message.
+        let mut lane_fold = w.fold_rounds(v, initial_k - 1)?;
+        lane_fold.push(w.fold_challenge(v));
+        let padding = if config.padding() > 0 {
+            Some(w.reveal(v, n_current)?)
+        } else {
+            None
+        };
+        w.quad = Quad::recv(v, w.t_r)?;
         let root_1 = v.next_root()?;
         let oods = (0..config.ood_samples()[1])
             .map(|_| Ood::replay(v, n_current))
@@ -332,7 +360,7 @@ impl<'c, V: OpeningVerifier> WhirReplay<'c, V> {
             for row in &mut rows {
                 row.reverse();
             }
-            Ok(BaseRows(rows).enforced_sum(v, &lane_fold, weights))
+            Ok(BaseRows(rows).enforced_sum(v, &lane_fold, weights, queries, padding.as_ref()))
         })?;
 
         let mut oracle = w.oracle(root_1, 0, n_current)?;
@@ -392,13 +420,36 @@ impl<'c, V: OpeningVerifier> WhirReplay<'c, V> {
     fn fold_rounds(&mut self, v: &mut V, k: usize) -> Result<Vec<V::E>, TranscriptError> {
         let mut rs = Vec::with_capacity(k);
         for _ in 0..k {
-            let ri = v.verifier_message();
-            self.t_r = self.quad.eval(v, ri);
+            rs.push(self.fold_challenge(v));
             self.quad = Quad::recv(v, self.t_r)?;
-            rs.push(ri);
         }
-        self.ris.extend_from_slice(&rs);
         Ok(rs)
+    }
+
+    /// A fold round's challenge, and the running claim it takes the round's quadratic to.
+    fn fold_challenge(&mut self, v: &mut V) -> V::E {
+        let ri = v.verifier_message();
+        self.t_r = self.quad.eval(v, ri);
+        self.ris.push(ri);
+        ri
+    }
+
+    /// What a hiding opening reveals after the lane fold.
+    ///
+    /// - A transcript still hidden is revealed: the running claim, in the clear, must be the one the rounds reached.
+    /// - Then the padding's lane fold.
+    fn reveal(&mut self, v: &mut V, log_msg_cols: usize) -> Result<FoldedPadding<V::E>, WhirError> {
+        if v.is_hidden() {
+            // Every message from here on is public.
+            v.set_hidden(false);
+            let a = v.prover_message()?;
+            v.ensure_eq(self.t_r, a, || WhirError::RevealedClaim)?;
+            self.t_r = a;
+        }
+        Ok(FoldedPadding {
+            g1: v.prover_messages(self.config.padding())?,
+            padding: Padding::new(log_msg_cols, self.config.log_inv_rates()[0]),
+        })
     }
 
     /// One query batch, then the batching of the level's claims.
@@ -539,16 +590,33 @@ impl<'c, V: OpeningVerifier> WhirReplay<'c, V> {
 }
 
 impl<K: Copy> BaseRows<K> {
-    /// The level-0 enforced sum over rows of `K`: `sum_i w_i <row_i, eq(point, .)>`.
+    /// The level-0 enforced sum over rows of `K`.
+    ///
+    /// ```text
+    ///     sum_i w_i (<row_i, eq(point, .)> + p(q_i))
+    /// ```
+    ///
+    /// `p` is the padding's share of the folded codeword, zero without padding.
     ///
     /// Each row's inner product is taken alone, then scaled by its weight.
     /// So the first query's weight, one, costs no product in rows.
-    fn enforced_sum<V: OpeningVerifier<K = K>>(&self, v: &mut V, point: &[V::E], weights: &[V::E]) -> V::E {
+    fn enforced_sum<V: OpeningVerifier<K = K>>(
+        &self,
+        v: &mut V,
+        point: &[V::E],
+        weights: &[V::E],
+        queries: &[V::Query],
+        padding: Option<&FoldedPadding<V::E>>,
+    ) -> V::E {
         let rows = &self.0;
         let eq = v.eq_table_prefix(point, rows[0].len());
         let zero = v.zero();
-        (rows.iter().zip(weights)).fold(zero, |acc, (row, &w)| {
-            let inner = (eq.iter().zip(row)).fold(zero, |s, (&e, &k)| v.mul_k_add(e, k, s));
+        (rows.iter().zip(weights).zip(queries)).fold(zero, |acc, ((row, &w), query)| {
+            let start = padding.map_or(zero, |p| {
+                let x = v.query_point(query);
+                p.padding.share(v, x, &p.g1)
+            });
+            let inner = (eq.iter().zip(row)).fold(start, |s, (&e, &k)| v.mul_k_add(e, k, s));
             v.mul_add(w, inner, acc)
         })
     }

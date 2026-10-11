@@ -18,7 +18,7 @@ use super::sample_queries_ordered;
 use super::sumcheck::{InitialWeight, SumcheckProver, send_msg};
 use crate::merkle::PrunedMerklePaths;
 use crate::whir::config::Config;
-use crate::whir::query::QueryBatch;
+use crate::whir::query::{Padding, QueryBatch};
 use fiat_shamir::ProverState;
 use primitives::field::{F64, F192, powers};
 use primitives::multilinear::eq_table;
@@ -68,10 +68,21 @@ fn ext_row_words(row: &[F192]) -> Vec<F64> {
 /// - A weight nonzero out there gives a proof that fails at the terminal check.
 /// - The stacked opening meets this by keeping every claim's support inside the placed stack.
 ///
+/// # Hiding
+///
+/// Under a configuration that pads, the commitment is a hiding one, and after the lane fold's last challenge:
+///
+/// - a transcript still hidden is revealed: the running claim is sent in the clear;
+/// - the padding's lane fold is sent, and level 0's queries take its share off their rows.
+///
 /// # Transcript
 ///
 /// Each level's Merkle openings travel as one hint, which is not absorbed.
 /// The caller has already transmitted the L0 root.
+///
+/// # Panics
+///
+/// Panics on a shape the commitment does not have, or a padding other than the configuration's.
 pub(crate) fn prove(
     config: &Config,
     log_n: usize,
@@ -100,6 +111,12 @@ pub(crate) fn prove(
     );
     assert_eq!(l0_codeword.len(), block_len_0 * n_lanes);
     assert_eq!(l0_tree.len(), 2 * block_len_0 - 1);
+    let pad_k = config.padding();
+    assert_eq!(
+        l0.pads.len(),
+        pad_k * n_lanes,
+        "the commitment's padding is the opening's"
+    );
 
     // Invariant: nothing is absorbed on entry, since the state already determines the commitment and the target.
     // - The commitment was bound when its root was transmitted.
@@ -126,11 +143,25 @@ pub(crate) fn prove(
     send_msg(ps, start_msg, target);
 
     let mut r_lane_fold = Vec::with_capacity(initial_k);
+    let mut g1 = Vec::new();
     for j in 0..initial_k {
         let r_j = ps.verifier_message();
         let msg = sumcheck_span.in_scope(|| sc_prover.fold_lane(r_j, lane_block, j + 1 == initial_k));
-        send_msg(ps, msg, sc_prover.claim());
         r_lane_fold.push(r_j);
+        if j + 1 == initial_k && pad_k > 0 {
+            // A hidden transcript ends here: the running claim goes in the clear, and so does every later message.
+            if ps.is_hidden() {
+                ps.set_hidden(false);
+                ps.prover_message(&sc_prover.claim());
+            }
+            // The padding folded as the lanes are: g_1[j] = sum_u eq(r, u) pad_u[j].
+            let eq = eq_table(&r_lane_fold);
+            g1 = (0..pad_k)
+                .map(|j| (0..n_lanes).fold(F192::ZERO, |acc, u| acc + eq[u].mul_base(l0.pads[u * pad_k + j])))
+                .collect();
+            ps.prover_messages(&g1);
+        }
+        send_msg(ps, msg, sc_prover.claim());
     }
     drop(sumcheck_span);
 
@@ -180,8 +211,13 @@ pub(crate) fn prove(
     // Induce the L0 consistency weight, and its claimed sum from the opened rows.
     let span = tracing::info_span!("Induce", level = 0).entered();
     let batch_0 = QueryBatch::new(&queries_0, &weights_0);
-    let enforced_sum_0 = batch_0.claimed_sum(&opened_rows_0, &r_lane_fold);
+    let mut enforced_sum_0 = batch_0.claimed_sum(&opened_rows_0, &r_lane_fold);
     let basis_0_induced = batch_0.induced_weight(n1, log_inv_rate_0);
+    // The opened rows fold the padded codeword.
+    // Taking the padding's share off each query leaves the folded data's codeword, so the weight is unchanged.
+    if pad_k > 0 {
+        enforced_sum_0 += batch_0.padding_correction(&Padding::new(n1, log_inv_rate_0), &g1);
+    }
     drop(span);
 
     // Introduce the consistency claim, then batch the level's pending claims with powers of `lambda_0`.
