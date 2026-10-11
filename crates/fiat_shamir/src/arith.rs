@@ -213,6 +213,23 @@ pub trait Verifier: Arith {
     /// Returns an error when the proof holds data past what was read and the verifier checks values.
     fn check_eof(&mut self) -> Result<(), TranscriptError>;
 
+    /// Mark the prover messages read from now on as sent under one-time-pad keys, or not.
+    ///
+    /// - A verifier of values reads a padded scalar as it is.
+    /// - A verifier that records a zero-knowledge proof's checks holds it as its value plus an unknown key.
+    ///
+    /// By default the section is not tracked.
+    fn set_hidden(&mut self, hidden: bool) {
+        let _ = hidden;
+    }
+
+    /// Whether the prover messages read next were sent under one-time-pad keys.
+    ///
+    /// The opening of a hiding commitment reveals its claim exactly when it was hidden.
+    fn is_hidden(&self) -> bool {
+        false
+    }
+
     /// Run `f` as a named stage of the verifier.
     ///
     /// A verifier that records its failed checks rather than refusing reports each under its stages' names.
@@ -404,5 +421,13 @@ impl<H: DuplexSponge> Verifier for VerifierState<'_, H> {
 
     fn check_eof(&mut self) -> Result<(), TranscriptError> {
         Self::check_eof(self)
+    }
+
+    fn set_hidden(&mut self, hidden: bool) {
+        Self::set_hidden(self, hidden);
+    }
+
+    fn is_hidden(&self) -> bool {
+        Self::is_hidden(self)
     }
 }

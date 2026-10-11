@@ -26,6 +26,8 @@ pub struct VerifierState<'a, H: DuplexSponge = Blake2sDuplex> {
     hints_read: usize,
     /// The first error, once one occurred.
     poison: Option<TranscriptError>,
+    /// Whether the messages read next were sent under one-time-pad keys.
+    hidden: bool,
 }
 
 impl<'a> VerifierState<'a> {
@@ -59,6 +61,7 @@ impl<'a, H: DuplexSponge> VerifierState<'a, H> {
             messages_read: 0,
             hints_read: 0,
             poison: None,
+            hidden: false,
         }
     }
 
@@ -177,6 +180,19 @@ impl<'a, H: DuplexSponge> VerifierState<'a, H> {
         let nonce: u64 = self.prover_message()?;
         let worked = pow.verify(&challenge, nonce);
         self.guard(worked.then_some(()).ok_or(TranscriptError::PowFailed { bits }))
+    }
+
+    /// Mark the messages read next as sent under one-time-pad keys, or not.
+    ///
+    /// A verifier of values reads a padded message as it is: this only tracks the transcript's section.
+    pub const fn set_hidden(&mut self, hidden: bool) {
+        self.hidden = hidden;
+    }
+
+    /// Whether the messages read next were sent under one-time-pad keys.
+    #[must_use]
+    pub const fn is_hidden(&self) -> bool {
+        self.hidden
     }
 
     /// Check that the whole proof was read.

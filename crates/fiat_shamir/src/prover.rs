@@ -6,6 +6,7 @@ use crate::duplex::{Blake2sDuplex, DuplexSponge};
 use crate::pow::ProofOfWork;
 use crate::proof::ProofTranscript;
 use crate::session::SessionId;
+use primitives::field::F192;
 
 /// The prover's transcript: a sponge, and the proof it writes.
 ///
@@ -13,11 +14,48 @@ use crate::session::SessionId;
 /// So no message can reach the proof unbound, or be bound without being sent.
 ///
 /// It is not `Clone`: a copied prover state would let a prover rewind and re-draw challenges.
+///
+/// # Hidden messages
+///
+/// A zero-knowledge prover sends some scalars under a one-time pad.
+///
+/// - While hiding is on, each message is XORed with the pad's next key, used once.
+/// - A key is one element of `E`, so it pads one 24-byte message: in `E`, XOR is addition, and `x` travels as `x + key`.
+/// - The sponge absorbs the padded bytes, which are all the proof carries.
 pub struct ProverState<H: DuplexSponge = Blake2sDuplex> {
     /// The duplex sponge.
     sponge: H,
     /// The proof written so far.
     proof: ProofTranscript,
+    /// The one-time pad of a zero-knowledge prover.
+    pad: Option<OneTimePad>,
+}
+
+/// One-time-pad keys, each used once, in order, while hiding is on.
+struct OneTimePad {
+    /// Every key, one element of `E` each.
+    keys: Vec<F192>,
+    /// Keys used so far.
+    used: usize,
+    /// Whether the next message travels under a key.
+    hiding: bool,
+}
+
+impl OneTimePad {
+    /// XOR `bytes` with the next key's encoding.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a message other than one key wide, or when the keys run out.
+    fn apply(&mut self, bytes: &mut [u8]) {
+        let key = *self.keys.get(self.used).expect("a key for every hidden message");
+        let key = key.encode();
+        assert_eq!(bytes.len(), key.len(), "a key pads one element of E");
+        for (b, k) in bytes.iter_mut().zip(key) {
+            *b ^= k;
+        }
+        self.used += 1;
+    }
 }
 
 impl ProverState {
@@ -43,6 +81,7 @@ impl<H: DuplexSponge> ProverState<H> {
         let mut state = Self {
             sponge: H::init(session.0),
             proof: ProofTranscript::default(),
+            pad: None,
         };
         let encoded = instance.encode();
         assert!(!encoded.as_ref().is_empty(), "an instance has bytes");
@@ -56,10 +95,68 @@ impl<H: DuplexSponge> ProverState<H> {
     }
 
     /// Send a message: absorb it and write it to the proof.
+    ///
+    /// While hiding is on, it travels under the pad's next key.
+    ///
+    /// # Panics
+    ///
+    /// Panics while hiding on a message other than one element of `E`, or when the keys run out.
     pub fn prover_message(&mut self, value: &impl Encoding) {
-        let encoded = value.encode();
-        self.sponge.absorb(encoded.as_ref());
-        self.proof.narg.extend_from_slice(encoded.as_ref());
+        let mut bytes = value.encode().as_ref().to_vec();
+        if let Some(pad) = self.pad.as_mut().filter(|pad| pad.hiding) {
+            pad.apply(&mut bytes);
+        }
+        self.send(&bytes);
+    }
+
+    /// Absorb bytes and write them to the proof.
+    fn send(&mut self, encoded: &[u8]) {
+        self.sponge.absorb(encoded);
+        self.proof.narg.extend_from_slice(encoded);
+    }
+
+    /// Take the one-time-pad keys of a zero-knowledge proof: the `i`-th message sent hidden is padded by `keys[i]`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if keys were already given, which would reuse them.
+    pub fn set_keys(&mut self, keys: Vec<F192>) {
+        assert!(self.pad.is_none(), "a prover takes its keys once");
+        self.pad = Some(OneTimePad {
+            keys,
+            used: 0,
+            hiding: false,
+        });
+    }
+
+    /// Turn hiding on or off for the messages sent next.
+    ///
+    /// # Panics
+    ///
+    /// Panics on turning hiding on without keys: no message may go out in the clear by mistake.
+    pub fn set_hidden(&mut self, hidden: bool) {
+        match &mut self.pad {
+            Some(pad) => pad.hiding = hidden,
+            None => assert!(!hidden, "hiding needs keys"),
+        }
+    }
+
+    /// Whether the messages sent next are hidden.
+    #[must_use]
+    pub fn is_hidden(&self) -> bool {
+        self.pad.as_ref().is_some_and(|pad| pad.hiding)
+    }
+
+    /// Keys used so far.
+    #[must_use]
+    pub fn keys_used(&self) -> usize {
+        self.pad.as_ref().map_or(0, |pad| pad.used)
+    }
+
+    /// The proof written so far, which a verifier may replay.
+    #[must_use]
+    pub const fn proof(&self) -> &ProofTranscript {
+        &self.proof
     }
 
     /// Send messages, one after another.
@@ -98,6 +195,8 @@ impl<H: DuplexSponge> ProverState<H> {
     ///
     /// Zero bits is no step at all: nothing is drawn or sent.
     ///
+    /// The nonce is public, so it travels in the clear even while hiding is on.
+    ///
     /// # Panics
     ///
     /// Panics past the largest difficulty one digest word holds.
@@ -108,7 +207,7 @@ impl<H: DuplexSponge> ProverState<H> {
         }
         let challenge: [u8; 32] = self.verifier_message();
         let nonce = pow.grind(&challenge);
-        self.prover_message(&nonce);
+        self.send(&nonce.encode());
     }
 
     /// The messages written so far.
@@ -127,5 +226,82 @@ impl<H: DuplexSponge> ProverState<H> {
 impl<H: DuplexSponge> Challenger for ProverState<H> {
     fn verifier_message<T: FromUniform>(&mut self) -> T {
         Self::verifier_message(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::verifier::VerifierState;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    const INSTANCE: u64 = 3;
+
+    fn session() -> SessionId {
+        SessionId::new(b"hidden-scalars-test")
+    }
+
+    #[test]
+    fn a_hidden_scalar_travels_padded_and_is_bound_as_sent() {
+        // Fixture: two keys, and a run that sends one scalar clear, two hidden, then one clear again.
+        //
+        //     sent:   a        b + k0    c + k1    d
+        //     hidden: no       yes       yes       no
+        let keys = [F192::new(10, 20, 30), F192::new(40, 50, 60)];
+        let [a, b, c, d] = [1, 2, 3, 4].map(|i| F192::new(i, 0, 0));
+        let mut ps = ProverState::new(&session(), &INSTANCE);
+        ps.set_keys(keys.to_vec());
+        ps.prover_message(&a);
+        ps.set_hidden(true);
+        ps.prover_message(&b);
+        ps.prover_message(&c);
+        // A nonce is public: it travels in the clear between the hidden scalars.
+        ps.challenge_pow(4);
+        ps.set_hidden(false);
+        ps.prover_message(&d);
+        let challenge: F192 = ps.verifier_message();
+        assert_eq!(ps.keys_used(), 2);
+        let proof = ps.into_proof();
+
+        // The verifier reads the padded values, and draws the prover's challenge from them.
+        let mut vs = VerifierState::new(&session(), &INSTANCE, &proof);
+        let read: [F192; 3] = std::array::from_fn(|_| vs.prover_message().unwrap());
+        assert_eq!(read, [a, b + keys[0], c + keys[1]]);
+        vs.check_pow(4).unwrap();
+        assert_eq!(vs.prover_message::<F192>(), Ok(d));
+        assert_eq!(vs.verifier_message::<F192>(), challenge);
+        vs.check_eof().unwrap();
+    }
+
+    #[test]
+    fn hiding_refuses_what_it_cannot_pad() {
+        let refused = |run: fn(&mut ProverState)| {
+            let mut ps = ProverState::new(&session(), &INSTANCE);
+            catch_unwind(AssertUnwindSafe(|| run(&mut ps))).is_err()
+        };
+
+        // A digest is no scalar of `E`: a root sent while hiding is on would otherwise leak or be mangled.
+        assert!(refused(|ps| {
+            ps.set_keys(vec![F192::ONE]);
+            ps.set_hidden(true);
+            ps.prover_message(&[0u8; 32]);
+        }));
+
+        // One key, two hidden scalars: the second has no key and must not go out in the clear.
+        assert!(refused(|ps| {
+            ps.set_keys(vec![F192::ONE]);
+            ps.set_hidden(true);
+            ps.prover_message(&F192::ONE);
+            ps.prover_message(&F192::ONE);
+        }));
+
+        // No keys at all: hiding cannot be turned on.
+        assert!(refused(|ps| ps.set_hidden(true)));
+
+        // Keys are given once, so no key is ever reused.
+        assert!(refused(|ps| {
+            ps.set_keys(vec![F192::ONE]);
+            ps.set_keys(vec![F192::ONE]);
+        }));
     }
 }
