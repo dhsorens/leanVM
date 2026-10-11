@@ -311,6 +311,16 @@ pub struct Secret {
 }
 
 impl Secret {
+    /// Compression `c`'s free inputs. Padding compressions hash zeros.
+    fn inputs(&self, c: usize) -> Inputs {
+        match c {
+            0 => (CONSTANTS[0], false, self.x),
+            1 => (CONSTANTS[1], false, [0; 32]),
+            2..N_HASHES => (self.siblings[c - 2], (self.directions >> (c - 2)) & 1 == 1, [0; 32]),
+            _ => ([0; 32], false, [0; 32]),
+        }
+    }
+
     /// The statement this secret proves, by hashing natively.
     pub fn statement(&self) -> Statement {
         let pair = |left: &[u8; 32], right: &[u8; 32]| hash(&[*left, *right].concat());
@@ -407,14 +417,7 @@ impl Circuit {
 
     /// Run the circuit on `secret`. `random` supplies the hiding wires and the zerocheck's mask.
     pub fn witness(&self, secret: &Secret, random: &mut dyn FnMut() -> u64) -> Witness {
-        // Padding compressions hash zeros.
-        let inputs = |c: usize| match c {
-            0 => (CONSTANTS[0], false, secret.x),
-            1 => (CONSTANTS[1], false, [0; 32]),
-            2..N_HASHES => (secret.siblings[c - 2], (secret.directions >> (c - 2)) & 1 == 1, [0; 32]),
-            _ => ([0; 32], false, [0; 32]),
-        };
-        self.run(&inputs, random)
+        self.run(&|c| secret.inputs(c), random)
     }
 
     /// Run the circuit on each compression's free inputs.
@@ -726,12 +729,10 @@ fn comb_at(rho: &[F192], q: &[F192], batching: &Batching, pins: &[(usize, Vec<bo
     }));
     // The mask wires sit in one aligned run of 256, in the first block. Each leaves `C z` and enters the mask's value.
     let (low_r, low_q) = (eq_table(&rho[..8]), eq_table(&q[..8]));
-    let leaves = alpha[2] * eq_index(MASK >> 8, &rho[8..]);
-    let mask = eq_index(MASK >> 8, &q[8..])
-        * sum(&mut mask_weights(rho).iter().enumerate().map(|(k, &w)| {
-            let at = MASK % 256 + k;
-            (alpha[4] * w + leaves * low_r[at]) * low_q[at]
-        }));
+    let run = MASK % 256..MASK % 256 + 3 * MASK_COEFFS;
+    let value = sum(&mut mask_weights(rho).iter().zip(&low_q[run.clone()]).map(|(&w, &x)| w * x));
+    let leaves = sum(&mut run.map(|at| low_r[at] * low_q[at]));
+    let mask = eq_index(MASK >> 8, &q[8..]) * (alpha[4] * value + alpha[2] * eq_index(MASK >> 8, &rho[8..]) * leaves);
     same_compression * (blocks + constants) + alpha[2] * eq_eval(rho, q) + wiring + pinned + mask
 }
 
@@ -793,6 +794,7 @@ fn label(index_root: &Hash, statement: &Statement) -> Vec<u8> {
 }
 
 /// Prove `statement` from a witness of it, against the circuit committed as `index_root`.
+/// Panics on two challenge values a sampled one meets with negligible probability.
 ///
 /// `root` commits `P = (witness.z, masks)` ([`committed`]), the masks uniformly random. Returns the proof and the
 /// two claims it leaves.
@@ -817,7 +819,7 @@ pub fn prove(
     let mask_sum = mask.sum();
     ps.add_scalar(mask_sum);
     let lambda = ps.sample();
-    let (rho, a_eval, b_eval, claim) = zerocheck::prove_tables(
+    let (rho, a_eval, b_eval, _) = zerocheck::prove_tables(
         lift(&witness.a),
         lift(&witness.b),
         witness.c(),
@@ -831,7 +833,6 @@ pub fn prove(
     );
     let gamma = mask.eval(&rho);
     ps.add_scalars(&[a_eval, b_eval, gamma]);
-    let c_eval = claim + a_eval * b_eval + lambda * gamma;
     drop(span);
 
     // Lincheck on the witness plus a combination of the masks that is a uniformly random table.
@@ -840,22 +841,12 @@ pub fn prove(
     let pins = pins(statement);
     let (comb, marginals) = comb_table(circuit, &rho, &batching, &pins);
     let alpha = batching.alpha;
-    debug_assert_eq!(
-        comb.iter()
-            .zip(&witness.z)
-            .fold(F192::ZERO, |acc, (&c, &z)| acc + c.mul_base(z)),
-        a_eval
-            + alpha[1] * b_eval
-            + alpha[2] * c_eval
-            + alpha[3] * used_slots(&instance_tables(&rho)[0])
-            + pin_target(&batching, &pins)
-            + alpha[4] * gamma
-    );
     let mask_sums = masks
         .each_ref()
         .map(|m| parallel::map_reduce(N_WIRES, || F192::ZERO, |i| comb[i].mul_base(m[i]), |x, y| x + y));
     ps.add_scalars(&mask_sums);
     let lambdas = mask_challenges(&mut ps);
+    assert!(lambdas[0] != F192::ONE, "a mask challenge of 1");
     let weights = [lambdas[0], lambdas[1], lambdas[0] * lambdas[1]];
     let masked = parallel::map_collect(N_WIRES, |i| {
         (0..3).fold(F192::from(witness.z[i]), |acc, k| {
@@ -991,21 +982,49 @@ mod tests {
         std::array::from_fn(|byte| (0..8).fold(0, |acc, i| acc | (witness.z[base + 8 * byte + i].0 as u8) << i))
     }
 
+    /// The hashes a witness reaches, whatever it was run on.
+    fn reached(witness: &Witness) -> Statement {
+        Statement {
+            y: bytes_at(witness, wire(0, F_SLOT, 32 * OUT)),
+            root: bytes_at(witness, wire(N_HASHES - 1, F_SLOT, 32 * OUT)),
+        }
+    }
+
+    /// Whether a proof from `witness` leaves a false claim on its commitment.
+    fn leaves_a_false_claim(circuit: &Circuit, statement: &Statement, witness: &Witness, rng: &mut Rng) -> bool {
+        let masks = masks(rng);
+        let (proof, _) = prove(circuit, &[1; 32], statement, &[2; 32], witness, &masks);
+        let (_, claims) = verify(&[1; 32], statement, &proof).expect("a reduction");
+        mle_eval(&stacked(witness, &masks), &claims.witness.point) != claims.witness.value
+    }
+
     /// The circuit computes the hashes the statement names: its `y` and `root` wires are the native ones.
     #[test]
     fn circuit_computes_the_statement() {
         let mut rng = Rng::new(0xB1A2E);
         let secret = secret(&mut rng);
-        let statement = secret.statement();
         let witness = Circuit::new().witness(&secret, &mut || rng.next_u64());
         assert!(witness.satisfied());
-        assert_eq!(bytes_at(&witness, wire(0, F_SLOT, 32 * OUT)), statement.y);
-        assert_eq!(bytes_at(&witness, wire(N_HASHES - 1, F_SLOT, 32 * OUT)), statement.root);
+        assert_eq!(reached(&witness), secret.statement());
     }
 
-    /// The verifier's closed form of the lincheck weight is the extension of the table the prover sums against.
+    /// The only wires a row leaves free of the bit constraint are the hiding wires' `u` and `v`.
     #[test]
-    fn comb_closed_form_matches_its_table() {
+    fn only_hiding_wires_are_free_field_elements() {
+        let circuit = Circuit::new();
+        for (k, block) in circuit.blocks.iter().enumerate() {
+            for local in (0..BLOCK).filter(|&l| l != CONST) {
+                let free = block.a[local] == one(local) && block.b[local] == one(CONST);
+                let hiding = k == S && HIDING[..2].iter().any(|&base| (base..base + N_HIDING).contains(&local));
+                assert_eq!(free, hiding, "block {k}, wire {local}");
+            }
+        }
+    }
+
+    /// The verifier's closed form of the lincheck weight is the extension of the table the prover sums against,
+    /// and that table is the claim it stands for: `(Az, Bz, Cz)` at `rho`, the constant wires, the pins, the mask.
+    #[test]
+    fn comb_is_the_linear_claim() {
         let mut rng = Rng::new(0xC0B);
         let circuit = Circuit::new();
         let (rho, q) = (rng.ext_vec(N_VARS), rng.ext_vec(N_VARS));
@@ -1017,17 +1036,41 @@ mod tests {
             beta: rng.ext(),
             pi: rng.ext_vec(8),
         };
-        let pins = pins(&secret(&mut rng).statement());
+        let secret = secret(&mut rng);
+        let pins = pins(&secret.statement());
         let (comb, marginals) = comb_table(&circuit, &rho, &batching, &pins);
         let local = eq_table(&q[..LOG_BLOCK]);
         let values = marginals.map(|m| pcs::ring_switch::inner_product_ext(&m, &local));
         let eq_q = eq_table(&q);
         let want = parallel::map_reduce(N_WIRES, || F192::ZERO, |i| comb[i] * eq_q[i], |x, y| x + y);
         assert_eq!(comb_at(&rho, &q, &batching, &pins, &values), want);
+
+        let witness = circuit.witness(&secret, &mut || rng.next_u64());
+        let alpha = batching.alpha;
+        let coefficient = |j: usize| {
+            let limb = |l: usize| witness.z[mask_wires().start + 3 * j + l].0;
+            F192::new(limb(0), limb(1), limb(2))
+        };
+        let gamma = (0..N_VARS).fold(coefficient(0), |acc, i| {
+            acc + rho[i] * (coefficient(1 + 2 * i) + rho[i] * coefficient(2 + 2 * i))
+        });
+        let eq_rho = eq_table(&rho);
+        let c_eval = witness
+            .c()
+            .iter()
+            .zip(&eq_rho)
+            .fold(F192::ZERO, |acc, (&c, &e)| acc + c * e);
+        let claim = mle_eval(&witness.a, &rho)
+            + alpha[1] * mle_eval(&witness.b, &rho)
+            + alpha[2] * c_eval
+            + alpha[3] * used_slots(&instance_tables(&rho)[0])
+            + pin_target(&batching, &pins)
+            + alpha[4] * gamma;
+        let sum = (0..N_WIRES).fold(F192::ZERO, |acc, i| acc + comb[i].mul_base(witness.z[i]));
+        assert_eq!(sum, claim);
     }
 
-    /// An honest proof leaves two true claims, which the commitments open; under any other statement the same
-    /// proof leaves a false one.
+    /// An honest proof leaves two true claims, which the commitments open, and is bound to its transcript.
     #[test]
     fn proof_leaves_true_claims() {
         let mut rng = Rng::new(0x3E3B);
@@ -1041,8 +1084,9 @@ mod tests {
         let table = committed(&witness, &masks, &mut || rng.next_u64());
         let (root, data) = opening::commit(&table);
 
-        let (proof, claims) = prove(&circuit, &index_root, &statement, &root, &witness, &masks);
-        assert_eq!(proof.stream.len(), 2 + (2 * N_VARS + 4) + (2 * N_VARS + 3 + N_KINDS));
+        let (mut proof, claims) = prove(&circuit, &index_root, &statement, &root, &witness, &masks);
+        let n_scalars = 2 + (2 * N_VARS + 4) + (2 * N_VARS + 3 + N_KINDS);
+        assert_eq!(proof.stream.len(), n_scalars);
         assert_eq!(verify(&index_root, &statement, &proof), Ok((root, claims.clone())));
 
         let stacked = stacked(&witness, &masks);
@@ -1055,16 +1099,132 @@ mod tests {
             &opening::open(&table, &root, &data, &hidden)
         ));
 
-        for flip in 0..2 {
-            let mut wrong = statement;
-            [&mut wrong.y, &mut wrong.root][flip][7] ^= 1;
-            let (_, claims) = verify(&index_root, &wrong, &proof).expect("a reduction");
-            assert_ne!(
-                mle_eval(&stacked, &claims.witness.point),
-                claims.witness.value,
-                "flip {flip}"
-            );
+        // Another statement, or another circuit, is another transcript.
+        let mut wrong = [statement; 2];
+        wrong[0].y[7] ^= 1;
+        wrong[1].root[7] ^= 1;
+        for (index_root, statement) in [(index_root, wrong[0]), (index_root, wrong[1]), ([3; 32], statement)] {
+            let (_, other) = verify(&index_root, &statement, &proof).expect("a reduction");
+            assert_ne!(other.witness.point, claims.witness.point);
         }
+
+        // A local-matrix evaluation the prover made up is caught by the circuit's claim.
+        for k in 0..N_KINDS {
+            proof.stream[n_scalars - N_KINDS + k] += F192::ONE;
+            let (_, tampered) = verify(&index_root, &statement, &proof).expect("a reduction");
+            assert_ne!(
+                mle_eval(&index, &tampered.index.point),
+                tampered.index.value,
+                "kind {k}"
+            );
+            proof.stream[n_scalars - N_KINDS + k] += F192::ONE;
+        }
+
+        // Nothing rides after the last message.
+        proof.stream.push(F192::ONE);
+        assert!(verify(&index_root, &statement, &proof).is_err());
+    }
+
+    /// Every public value is enforced, one at a time: a witness that satisfies every row but departs from the
+    /// statement in one pinned input, or reaches other hashes than the statement's, leaves a false claim.
+    #[test]
+    fn each_pin_is_enforced() {
+        let mut rng = Rng::new(0x9175);
+        let circuit = Circuit::new();
+        let secret = secret(&mut rng);
+        let honest = |c: usize| secret.inputs(c);
+        // A name, the inputs, and which public value to flip afterwards (1: `y`, 2: `root`).
+        type Case<'a> = (&'a str, &'a dyn Fn(usize) -> Inputs, usize);
+        let cases: [Case; 7] = [
+            ("honest", &honest, 0),
+            (
+                "first constant",
+                &|c| {
+                    if c == 0 {
+                        ([0x33; 32], false, secret.x)
+                    } else {
+                        honest(c)
+                    }
+                },
+                0,
+            ),
+            (
+                "second constant",
+                &|c| {
+                    if c == 1 {
+                        ([0x33; 32], false, [0; 32])
+                    } else {
+                        honest(c)
+                    }
+                },
+                0,
+            ),
+            (
+                "first direction",
+                &|c| {
+                    if c == 0 {
+                        (CONSTANTS[0], true, secret.x)
+                    } else {
+                        honest(c)
+                    }
+                },
+                0,
+            ),
+            (
+                "second direction",
+                &|c| {
+                    if c == 1 {
+                        (CONSTANTS[1], true, [0; 32])
+                    } else {
+                        honest(c)
+                    }
+                },
+                0,
+            ),
+            ("y", &honest, 1),
+            ("root", &honest, 2),
+        ];
+        for (name, inputs, flip) in cases {
+            let witness = circuit.run(inputs, &mut || rng.next_u64());
+            assert!(witness.satisfied());
+            let mut statement = reached(&witness);
+            match flip {
+                1 => statement.y[31] ^= 0x80,
+                2 => statement.root[0] ^= 1,
+                _ => {}
+            }
+            let false_claim = leaves_a_false_claim(&circuit, &statement, &witness, &mut rng);
+            assert_eq!(false_claim, name != "honest", "{name}");
+        }
+    }
+
+    /// The constant wire of a block is one, and the mask the zerocheck ran with is the committed one.
+    #[test]
+    fn constant_and_mask_wires_are_bound() {
+        let mut rng = Rng::new(0x78);
+        let circuit = Circuit::new();
+        let secret = secret(&mut rng);
+        let statement = secret.statement();
+        let honest = circuit.witness(&secret, &mut || rng.next_u64());
+        let copy = || Witness {
+            z: honest.z.clone(),
+            a: honest.a.clone(),
+            b: honest.b.clone(),
+            mask: honest.mask.clone(),
+        };
+
+        // A padding compression of zeros, its constant wires included, satisfies every row.
+        let mut zeroed = copy();
+        for table in [&mut zeroed.z, &mut zeroed.a, &mut zeroed.b] {
+            table[wire(40, 0, 0)..wire(41, 0, 0)].fill(F64::ZERO);
+        }
+        assert!(zeroed.satisfied());
+        assert!(leaves_a_false_claim(&circuit, &statement, &zeroed, &mut rng));
+
+        let mut other_mask = copy();
+        other_mask.z[mask_wires().start + 4] += F64(7);
+        assert!(other_mask.satisfied());
+        assert!(leaves_a_false_claim(&circuit, &statement, &other_mask, &mut rng));
     }
 
     /// The property [`committed`]'s layout rests on: whatever leaves an opening shows, the random low half of a
@@ -1111,46 +1271,6 @@ mod tests {
                     }
                 }
             }
-        }
-    }
-
-    /// Each pinned input is enforced: a witness that satisfies every row but swaps in the first compression, or
-    /// hashes `x` with another constant in the second, leaves a false claim, even for the hashes it does reach.
-    #[test]
-    fn pinned_inputs_are_enforced() {
-        let mut rng = Rng::new(0x9175);
-        let circuit = Circuit::new();
-        let secret = secret(&mut rng);
-        let tampered: [&dyn Fn(usize) -> Inputs; 2] = [
-            &|c| {
-                if c == 0 {
-                    (CONSTANTS[0], true, secret.x)
-                } else {
-                    ([0; 32], false, [0; 32])
-                }
-            },
-            &|c| match c {
-                0 => (CONSTANTS[0], false, secret.x),
-                1 => ([0x33; 32], false, [0; 32]),
-                _ => ([0; 32], false, [0; 32]),
-            },
-        ];
-        for (case, inputs) in tampered.into_iter().enumerate() {
-            let witness = circuit.run(inputs, &mut || rng.next_u64());
-            assert!(witness.satisfied());
-            let statement = Statement {
-                y: bytes_at(&witness, wire(0, F_SLOT, 32 * OUT)),
-                root: bytes_at(&witness, wire(N_HASHES - 1, F_SLOT, 32 * OUT)),
-            };
-            let masks = masks(&mut rng);
-            let (proof, _) = prove(&circuit, &[1; 32], &statement, &[2; 32], &witness, &masks);
-            let (_, claims) = verify(&[1; 32], &statement, &proof).expect("a reduction");
-            let stacked = stacked(&witness, &masks);
-            assert_ne!(
-                mle_eval(&stacked, &claims.witness.point),
-                claims.witness.value,
-                "case {case}"
-            );
         }
     }
 }
