@@ -100,19 +100,53 @@ impl Placement {
 /// commits `committed_len()` words and never encodes or hashes the zero tail past
 /// them. Only the prover needs `n_lanes`; the verifier's view of the commitment is
 /// the same `2^mu`-word witness either way.
+///
+/// A zero-knowledge proof's stack is hiding: after its data lanes come zero lanes, then the uniform random group.
 #[derive(Clone, Copy, Debug)]
 pub struct StackShape {
     pub mu: usize,
     pub n_lanes: usize,
+    pub hiding: bool,
 }
 
 impl StackShape {
-    /// Words actually committed: the placed columns rounded up to a whole lane.
+    /// The lanes committed: the data's, then for a hiding stack the zero lanes and the random group.
+    pub const fn committed_lanes(&self) -> usize {
+        if self.hiding {
+            pcs::whir::hiding_lanes(self.n_lanes)
+        } else {
+            self.n_lanes
+        }
+    }
+
+    /// Words actually committed: the placed columns rounded up to a whole lane, then a hiding stack's extra lanes.
     pub fn committed_len(&self) -> usize {
         // Both fields are `pub`, and in release the shift below would mask an
         // underflowed amount into a plausible wrong length rather than panic.
         assert!(self.mu >= crate::pcs::LOG_BATCH, "a stack is at least one lane block");
-        self.n_lanes << (self.mu - crate::pcs::LOG_BATCH)
+        self.committed_lanes() << (self.mu - crate::pcs::LOG_BATCH)
+    }
+
+    /// The hiding stack of `placed` words.
+    ///
+    /// - It is at least the hiding opening's smallest size.
+    /// - It grows until its data lanes, the zero lanes and the random group fit the lanes a commitment holds.
+    pub fn hiding(placed: usize) -> Self {
+        let lanes = 1usize << crate::pcs::LOG_BATCH;
+        let mut mu = primitives::log2_ceil_usize(placed.max(1))
+            .max(crate::pcs::MIN_MU)
+            .max(pcs::whir::MIN_LOG_N_HIDING);
+        loop {
+            let n_lanes = placed.div_ceil(1 << (mu - crate::pcs::LOG_BATCH)).max(1);
+            if pcs::whir::hiding_lanes(n_lanes) <= lanes {
+                return Self {
+                    mu,
+                    n_lanes,
+                    hiding: true,
+                };
+            }
+            mu += 1;
+        }
     }
 }
 
@@ -186,7 +220,14 @@ pub fn placements_of(sources: &[Source]) -> (Vec<Placement>, StackShape) {
     // The columns tile from 0, so the padding is the tail: round it up to a whole
     // lane and the lanes past that are never committed at all.
     let n_lanes = placed.div_ceil(1 << (mu - crate::pcs::LOG_BATCH)).max(1);
-    (placements, StackShape { mu, n_lanes })
+    (
+        placements,
+        StackShape {
+            mu,
+            n_lanes,
+            hiding: false,
+        },
+    )
 }
 
 /// Chunk width for the bulk writes below: big enough to amortize the dispatch,

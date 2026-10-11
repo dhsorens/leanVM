@@ -1470,8 +1470,10 @@ dependencies = [
  "pcs",
  "primitives",
  "proptest",
+ "rand_core 0.9.5",
  "thiserror",
  "tracing",
+ "zk",
 ]
 
 [[package]]

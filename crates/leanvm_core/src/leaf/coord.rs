@@ -6,6 +6,7 @@ use fiat_shamir::arith::{Arith, Native};
 use pcs::verifier::Recording;
 use primitives::field::{F64, F192};
 use std::sync::{Arc, OnceLock};
+use zk::Recorder;
 
 /// One tuple coordinate as a function of the block's row `z`.
 #[derive(Clone, Debug)]
@@ -82,6 +83,8 @@ impl PublicColumns for Native {}
 impl PublicColumns for VerifierState<'_> {}
 
 impl PublicColumns for Recording<'_> {}
+
+impl<V: Arith> PublicColumns for Recorder<V> {}
 
 impl Coord {
     /// Whether the coordinate is linear in the columns: it multiplies no column by another.

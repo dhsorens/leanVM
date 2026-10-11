@@ -67,7 +67,23 @@ impl Layout {
         rate: Rate,
     ) -> Result<DeferredClaims<V::E>, CpuError> {
         let commitment = Commitment::read(v, self.shape, rate)?;
+        let claims = self.verify_committed(v, &commitment, clock, output)?;
+        v.check_eof()?;
+        Ok(claims)
+    }
 
+    /// The verifier's core past the commitment's root: the flock reductions, the bus and the tables, and the opening.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first stage that refuses the proof.
+    pub(crate) fn verify_committed<V: OpeningVerifier + PublicColumns>(
+        &self,
+        v: &mut V,
+        commitment: &Commitment<V::Root>,
+        clock: V::E,
+        output: &[V::E; 4],
+    ) -> Result<DeferredClaims<V::E>, CpuError> {
         // Flock's reductions, batched over every class circuit then every clock circuit, each leaving its matrices' form to its circuit.
         // They read only the commitment; their claims wait for the opening, whose challenges follow every claim.
         let batches = FlockId::batches(&self.taus);
@@ -86,7 +102,6 @@ impl Layout {
             commitment.verify(v, &reduced.slots, &rings)
         })
         .map_err(CpuError::Open)?;
-        v.check_eof()?;
         Ok(DeferredClaims {
             program: reduced.program,
             circuits,
