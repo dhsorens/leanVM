@@ -1432,6 +1432,38 @@ pub(crate) fn product_sumcheck(
     (point, a[0], b[0], snapshot)
 }
 
+/// [`product_sumcheck`] for a sum of products `sum_j sum_i a_j[i] * b_j[i]`, every pair over the same variables.
+///
+/// Returns the point, low variable first, and each pair's two tables there.
+pub(crate) fn sum_of_products_sumcheck(
+    mut pairs: Vec<(Vec<F192>, Vec<F192>)>,
+    ps: &mut ProverState,
+) -> (Vec<F192>, Vec<(F192, F192)>) {
+    let len = pairs[0].0.len();
+    assert!(len.is_power_of_two() && pairs.iter().all(|(a, b)| a.len() == len && b.len() == len));
+    let mut running = pairs.iter().fold(F192::ZERO, |acc, (a, b)| {
+        acc + parallel::map_reduce(len, || F192::ZERO, |i| a[i] * b[i], |x, y| x + y)
+    });
+    let mut point = Vec::new();
+    while pairs[0].0.len() > 1 {
+        let (e1, einf) = pairs.iter().fold((F192::ZERO, F192::ZERO), |acc, (a, b)| {
+            let (e1, einf) = sumcheck_round_eval_par(a, b);
+            (acc.0 + e1, acc.1 + einf)
+        });
+        let e0 = running + e1;
+        ps.add_round_poly(&[e0, e0 + e1 + einf, einf], false);
+        let r = ps.sample();
+        running = (einf * r + (e0 + e1 + einf)) * r + e0;
+        point.push(r);
+        for (a, b) in &mut pairs {
+            sumcheck_bind_top_in_place_par(a, r);
+            sumcheck_bind_top_in_place_par(b, r);
+        }
+    }
+    point.reverse();
+    (point, pairs.iter().map(|(a, b)| (a[0], b[0])).collect())
+}
+
 /// Lincheck at the row point `rows` and instance point `x_outer`: `k_log` product-sumcheck rounds over the columns.
 ///
 /// It differs from [`prove_padded_capture_s_hat_v`] in running every column round, so the terminal identity reads the matrices at one point.

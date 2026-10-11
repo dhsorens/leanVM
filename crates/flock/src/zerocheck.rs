@@ -420,6 +420,103 @@ pub fn prove_multilinear(
     }
 }
 
+/// Round 0 of [`prove_tables`]: `(G(1), G(inf))` over stored tables, with `r_eq` the eq challenges past the first.
+fn table_message(a: &[F192], b: &[F192], c: &[F192], r_eq: &[F192]) -> (F192, F192) {
+    let n_lo = r_eq.len().min(10);
+    let (eq_lo, eq_hi) = (
+        univariate_skip::build_eq(&r_eq[..n_lo]),
+        univariate_skip::build_eq(&r_eq[n_lo..]),
+    );
+    parallel::map_reduce(
+        eq_hi.len(),
+        || (F192::ZERO, F192::ZERO),
+        |hi| {
+            let (mut g1, mut g_inf) = (F192::ZERO, F192::ZERO);
+            for (lo, &eq) in eq_lo.iter().enumerate() {
+                let x = 2 * (hi << n_lo | lo);
+                g1 += eq * (a[x + 1] * b[x + 1] + c[x + 1]);
+                g_inf += eq * (a[x] + a[x + 1]) * (b[x] + b[x + 1]);
+            }
+            (eq_hi[hi] * g1, eq_hi[hi] * g_inf)
+        },
+        |x, y| (x.0 + y.0, x.1 + y.1),
+    )
+}
+
+/// The zerocheck rounds on stored tables of any field elements, at the eq point `r`, from the claim `claim`.
+///
+/// `extra` adds `(G(1), G(inf))` of another summand under the same eq factor to each round, given the challenges so far:
+/// a mask, whose sum the caller folded into `claim`. Returns the point, `(â, b̂)` and the final claim.
+/// `r` must be sampled: a table of field elements, unlike one of bits, leaves no room for fixed coordinates.
+pub fn prove_tables(
+    mut a: Vec<F192>,
+    mut b: Vec<F192>,
+    mut c: Vec<F192>,
+    r: &[F192],
+    mut claim: F192,
+    extra: &mut dyn FnMut(&[F192]) -> (F192, F192),
+    ps: &mut ProverState,
+) -> (Vec<F192>, F192, F192, F192) {
+    let n = r.len();
+    assert!(n >= 1 && [&a, &b, &c].iter().all(|t| t.len() == 1 << n));
+    let mut point = Vec::with_capacity(n);
+    let (mut a_nxt, mut b_nxt, mut c_nxt) = (Vec::new(), Vec::new(), Vec::new());
+    if a.len() >= 1024 {
+        // SAFETY (x3): a fused round writes every slot of the prefix the next one reads.
+        unsafe {
+            a_nxt = primitives::uninit_vec::<F192>(a.len() / 2);
+            b_nxt = primitives::uninit_vec::<F192>(a.len() / 2);
+            c_nxt = primitives::uninit_vec::<F192>(a.len() / 2);
+        }
+    }
+    let (mut g1, mut g_inf) = table_message(&a, &b, &c, &r[1..]);
+    for i in 0..n {
+        let (e1, e_inf) = extra(&point);
+        claim = send_round(ps, claim, r[i], None, g1 + e1, g_inf + e_inf, &mut point);
+        if i + 1 == n {
+            break;
+        }
+        let (chi, r_eq) = (point[i], &r[i + 2..]);
+        if a.len() >= 1024 {
+            let half = a.len() / 2;
+            let (m1, mi) = fold_and_compute_round_pair_into(&a, &b, &mut a_nxt[..half], &mut b_nxt[..half], chi, r_eq);
+            let m1c = fold_and_compute_round_single_into(&c, &mut c_nxt[..half], chi, r_eq);
+            std::mem::swap(&mut a, &mut a_nxt);
+            std::mem::swap(&mut b, &mut b_nxt);
+            std::mem::swap(&mut c, &mut c_nxt);
+            a.truncate(half);
+            b.truncate(half);
+            c.truncate(half);
+            (g1, g_inf) = (m1 + m1c, mi);
+        } else {
+            fold_in_place_pair(&mut a, &mut b, chi);
+            fold_in_place_single(&mut c, chi);
+            let (m1, mi) = round_pair_naive(&a, &b, r_eq);
+            (g1, g_inf) = (m1 + round_single_naive(&c, r_eq), mi);
+        }
+    }
+    fold_in_place_pair(&mut a, &mut b, point[n - 1]);
+    (point, a[0], b[0], claim)
+}
+
+/// Replay the rounds of [`prove_tables`]: the point and the final claim.
+pub fn verify_tables(
+    r: &[F192],
+    mut claim: F192,
+    vs: &mut VerifierState<'_>,
+) -> Result<(Vec<F192>, F192), VerifyError> {
+    let mut point = Vec::with_capacity(r.len());
+    for &r_eq in r {
+        let g = vs
+            .next_round_poly(3, claim, Some(r_eq))
+            .map_err(VerifyError::Transcript)?;
+        let chi = vs.sample();
+        claim = primitives::multilinear::poly_eval(&g, chi);
+        point.push(chi);
+    }
+    Ok((point, claim))
+}
+
 /// Replay [`prove_multilinear`]. A reduction, like [`verify`]: lincheck is what checks the claims.
 pub fn verify_multilinear(m: usize, vs: &mut VerifierState<'_>) -> Result<MultilinearClaim, VerifyError> {
     if m < K_SKIP + N_INNER {
