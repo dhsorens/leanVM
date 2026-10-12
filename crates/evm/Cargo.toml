@@ -1,0 +1,17 @@
+[package]
+name = "evm"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+fiat_shamir.workspace = true
+flock.workspace = true
+primitives.workspace = true
+revm = { version = "27.1.0", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+primitives = { workspace = true, features = ["test-util"] }
