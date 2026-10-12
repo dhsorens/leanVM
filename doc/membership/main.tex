@@ -52,11 +52,19 @@ Fields: $\K = \mathrm{GF}(2^{64})$ for the witness, $\E = \mathrm{GF}(2^{192})$ 
 
 It is an R1CS $(Az) \circ (Bz) = Cz$ over $\K$ with $2^{22}$ wires, row $\ell$ defining wire $\ell$. \textbf{A wire of the computation is one bit}, held as a whole element of $\K$: free inputs carry $z = z \cdot z$, and the rest is XORs and ANDs (a 32-bit addition is 31 carry rows). The only other wires are free field elements added for zero knowledge (below). Wasteful for the prover, but nothing needs unpacking: no ring switching, and public values are pinned by linear conditions.
 
-The wires are 64 compressions (34 real) $\times$ 32 blocks $\times$ 2048 wires, and a block has one of three types: $\mathsf S$ (builds the message), $\mathsf H$ (half a BLAKE2s round, twenty per compression), $\mathsf F$ (final XOR). So the matrices split in two:
+The wires are 64 compressions (34 real) $\times$ 32 blocks $\times$ 2048 wires, so a wire index is a pair (position $\ell$ inside the block, block $j$). A block has one of three types $T(j)$: $\mathsf S$ (builds the message), $\mathsf H$ (half a BLAKE2s round, twenty per compression), $\mathsf F$ (final XOR); the unused blocks are zero.
+
+$A$, $B$, $C$ are the full $2^{22} \times 2^{22}$ matrices. They are never written out, because they are made of two small things:
 \begin{itemize}
-  \item \textbf{Local matrices} $A_T, B_T \in \{0,1\}^{2048 \times 2048}$, one pair per type $T$. These are the only circuit data worth committing: one table $\idx$ of 25 variables, holding $A_T$ and $A_T + B_T$, so that its last coordinate at $\alpha$ gives $A_T + \alpha B_T$.
-  \item \textbf{Wiring}: copy rows between blocks (state, message schedule, previous hash). It is a product of small maps on the index coordinates, so the verifier evaluates its multilinear extension in closed form.
+  \item \textbf{Local matrices} $A_T, B_T \in \{0,1\}^{2048 \times 2048}$, one pair per type $T$: what a row reads inside its own block. Every block of type $T$ repeats the same pair.
+  \item \textbf{Wiring} $W$, a 0/1 matrix with a single 1 per copy row: a block reading a wire of another block (the previous state, a message word through the schedule, the previous hash).
 \end{itemize}
+In block form,
+\[
+  A = \mathrm{diag}_j\bigl(A_{T(j)}\bigr) + W, \qquad B = \mathrm{diag}_j\bigl(B_{T(j)}\bigr) .
+\]
+The three pairs $(A_T, B_T)$ are the only circuit data worth committing: one table $\idx$ of 25 variables holds $A_T$ and $A_T + B_T$ for each $T$, so that its last coordinate at $\alpha$ gives $A_T + \alpha B_T$. $W$ needs no commitment: it is a product of small maps on the index coordinates, so the verifier evaluates $\mle W$ in closed form.
+
 $C$ is the identity, except on a few mask wires (below) where it is zero.
 
 \section{Protocol}
@@ -77,7 +85,11 @@ Let $n = 22$. The prover commits $P = (z, m_0, m_1, m_2)$: the witness and three
   the dots being the weights of $g(\rho)$ and of the fixed wires.
   The prover sends $S_k = \sum_y \comb(y) m_k(y)$, the verifier sends $\mu$, and the sumcheck runs on $t = z + \mu m_0 + \mu^2 m_1 + \mu^3 m_2$ against $v + \mu S_0 + \mu^2 S_1 + \mu^3 S_2$, two scalars a round, down to a point $q$ and a value $\mle\comb(q) \cdot \mle t(q)$.
 
-  \item \textbf{Two claims.} The prover sends three scalars $V_T = \mle\idx(\rho_\loc, q_\loc, T, \alpha)$, one per block type, where $\rho_\loc$ and $q_\loc$ are the coordinates inside a block. With them and the wiring's closed form the verifier computes $\mle\comb(q)$ itself, hence $\mle t(q)$. It outputs:
+  \item \textbf{Two claims.} The prover sends three scalars $V_T = \mle\idx(\rho_\loc, q_\loc, T, \alpha)$, one per block type, where $\rho_\loc$ and $q_\loc$ are the coordinates inside a block. That is all the verifier needs of the circuit: by the block form above,
+  \[
+    \mle{(A + \alpha B)}(\rho, q) = \sum_{\text{used block } j} \eq(\rho_{\mathrm{blk}}, j)\, \eq(q_{\mathrm{blk}}, j)\, V_{T(j)} \;+\; \mle W(\rho, q),
+  \]
+  with $\rho_{\mathrm{blk}}$, $q_{\mathrm{blk}}$ the remaining coordinates. So it computes $\mle\comb(q)$ itself, hence $\mle t(q)$. It outputs:
   \begin{itemize}
     \item on the prover's commitment, $\mle t(q)$ as a single evaluation of $P$: the two extra coordinates set to $\mu/(1+\mu)$ and $\mu^2/(1+\mu^2)$ weight the four tables by $1, \mu, \mu^2, \mu^3$, up to a known factor;
     \item on the circuit's commitment, $\mle\idx(\rho_\loc, q_\loc, \tau, \alpha) = \sum_T \eq(\tau, T) V_T$ at a fresh random $\tau \in \E^2$, which checks the three $V_T$ at once.
