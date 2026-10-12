@@ -20,40 +20,25 @@ pub(crate) fn packed_bytes(words: &[u64]) -> &[u8] {
 // Generic witness packing driver.
 // ---------------------------------------------------------------------------
 
-/// Drive the parallel chunked witness build for `n_blocks` instances padded
-/// to `2^n_blocks_log` slots. Returns `(z, a, b, z_lincheck)`: the three
-/// bit-packed `u64` tables (`K / 64` words per instance) and the lincheck
-/// byte stripe.
+/// Drive the parallel chunked witness build for `2^n_blocks_log` blocks.
+/// Returns `(z, a, b, z_lincheck)`: the three bit-packed `u64` tables (`K / 64`
+/// words per block) and the lincheck byte stripe.
 ///
-/// `per_block(initial, z_u64, a_u64, b_u64)` populates one block's worth of
-/// `(z, a, b)` data: 3 zero-initialized `u64`-buffers of length `K / 64`.
-/// `K` is derived from `k_log`. `initial_states.len()` may be less than
-/// `2^n_blocks_log`.
-///
-/// `padding` controls what fills the trailing `2^n_blocks_log −
-/// initial_states.len()` slots:
-/// - `None`: leave them all-zero (trivial constraint satisfaction).
-/// - `Some(p)`: build a real block from `p` in every padding slot. Encoders
-///   that pin a constant wire need this so the constant column is all-ones
-///   across *every* batched instance (see `lincheck's `LincheckCircuit::const_pin_col``).
-pub(crate) fn drive_witness_packed_and_lincheck<S: Sync, F>(
-    initial_states: &[S],
-    padding: Option<&S>,
+/// `per_block(t, z_u64, a_u64, b_u64)` populates block `t`'s `(z, a, b)` data:
+/// 3 zero-initialized `u64`-buffers of length `K / 64`. `K` is derived from
+/// `k_log`. Every block is built, so an encoder that pins a constant wire has it
+/// set across the whole batch (see `lincheck`'s `LincheckCircuit::const_pin_col`).
+pub(crate) fn drive_witness_packed_and_lincheck<F>(
     n_blocks_log: usize,
     k_log: usize,
     per_block: F,
 ) -> (Vec<u64>, Vec<u64>, Vec<u64>, Vec<u8>)
 where
-    F: Fn(&S, &mut [u64], &mut [u64], &mut [u64]) + Sync,
+    F: Fn(usize, &mut [u64], &mut [u64], &mut [u64]) + Sync,
 {
     let k = 1usize << k_log;
     let u64_per_block = k / 64;
     let n_total = 1usize << n_blocks_log;
-    let n_blocks = initial_states.len();
-    assert!(
-        n_blocks <= n_total,
-        "{n_blocks} blocks > 2^{n_blocks_log} = {n_total} slots"
-    );
     assert!(
         n_total >= 8 && n_total.is_multiple_of(8),
         "lincheck stripe layout requires n_total ≥ 8 and divisible by 8"
@@ -91,20 +76,9 @@ where
             let (z_grp, rest) = scratch.split_at_mut(group_words);
             let (a_grp, b_grp) = rest.split_at_mut(group_words);
             for k_in in 0..8 {
-                let global_idx = 8 * g + k_in;
-                let init: &S = if global_idx < n_blocks {
-                    &initial_states[global_idx]
-                } else if let Some(p) = padding {
-                    // Fill the padding slot with a real block so its constant
-                    // wire is set (see `padding` docs above).
-                    p
-                } else {
-                    // No padding block, leave this slot zero.
-                    continue;
-                };
                 let range = k_in * u64_per_block..(k_in + 1) * u64_per_block;
                 per_block(
-                    init,
+                    8 * g + k_in,
                     &mut z_grp[range.clone()],
                     &mut a_grp[range.clone()],
                     &mut b_grp[range],

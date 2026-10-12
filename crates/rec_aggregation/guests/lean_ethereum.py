@@ -166,7 +166,7 @@ LOG2_BYTECODE_COLS = LOG2_BYTECODE_COLS_PLACEHOLDER
 # powers; the three bus forms take ETA_FORM_BASE + side, the SAME three powers for
 # every table, and that sharing is what makes the batch's target derivable from the
 # three leaf claims. FLOORS[t] is the table's tau floor (SHA3 is sized to flock's
-# instance count, >= 2^3).
+# block count, >= 2^3, at 2^QUARTERS_LOG rows a block).
 TABLE_XOR = 0
 TABLE_MUL = 1
 TABLE_SET = 2
@@ -174,7 +174,7 @@ TABLE_DEREF = 3
 TABLE_JUMP = 4
 TABLE_SHA3 = 5
 N_TABLES = N_TABLES_PLACEHOLDER
-FLOORS = [0, 0, 0, 0, 0, 3]
+FLOORS = [0, 0, 0, 0, 0, 5]
 N_TABLE_COLS = N_TABLE_COLS_PLACEHOLDER
 TABLE_COLS_CAP = TABLE_COLS_CAP_PLACEHOLDER
 ETA_OFFSET = ETA_OFFSET_PLACEHOLDER
@@ -186,7 +186,8 @@ N_ETA_POWS = N_ETA_POWS_PLACEHOLDER
 # phi8 nodes), then N_FIXED_CHALLENGE_ROUNDS fixed inner rounds (FIXED_CHALLENGES),
 # then sampled outer rounds. LAGRANGE_INV_* are the one baked inverse barycentric
 # denominator per domain (combined, S). The zerocheck point/round buffers are sized
-# at runtime in the exponent (m = K_LOG + tau_5 and m - 6, both certified);
+# at runtime in the exponent (m = K_LOG + tau_5 - QUARTERS_LOG and m - 6, both
+# certified: a block is 2^QUARTERS_LOG rows of the SHA3 table);
 # LINCHECK_ROUNDS = K_LOG - K_SKIP is protocol-fixed and PIN_COLUMN is the
 # const-pin column.
 K_SKIP = K_SKIP_PLACEHOLDER
@@ -198,7 +199,8 @@ LAGRANGE_INV_S = LAGRANGE_INV_S_PLACEHOLDER
 LINCHECK_ROUNDS = LINCHECK_ROUNDS_PLACEHOLDER
 PIN_COLUMN = PIN_COLUMN_PLACEHOLDER
 K_LOG = K_LOG_PLACEHOLDER
-SLOT_STRIDE_LOG = SLOT_STRIDE_LOG_PLACEHOLDER  # = K_LOG - LOG_PACKING (=10); the q_flock slot stride
+QUARTERS_LOG = QUARTERS_LOG_PLACEHOLDER
+SLOT_STRIDE_LOG = SLOT_STRIDE_LOG_PLACEHOLDER  # = K_LOG - LOG_PACKING - QUARTERS_LOG (=9); the q_flock slot stride
 
 # ------------------------------------------------- the stacked WHIR opening
 # The opening is dispatched by the certified committed log-size m through `match`.
@@ -1729,14 +1731,16 @@ def verify_tables(fs0, fs1, cursor, pi_0, pi_1, zeta, g_bus_mu, dims_g, block_ka
     return fs[0], fs[1], cursor, g_zc_n, bc_share, rm
 
 
-def verify_flock(fs0, fs1, cursor, tau_sha3_g, zerocheck_chis, lincheck_rs, z_partial):
+def verify_flock(fs0, fs1, cursor, blocks_g, zerocheck_chis, lincheck_rs, z_partial):
     # Flock's zerocheck (univariate skip, k_skip = 6) then its lincheck, whose
     # matrix evaluation is DEFERRED to the caller's statement. The three run buffers
     # come in pre-sized; the point z, lincheck's alpha and the deferred matrix part
     # come back with the walked Fiat-Shamir state and stream cursor.
     #
-    # tau's reach is bounded: the count gadget gives tau < 34 (every flock buffer is
-    # sized for that), and q_flock's committed kappa = K_LOG + tau feeds the
+    # blocks_g is g^(tau - QUARTERS_LOG), tau the SHA3 table's, whose floor keeps
+    # the exponent from wrapping. tau's reach is bounded: the count gadget gives
+    # tau < 34 (every flock buffer is sized for that), and q_flock's committed
+    # kappa = SLOT_STRIDE_LOG + tau feeds the
     # certified size m, whose dispatch bound caps tau below any baked structure. The
     # first K_SKIP Boolean rounds are replaced by the univariate skip and consume no
     # equality challenges; the remaining r coordinates are N_FIXED_CHALLENGE_ROUNDS
@@ -1744,7 +1748,7 @@ def verify_flock(fs0, fs1, cursor, tau_sha3_g, zerocheck_chis, lincheck_rs, z_pa
     # this equality tail, so its sampled part is squeezed before round 1 is fetched,
     # and round 1 before z, which evaluates it.
     fs = [fs0, fs1]
-    mr1cs_g = tau_sha3_g * GEN ** K_LOG  # runtime m = K_LOG + tau_5, in the exponent
+    mr1cs_g = blocks_g * GEN ** K_LOG  # runtime m = K_LOG + tau_5 - QUARTERS_LOG, in the exponent
     zerocheck_r = HeapBuf(mr1cs_g)
     for i in unroll(0, N_FIXED_CHALLENGE_ROUNDS):
         zerocheck_r[GEN ** (K_SKIP + i)] = FIXED_CHALLENGES[i]
@@ -1789,8 +1793,8 @@ def verify_flock(fs0, fs1, cursor, tau_sha3_g, zerocheck_chis, lincheck_rs, z_pa
         fs, chi_v = squeeze(fs)
         zerocheck_chis[GEN ** i] = chi_v
         zc_running = g_0 + chi_v * (g_1 + chi_v * g_2)
-    # the sampled rounds: K_LOG + tau_5 - K_SKIP in all, certified
-    nmlv_g = tau_sha3_g * GEN ** (K_LOG - K_SKIP)
+    # the sampled rounds: m - K_SKIP in all, certified
+    nmlv_g = blocks_g * GEN ** (K_LOG - K_SKIP)
     flock_rounds = HeapBuf((mr1cs_rounds_g * GEN ** 2) ** ROUND_SLOTS)
     seed = flock_rounds * (GEN ** N_FIXED_CHALLENGE_ROUNDS) ** ROUND_SLOTS
     seed[GEN ** ROUND_FS0] = fs[0]
@@ -1894,7 +1898,7 @@ def certify_placement(kappa_base, g_squares):
                 assert log(col / prev_col) < N_COMMITTED_COLS
         col_off_g[col] = g_total  # write-once: a duplicate permutation entry collides
         # g_squares spans SIZE_BITS, and every kappa is under it: a certified log
-        # <= 32 (log_mem or a tau), the baked bytecode log, or q_flock's tau_5 + 8.
+        # <= 32 (log_mem or a tau), the baked bytecode log, or q_flock's tau_5 + SLOT_STRIDE_LOG.
         # Bound it before the lookup, independently of m derived from this product.
         assert log(kappa_g) < SIZE_BITS
         g_total *= g_squares[kappa_g]
@@ -2078,10 +2082,11 @@ def verify_sub(pi_0, pi_1, seed_0, seed_1, g_logs_pow2, g_squares, defer_out):
 
     # ---- flock zerocheck and lincheck (the matrix evaluation is DEFERRED) ----
     tau_sha3_g = dims_g[GEN ** (TABLE_SHA3 + 1)]  # the SHA3 table's certified tau
-    zerocheck_chis = HeapBuf(tau_sha3_g * GEN ** (K_LOG - K_SKIP))  # m - 6 rounds
+    blocks_g = tau_sha3_g * INV_GEN ** QUARTERS_LOG  # FLOORS keeps tau at or above QUARTERS_LOG
+    zerocheck_chis = HeapBuf(blocks_g * GEN ** (K_LOG - K_SKIP))  # m - 6 rounds
     lincheck_rs = HeapBuf(LINCHECK_ROUNDS)
     z_partial = HeapBuf(2 ** K_SKIP)
-    fs0, fs1, cursor, zerocheck_z, lincheck_alpha, matrix_eval = verify_flock(fs[0], fs[1], cursor, tau_sha3_g, zerocheck_chis, lincheck_rs, z_partial)
+    fs0, fs1, cursor, zerocheck_z, lincheck_alpha, matrix_eval = verify_flock(fs[0], fs[1], cursor, blocks_g, zerocheck_chis, lincheck_rs, z_partial)
     fs = [fs0, fs1]
 
     # ---- stacked mixed opening: ring-switch front + claim combination ----
@@ -2131,7 +2136,7 @@ def verify_sub(pi_0, pi_1, seed_0, seed_1, g_logs_pow2, g_squares, defer_out):
         z_vals[GEN ** t] = lincheck_rs[GEN ** (LINCHECK_ROUNDS - 1 - t)]
     zv_lo = z_vals * GEN ** LINCHECK_ROUNDS
     zr_hi = zerocheck_chis * GEN ** LINCHECK_ROUNDS
-    for xt in mul_range(1, tau_sha3_g):
+    for xt in mul_range(1, blocks_g):
         zv_lo[xt] = zr_hi[xt]
     # ONE batching challenge for the whole pool: N_CLAIMS - 1 fewer Fiat-Shamir
     # hashes than a challenge per claim, and none for the values themselves,

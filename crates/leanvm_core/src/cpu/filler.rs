@@ -38,9 +38,20 @@ pub const PAD_TABLE: usize = 2;
 pub const SIZES: [usize; 8] = [128, 64, 32, 16, 8, 4, 2, 1];
 
 /// Least rows a table can be proven over. Only `SHA3` has one above `1`: flock sizes
-/// its argument to at least eight instances, so filling that table below the floor
-/// would leave it padded up to it, which is the padding this exists to avoid.
-pub const MIN_ROWS: [usize; N_TABLES] = [1, 1, 1, 1, 1, 8];
+/// its argument to at least eight blocks of four rows, so filling that table below the
+/// floor would leave it padded up to it, which is the padding this exists to avoid.
+pub const MIN_ROWS: [usize; N_TABLES] = [1, 1, 1, 1, 1, 1 << crate::hash_flock::MIN_LOG_ROWS];
+
+/// The rows table `t` is filled to from `rows`, floors aside: the next power of two,
+/// except that `SHA3`'s fill has to be a quarter of the table at least, since every
+/// fourth row is a dummy of the fill (`hash_flock`).
+fn target(t: usize, rows: usize) -> usize {
+    if t == crate::tables::SHA3_TABLE {
+        crate::hash_flock::min_rows(rows)
+    } else {
+        ceil_pow2(rows)
+    }
+}
 
 /// The `JUMP` table's index in [`crate::cpu::Stats::TABLES`]. Every traversal of every
 /// block lands its closing jump here, so this table is solved last, absorbing the cost
@@ -154,8 +165,8 @@ fn decompose_jump(gap: usize) -> Option<[usize; SIZES.len()]> {
 /// A plan taking every table from `base` to an exact power of two, at or above
 /// `floors[t]`, or `None` if some table cannot be filled at all.
 ///
-/// Every table but `JUMP` is independent: its fill is the distance to its next power of
-/// two, decomposed into traversals. `JUMP` is not, because every traversal of the whole
+/// Every table but `JUMP` is independent: its fill is the distance to its `target`,
+/// decomposed into traversals. `JUMP` is not, because every traversal of the whole
 /// fill lands a row there, its own traversals included. Counting those first makes it a
 /// single decomposition rather than a fixpoint.
 ///
@@ -165,7 +176,7 @@ pub fn solve(base: [usize; N_TABLES], floors: [usize; N_TABLES]) -> Option<Plan>
     let mut plan: Plan = [[0; SIZES.len()]; N_TABLES];
     for t in 0..N_TABLES {
         if t != JUMP {
-            plan[t] = decompose(ceil_pow2(base[t].max(MIN_ROWS[t]).max(floors[t])) - base[t]);
+            plan[t] = decompose(target(t, base[t]).max(ceil_pow2(MIN_ROWS[t].max(floors[t]))) - base[t]);
         }
     }
     // What `JUMP` already owes: its own rows, plus one per traversal so far.
@@ -265,6 +276,11 @@ mod tests {
             for t in 0..N_TABLES {
                 assert!(got[t] >= base[t], "rows cannot be removed");
             }
+            let sha3 = crate::tables::SHA3_TABLE;
+            assert!(
+                4 * (got[sha3] - base[sha3]) >= got[sha3],
+                "{base:?}: SHA3's dummy quarters need a quarter of its rows in fill"
+            );
         }
     }
 

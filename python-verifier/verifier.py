@@ -633,24 +633,31 @@ def table_sumcheck(
     return claims
 
 
-R1CS_DIGEST = bytes.fromhex("3e1e2dd864d8aaf35ad36e47d7641522ea042e542c870b9e94f4b07d35b6ee60")
+R1CS_DIGEST = bytes.fromhex("2d2a5f6ee09e9d2997097fd6af72bcbc93ddd60fdd83baeb292669ad91fb9f17")
 
 # The columns no instruction table owns. They come first in the global column numbering, the tables after.
 NUM_GLOBAL_COLUMNS = 6
 MEMORY_0, MEMORY_1, MEMORY_2, MEMORY_FINAL_COUNTERS, BYTECODE_FINAL_COUNTERS, QFLOCK = range(NUM_GLOBAL_COLUMNS)
 
-KECCAK_R1CS_LOG_SIZE = 16
+KECCAK_R1CS_LOG_SIZE = 17
 K_BITS = 64
 FLOCK_K_SKIP = log2_ceil(K_BITS)
 LOG_PACKING = log2_ceil(K_BITS)  # bits per committed K-element (pcs::pack::LOG_PACKING)
 
 FLOCK_NUM_LINCHECK_ROUNDS = KECCAK_R1CS_LOG_SIZE - FLOCK_K_SKIP
-QFLOCK_SLOT_BITS = KECCAK_R1CS_LOG_SIZE - LOG_PACKING
-# One step's witness, in 64-bit words: the 25 input lanes, the 25 output lanes, the
-# constant wire alone in the next word, then each round's 25 lanes of chi products.
+# A block proves three steps and is four quarters, one per SHA3 table row. Each quarter, in
+# 64-bit words: 25 input lanes, 25 output lanes, a word whose first bit is the constant wire
+# (in the first quarter), then 18 rounds of 25 lanes of chi products. Quarter s < 3 is step s
+# with its first 18 rounds. The last quarter's lanes are pinned to the zero state's step, and
+# its product words hold the three steps' last 6 rounds.
+KECCAK_STEPS = 3
+KECCAK_LOG_QUARTERS = 2
+QFLOCK_SLOT_BITS = KECCAK_R1CS_LOG_SIZE - LOG_PACKING - KECCAK_LOG_QUARTERS
+KECCAK_QUARTER_WORDS = 2**QFLOCK_SLOT_BITS
 KECCAK_OUT_WORD = 25
 KECCAK_CONSTANT_COLUMN = 64 * 50
 KECCAK_PRODUCT_WORD = 51
+KECCAK_HOME_ROUNDS = 18
 
 
 @dataclass(frozen=True)
@@ -874,7 +881,7 @@ def build_layout(bytecode: Sequence[K], log_memory: int, table_log_heights: Sequ
     require(
         16 <= log_memory <= 32
         and all(0 <= log_height <= 32 for log_height in table_log_heights)
-        and table_log_heights[OP_SHA3] >= 3
+        and table_log_heights[OP_SHA3] >= 3 + KECCAK_LOG_QUARTERS
         and 0 <= log_bytecode <= 32,
         "invalid announced table sizes",
     )
@@ -1201,9 +1208,32 @@ KECCAK_PI = tuple(i // 5 + 5 * ((2 * (i % 5) + 3 * (i // 5)) % 5) for i in range
 KECCAK_END_BIT = 0x80 << 56  # the padding's last bit, which every step XORs into lane 16
 
 
+def keccak_step_of_zero() -> list[int]:
+    """The 25 lanes one sponge step leaves of the all-zero state."""
+    mask = 2**64 - 1
+
+    def rotate_left(lane: int, amount: int) -> int:
+        return (lane << amount | lane >> (64 - amount)) & mask
+
+    state = [0] * 25
+    state[16] = KECCAK_END_BIT
+    for round_constant in KECCAK_RC:
+        columns = [reduce(lambda a, b: a ^ b, state[x::5]) for x in range(5)]
+        effect = [columns[(x + 4) % 5] ^ rotate_left(columns[(x + 1) % 5], 1) for x in range(5)]
+        permuted = [0] * 25
+        for lane in range(25):
+            permuted[KECCAK_PI[lane]] = rotate_left(state[lane] ^ effect[lane % 5], KECCAK_RHO[lane])
+        for lane in range(25):
+            x, y = lane % 5, lane // 5
+            state[lane] = permuted[lane] ^ (~permuted[(x + 1) % 5 + 5 * y] & permuted[(x + 2) % 5 + 5 * y] & mask)
+        state[0] ^= round_constant
+    return state
+
+
 def keccak_row_values(column_weights: Sequence[E]) -> tuple[list[E], list[E]]:
-    """Compute `A0 w` and `B0 w` by one forward walk of the circuit: one sponge step, lane 16
-    taking the padding bit, then the 24 rounds, each chi product a row `(1 + b[x+1]) * b[x+2]`."""
+    """Compute `A0 w` and `B0 w` by one forward walk of the circuit: three sponge steps, each
+    with lane 16 taking the padding bit, then the 24 rounds, each chi product a row
+    `(1 + b[x+1]) * b[x+2]`; then the last quarter's pinned output."""
     size = 2**KECCAK_R1CS_LOG_SIZE
     constant = column_weights[KECCAK_CONSTANT_COLUMN]
     left_values = [ZERO] * size
@@ -1218,30 +1248,42 @@ def keccak_row_values(column_weights: Sequence[E]) -> tuple[list[E], list[E]]:
     def rotate_left(lane: Sequence[E], amount: int) -> tuple[E, ...]:
         return tuple(lane[(bit - amount) % 64] for bit in range(64))
 
-    for row in range(64 * KECCAK_OUT_WORD):  # the free inputs
-        left_values[row] = column_weights[row]
-        right_values[row] = constant
-    state = [tuple(column_weights[64 * lane : 64 * lane + 64]) for lane in range(25)]
-    state[16] = xor(state[16], literal(KECCAK_END_BIT))
-    for round_index, round_constant in enumerate(KECCAK_RC):
-        columns = [reduce(xor, (state[x + 5 * y] for y in range(5))) for x in range(5)]
-        effect = [xor(columns[(x + 4) % 5], rotate_left(columns[(x + 1) % 5], 1)) for x in range(5)]
-        permuted: list[tuple[E, ...]] = [()] * 25
-        for lane in range(25):
-            permuted[KECCAK_PI[lane]] = rotate_left(xor(state[lane], effect[lane % 5]), KECCAK_RHO[lane])
-        for lane in range(25):
-            x, y = lane % 5, lane // 5
-            negated, other = permuted[(x + 1) % 5 + 5 * y], permuted[(x + 2) % 5 + 5 * y]
-            base = 64 * (KECCAK_PRODUCT_WORD + 25 * round_index + lane)
+    def product_word(step: int, round_index: int) -> int:
+        if round_index < KECCAK_HOME_ROUNDS:
+            return KECCAK_QUARTER_WORDS * step + KECCAK_PRODUCT_WORD + 25 * round_index
+        spilled = (len(KECCAK_RC) - KECCAK_HOME_ROUNDS) * step + round_index - KECCAK_HOME_ROUNDS
+        return KECCAK_QUARTER_WORDS * KECCAK_STEPS + KECCAK_PRODUCT_WORD + 25 * spilled
+
+    for step in range(KECCAK_STEPS):
+        quarter = 64 * KECCAK_QUARTER_WORDS * step
+        for row in range(quarter, quarter + 64 * KECCAK_OUT_WORD):  # the free inputs
+            left_values[row] = column_weights[row]
+            right_values[row] = constant
+        state = [tuple(column_weights[quarter + 64 * lane : quarter + 64 * lane + 64]) for lane in range(25)]
+        state[16] = xor(state[16], literal(KECCAK_END_BIT))
+        for round_index, round_constant in enumerate(KECCAK_RC):
+            columns = [reduce(xor, (state[x + 5 * y] for y in range(5))) for x in range(5)]
+            effect = [xor(columns[(x + 4) % 5], rotate_left(columns[(x + 1) % 5], 1)) for x in range(5)]
+            permuted: list[tuple[E, ...]] = [()] * 25
+            for lane in range(25):
+                permuted[KECCAK_PI[lane]] = rotate_left(xor(state[lane], effect[lane % 5]), KECCAK_RHO[lane])
+            for lane in range(25):
+                x, y = lane % 5, lane // 5
+                negated, other = permuted[(x + 1) % 5 + 5 * y], permuted[(x + 2) % 5 + 5 * y]
+                base = 64 * (product_word(step, round_index) + lane)
+                for bit in range(64):
+                    left_values[base + bit] = negated[bit] + constant
+                    right_values[base + bit] = other[bit]
+                state[lane] = tuple(permuted[lane][bit] + column_weights[base + bit] for bit in range(64))
+            state[0] = xor(state[0], literal(round_constant))
+        for lane in range(25):  # the output lanes
             for bit in range(64):
-                left_values[base + bit] = negated[bit] + constant
-                right_values[base + bit] = other[bit]
-            state[lane] = tuple(permuted[lane][bit] + column_weights[base + bit] for bit in range(64))
-        state[0] = xor(state[0], literal(round_constant))
-    for lane in range(25):  # the output lanes
-        for bit in range(64):
-            left_values[64 * (KECCAK_OUT_WORD + lane) + bit] = state[lane][bit]
-            right_values[64 * (KECCAK_OUT_WORD + lane) + bit] = constant
+                left_values[quarter + 64 * (KECCAK_OUT_WORD + lane) + bit] = state[lane][bit]
+                right_values[quarter + 64 * (KECCAK_OUT_WORD + lane) + bit] = constant
+    pinned = 64 * (KECCAK_QUARTER_WORDS * KECCAK_STEPS + KECCAK_OUT_WORD)
+    for lane, value in enumerate(keccak_step_of_zero()):  # a set bit is the row 1 * 1, a clear one is empty
+        left_values[pinned + 64 * lane : pinned + 64 * lane + 64] = literal(value)
+        right_values[pinned + 64 * lane : pinned + 64 * lane + 64] = literal(value)
     left_values[KECCAK_CONSTANT_COLUMN] = constant
     right_values[KECCAK_CONSTANT_COLUMN] = constant
     return left_values, right_values
@@ -1355,7 +1397,7 @@ def verify_execution(bytecode: Sequence[K], public_input: Digest, proof: Proof) 
     claims.extend(ColumnClaim(column, public_point, value) for column, value in zip((MEMORY_0, MEMORY_1, MEMORY_2), public_limbs))
 
     # 6] SHA3 validity via Flock
-    flock_point, flock_s = verify_flock(KECCAK_R1CS_LOG_SIZE + layout.table_log_heights[OP_SHA3], transcript)
+    flock_point, flock_s = verify_flock(KECCAK_R1CS_LOG_SIZE - KECCAK_LOG_QUARTERS + layout.table_log_heights[OP_SHA3], transcript)
 
     # 7] Ring-switching
     ringswitch_target, ringswitch_weight = ring_switch(flock_point, flock_s, transcript)

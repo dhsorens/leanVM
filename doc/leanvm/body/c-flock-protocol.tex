@@ -5,9 +5,11 @@ Flock~\cite{Flock26} proves many executions of one Boolean circuit at once, in o
 
 \subsection{Statement and commitment}\label{flock:statement}
 
-One Keccak step has a Boolean R1CS witness block of $2^{\kblock}$ bits, where $\kblock=16$. Its fixed matrices are $A_0,B_0,C_0\in\Ftwo^{2^{\kblock}\times 2^{\kblock}}$, with $C_0=I$. The witness includes the circuit inputs, outputs, AND-gate values and one constant-one position; linear wires are substituted away. Within-block coordinates are the low-order coordinates and batch coordinates are the high-order coordinates throughout this annex, and a Boolean tuple is also read as an integer, lowest coordinate first.
+One Keccak step has $38{,}400$ AND gates, $41{,}600$ witness bits with its input and output, which would leave more than a third of a $2^{16}$ block empty; three steps are $124{,}800$ bits, just under $2^{17}$. So a block holds three steps: a Boolean R1CS witness block of $2^{\kblock}$ bits, where $\kblock=17$. Its fixed matrices are $A_0,B_0,C_0\in\Ftwo^{2^{\kblock}\times 2^{\kblock}}$, with $C_0=I$. The witness includes the circuit inputs, outputs, AND-gate values and one constant-one position; linear wires are substituted away. Within-block coordinates are the low-order coordinates and batch coordinates are the high-order coordinates throughout this annex, and a Boolean tuple is also read as an integer, lowest coordinate first.
 
-For $2^{\kbatch}$ independent steps, the witness is:
+A block is four \emph{quarters} of $2^{15}$ bits, $512$ words of $64$, all of one shape: $25$ input lanes, $25$ output lanes, one word reserved for the constant, then $18$ rounds of AND-gate values, $25$ lanes each. Quarter $s<3$ holds step $s$: its input, its output, and the AND gates of its first $18$ rounds. The last quarter holds, where the others hold their own, the AND gates of the last $6$ rounds of all three steps, and its lanes are pinned to the step of the all-zero state: its input positions are empty and its output positions hold that step's output, a set bit being a $\oplus$ wire over the constant alone and a clear bit an empty position (Definition~\ref{def:circuit}). The lanes of every quarter are thus the input and output of one true step, which is what lets \texttt{SHA3} read the batch as one step per quarter (\S\ref{sec:tab-sha3}).
+
+For $2^{\kbatch}$ independent blocks, the witness is:
 \[
 z:\cube{\kbool}\longrightarrow\Ftwo,\qquad \kbool=\kblock+\kbatch,
 \]
@@ -22,7 +24,7 @@ a(u)b(u)+c(u)=0\qquad\text{for every }u\in\cube{\kbool}
 
 We also enforce the position $3200$ of every block to be $1$ (preventing the all-zero witness):
 \begin{equation}\label{flock:eq:const-one}
-z(0,0,0,0,0,0,0,1,0,0,1,1,0,0,0,0,\,t)=1\qquad\text{for every }t\in\cube{\kbatch}
+z(0,0,0,0,0,0,0,1,0,0,1,1,0,0,0,0,0,\,t)=1\qquad\text{for every }t\in\cube{\kbatch}
 \end{equation}
 
 This second condition is enforced by lincheck (\S\ref{flock:lincheck}), and position $3200=\jconst$ is where the circuit below puts its constant wire. Since it is asked of every block, the prover pads the batch out to $2^{\kbatch}$ with copies of a genuine witness block rather than with zeros.
@@ -119,7 +121,7 @@ v_a+\lcalpha v_b+\lcalpha^2v_c+\lcalpha^3\qeq\sum_{j\in\cube{\kblock}}\Bigl(&\qe
 
 \vspace{2mm}
 
-The parties start by running $\kblock - \kskip = 16 - 6 = 10$ sumcheck rounds on $\eqref{flock:eq:lincheck}$, binding the $\jin$ coordinates (leaving the skip index $\jsk$ unfolded), with challenges $\fc'_{\mathrm{in}}$ in coordinate order (the reverse of their round order). Let $R_{\mathrm{lc}}\in\E$ be the resulting sumcheck claim.
+The parties start by running $\kblock - \kskip = 17 - 6 = 11$ sumcheck rounds on $\eqref{flock:eq:lincheck}$, binding the $\jin$ coordinates (leaving the skip index $\jsk$ unfolded), with challenges $\fc'_{\mathrm{in}}$ in coordinate order (the reverse of their round order). Let $R_{\mathrm{lc}}\in\E$ be the resulting sumcheck claim.
 
 The prover sends $(s_0,\ldots,s_{63})\in\E^{64}$, claiming $s_i=\mle z(i,\fc'_{\mathrm{in}},\fc_{\mathrm{out}})$. These 64 claims will later be proven by Ring-Switching.
 

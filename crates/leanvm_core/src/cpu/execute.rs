@@ -947,6 +947,7 @@ impl Program {
         assert!(cells <= 1 << MAX_LOG_MEM, "data memory exceeds 2^{MAX_LOG_MEM} cells");
         m.cells.resize(cells, F192::ZERO);
         m.count.resize(cells, F64::ONE);
+        crate::hash_flock::interleave_dummies(&mut sha3);
         let trace = Trace {
             xor,
             mul,

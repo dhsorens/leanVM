@@ -4,7 +4,7 @@
 //! The unit tests in `flock::hash` establish that the circuit is the right
 //! circuit (honest witness satisfies, tampering does not, the two walks are
 //! transposes). This establishes that it is *provable* with the machinery as it
-//! stands: same zerocheck, same lincheck, `k_log = 16` and `k_skip = 6`. Only
+//! stands: same zerocheck, same lincheck, `k_log = 17` and `k_skip = 6`. Only
 //! the PCS opening is left out, which is generic in the claims and covered end
 //! to end by the VM tests.
 
@@ -114,7 +114,7 @@ fn run(n: usize, tamper: Option<usize>) -> bool {
     verify(m, &transcript)
 }
 
-/// Keccak-f inside a 2^16 block, proved and verified through the unmodified
+/// Three Keccak-f inside a 2^17 block, proved and verified through the unmodified
 /// zerocheck and lincheck. The lincheck verifier here answers via
 /// [`flock::hash::bilinear_walk`], so this also exercises the circuit walk
 /// against the same transcript the walk-driven prover produced.

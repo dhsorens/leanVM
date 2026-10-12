@@ -145,7 +145,7 @@ pub fn read_commitment(vs: &mut VerifierState) -> Result<[u8; 32], crate::transc
 /// is bound here.
 ///
 /// There is no plain (non-ring-switch) path: the witness ALWAYS carries a `q_flock`
-/// sub-block (≥ 1 padding instance, §cpu), so every opening is stacked.
+/// sub-block (padding steps at least, §cpu), so every opening is stacked.
 pub fn open(ps: &mut ProverState, c: &Committed, q: &[F64], points: &[SlotClaim], ring: &RingSwitchOpen) {
     let lane_block = 1usize << (c.mu - LOG_BATCH);
     assert_eq!(q.len() % lane_block, 0, "witness must be whole committed lanes");

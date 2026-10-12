@@ -12,7 +12,7 @@
 //!   4. The PCS binds that family of slices ([`hash::SliceClaim`]) to the
 //!      commitment.
 //!
-//! [`hash`] is the one circuit: the Keccak step (`SHA3` opcode) as a per-block R1CS,
+//! [`hash`] is the one circuit: three Keccak steps (`SHA3` opcode) as a per-block R1CS,
 //! plus its witness generation and the leanVM-facing reduction entry points
 //! (`KeccakSetup::{prove_reduction, verify_reduction, …}`). Steps 2 to 4 above
 //! are circuit-agnostic: they take the block shape as plain numbers and reach

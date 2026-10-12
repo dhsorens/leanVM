@@ -16,8 +16,8 @@ pub const MEM_TOP: usize = 2;
 pub const MFCNT: usize = 3; // per-cell memory access count, g^{A[i]}
 pub const BFCNT: usize = 4; // per-pc bytecode execution count, g^{A[pc]}
 // flock's packed Keccak witness `q_flock`, committed in the SAME stack as every
-// other column (single PCS). Size `2^(K_LOG+n_log-6)` F64 words, always ≥ 1
-// instance (a no-SHA3 program commits one full padding instance). It is the
+// other column (single PCS). Size `2^(SLOT_STRIDE_LOG + tau_5)` F64 words, at
+// least eight blocks (a no-SHA3 program commits eight of padding steps). It is the
 // SOLE copy of the input/output words: the VM's SHA3 value columns are
 // virtual and their memory-bus claims route to `q_flock` slots (§hash_flock), so
 // nothing duplicates them. flock's R1CS validity is discharged by the single
@@ -147,11 +147,10 @@ pub fn col_kappa_sources(log_bytecode: usize) -> Vec<Option<(usize, usize)>> {
     k[MEM_TOP] = Some((1, 0));
     k[MFCNT] = Some((1, 0));
     k[BFCNT] = Some((0, log_bytecode));
-    // q_flock is `2^(K_LOG + n_blocks_log - LOG_PACKING)` F64 words, always ≥ 1
-    // instance (a no-SHA3 program commits one padding instance), and tau_5 IS
-    // n_blocks_log (the announced-size certification uses the same floor), so this
-    // reproduces `qflock_kappa`.
-    k[QFLOCK] = Some((2 + tables::SHA3_TABLE, flock::hash::K_LOG - ::pcs::LOG_PACKING));
+    // q_flock is one quarter of a flock block per SHA3 row, `2^SLOT_STRIDE_LOG`
+    // F64 words each (the announced-size certification holds tau_5 to flock's
+    // floor), so this reproduces `qflock_kappa`.
+    k[QFLOCK] = Some((2 + tables::SHA3_TABLE, crate::hash_flock::SLOT_STRIDE_LOG));
     for (t, table) in tables::tables().iter().enumerate() {
         let base = sch.base[t];
         k[base..base + table.n_committed_columns()].fill(Some((2 + t, 0)));
@@ -451,8 +450,8 @@ impl Program {
             "a table exceeds 2^{MAX_LOG_ROWS} rows"
         );
         // Every table's rows are real rows, so its height IS its row count: the fill
-        // blocks ran each count up to a power of two, and SHA3 up to flock's instance
-        // floor as well (`cpu::filler`).
+        // blocks ran each count up to a power of two, and SHA3 up to flock's floor
+        // as well (`cpu::filler`).
         let taus = row_counts.map(|r| {
             assert!(
                 r.is_power_of_two(),
@@ -461,10 +460,9 @@ impl Program {
             );
             crate::log2_strict_usize(r)
         });
-        assert_eq!(
-            taus[tables::SHA3_TABLE],
-            crate::hash_flock::n_blocks_log(row_counts[tables::SHA3_TABLE]),
-            "the SHA3 table must be filled to flock's instance floor"
+        assert!(
+            taus[tables::SHA3_TABLE] >= crate::hash_flock::MIN_LOG_ROWS,
+            "the SHA3 table must be filled to flock's floor"
         );
         let pi = [exec.mem[0], exec.mem[1]];
         let l = layout(&self.prog, log_mem, taus, pi);
@@ -519,9 +517,8 @@ impl Program {
             parallel::fill(windows[BFCNT], |i| tr.bytecode_count[i]); // … at g^{A[pc]}
         });
         // flock's packed Keccak witness q_flock, ALWAYS committed in this same stack:
-        // built from the executed SHA3 rows in order (row j = flock instance j),
-        // padded to `2^n_blocks_log(max(count,1))` all-padding instances, so a
-        // program with no SHA3 still carries a single padding instance.
+        // built from the SHA3 rows in table order (row j = quarter j, four to a
+        // flock block).
         let flock_reduction = crate::stage!("Build q_flock", || {
             // The rows carry only their access counts; the step's input lanes are
             // the thirteen cells they read, in the finished (write-once) memory

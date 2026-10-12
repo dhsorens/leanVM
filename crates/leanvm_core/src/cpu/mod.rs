@@ -149,11 +149,11 @@ fn read_public(vs: &mut VerifierState, prog: &Program, public_input: &[F192; 2])
         || bytecode_size > (1usize << MAX_LOG_BYTECODE)
         || !(MIN_LOG_MEM..=MAX_LOG_MEM).contains(&log_mem)
         || taus.iter().any(|&t| t > MAX_LOG_ROWS)
-        // flock sizes its argument to at least `n_blocks_log(1)` instances, and the
-        // SHA3 table's value columns share that instance cube, so a height below the
+        // flock sizes its argument to at least eight blocks, and the SHA3 table's
+        // value columns share that cube, four rows to a block, so a height below the
         // floor describes a layout the arithmetization cannot express. The other two
         // verifiers reject it here too (`python-verifier`, `guests/lean_ethereum.py`).
-        || taus[tables::SHA3_TABLE] < crate::hash_flock::n_blocks_log(1)
+        || taus[tables::SHA3_TABLE] < crate::hash_flock::MIN_LOG_ROWS
         || ::pcs::whir::validate_log_inv_rate(log_inv_rate).is_err()
     {
         return Err(CpuError::PublicInput);
@@ -576,7 +576,7 @@ pub fn prove(program: &Program, public_input: [F192; 2], log_inv_rate: usize) ->
     });
 
     // SHA3 to flock (§hash_flock), single PCS: q_flock is ALWAYS a column in
-    // `w.q` (≥1 instance, a program with no SHA3 carries one padding instance, so
+    // `w.q` (a program with no SHA3 carries flock's floor of padding steps, so
     // the proof shape is uniform and there is no has/hasn't-SHA3 fork). flock's
     // R1CS validity and EVERY leanVM point claim are discharged together by ONE
     // WHIR over this commitment (below). Input and output lanes bind through the
@@ -633,10 +633,10 @@ pub fn prove(program: &Program, public_input: [F192; 2], log_inv_rate: usize) ->
     // opener's `point_claims`).
     let flock_reduction = w.flock_reduction;
     let reduced = crate::stage!("Flock reduction", || { flock_reduction.prove(&mut ps) });
-    let n_blocks = flock_reduction.n_blocks();
+    let n_steps = flock_reduction.n_steps();
     drop(flock_reduction);
     let offset = w.layout.placements[QFLOCK].offset;
-    let ring = crate::hash_flock::ring_switch_open(n_blocks, offset, &reduced);
+    let ring = crate::hash_flock::ring_switch_open(n_steps, offset, &reduced);
     crate::stage!("PCS open", || { pcs::open(&mut ps, &committed, &w.q, &slots, &ring) });
     Ok((
         ps.into_proof(),
@@ -734,7 +734,7 @@ pub fn verify(program: &Program, public_input: &[F192; 2], proof: &Proof) -> Res
     // size is public and announced; its flock sub-proof rides the shared stream
     // and openings. Memory binds every step's input and output lanes by routing
     // their virtual value-column claims to q_flock.
-    let n_sha3 = 1usize << l.taus[tables::SHA3_TABLE];
+    let n_steps = crate::hash_flock::n_steps(l.taus[tables::SHA3_TABLE]);
 
     let (owners, spans) = bus_wiring(program, &l);
     let bus = leaf::verify_balance(&l.push, &l.pull, &l.count, &owners, &spans, &mut vs).map_err(CpuError::Bus)?;
@@ -766,13 +766,11 @@ pub fn verify(program: &Program, public_input: &[F192; 2], proof: &Proof) -> Res
     // Replay flock's reduction straight off the shared stream (each scalar bound
     // as it is read) to recover its validity claim on q_flock, then
     // verify them alongside every point claim in the ONE WHIR opening
-    // (mirroring `prove`). The padding convention always supplies at least one
-    // instance, including programs that execute no SHA3 instruction.
-    let n_blocks = n_sha3.max(1);
+    // (mirroring `prove`).
     let offset = l.placements[QFLOCK].offset;
-    let replay = crate::hash_flock::verify_reduction(n_blocks, &mut vs).map_err(CpuError::Sha3)?;
+    let replay = crate::hash_flock::verify_reduction(n_steps, &mut vs).map_err(CpuError::Sha3)?;
     let flock_stream_end = vs.stream_offset();
-    let ring = crate::hash_flock::ring_switch_verify(n_blocks, offset, &replay.claim);
+    let ring = crate::hash_flock::ring_switch_verify(n_steps, offset, &replay.claim);
     pcs::verify(&mut vs, &slots, &ring, l.shape, log_inv_rate, &root).map_err(CpuError::Open)?;
     vs.finish().map_err(CpuError::Transcript)?;
     Ok(VerifySummary {
@@ -791,7 +789,7 @@ pub fn verify(program: &Program, public_input: &[F192; 2], proof: &Proof) -> Res
 /// SHA3 value columns are virtual: they have no committed placement. A bus
 /// claim `value_col(r) = v` (at the `n_log`-dim instance point `r`) is re-routed
 /// to the equal `q_flock` slot evaluation: an ordinary claim on the committed
-/// `QFLOCK` column at the point freezing the low 10 coords to the slot's bits and
+/// `QFLOCK` column at the point freezing the low 9 coords to the slot's bits and
 /// the high coords to `r`. No downstream special-casing: it folds into the
 /// one opening like every other point claim.
 fn slot_claims(l: &Layout, claims: Vec<ColumnClaim>) -> Vec<pcs::SlotClaim> {
@@ -801,7 +799,7 @@ fn slot_claims(l: &Layout, claims: Vec<ColumnClaim>) -> Vec<pcs::SlotClaim> {
             // A virtual SHA3 value column (always virtual): its bus claim at
             // instance point `c.point` is the q_flock slot value, a boolean-selector
             // (strided) claim on QFLOCK, folded sparsely (2^n_log, not the
-            // 2^(10+n_log) dense QFLOCK block).
+            // 2^(9+n_log) dense QFLOCK block).
             if let Some(slot) = sha3_value_slot(c.col) {
                 return pcs::SlotClaim::Strided {
                     offset: l.placements[QFLOCK].offset,

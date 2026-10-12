@@ -45,6 +45,8 @@ A table is proven over a power-of-two number of rows. The prover reaches one by 
 \end{itemize}
 The prover can thus leverage these \emph{closed walks} to fill every table to its next power of 2. (important for completeness, but not for soundness)
 
+The \texttt{SHA3} table is filled further: to the least power of two of which the fill is at least a quarter, since every fourth of its rows has to be a step of the all-zero state (\S\ref{sec:tab-sha3}), which is what its filling instructions are.
+
 \subsection{Fiat Shamir instantiation}\label{sec:e2e-fiat-shamir}
 
 TODO

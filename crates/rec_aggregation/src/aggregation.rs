@@ -2642,7 +2642,8 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("LINCHECK_ROUNDS", lcrounds.to_string());
     ps("PIN_COLUMN", flock::hash::Z_CONST_POS.to_string());
     ps("K_LOG", flock::hash::K_LOG.to_string());
-    // The q_flock Strided-claim slot stride is K_LOG - LOG_PACKING (= 10), so the
+    ps("QUARTERS_LOG", flock::hash::QUARTERS_LOG.to_string());
+    // The q_flock Strided-claim slot stride is K_LOG - LOG_PACKING - QUARTERS_LOG (= 9), so the
     // qflock point-claim slot must use THIS, not LOG2_FIELD_BITS.
     ps("SLOT_STRIDE_LOG", leanvm_core::hash_flock::SLOT_STRIDE_LOG.to_string());
 

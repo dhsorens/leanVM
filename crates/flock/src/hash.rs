@@ -1,6 +1,6 @@
-//! The Keccak step R1CS: one R1CS instance per VM `SHA3` instruction, encoding
-//! `out = keccak_f(in ⊕ END_BIT·e₁₆)` ([`primitives::hash::step`]), all 24 rounds
-//! of Keccak-f\[1600\], in one sparse system.
+//! The Keccak step R1CS: one R1CS instance per THREE VM `SHA3` instructions,
+//! each `out = keccak_f(in ⊕ END_BIT·e₁₆)` ([`primitives::hash::step`]), all 24
+//! rounds of Keccak-f\[1600\], in one sparse system.
 //!
 //! ## Why this shape
 //!
@@ -9,8 +9,9 @@
 //! five distinct degree-two monomials as quadratic parts, which four products of
 //! affine forms cannot span, so χ's multiplicative complexity is exactly one
 //! product per bit: 1600 per round, 38,400 per permutation. With the 1600 input
-//! bits, the 1600 output bits and the constant wire that is 41,601 slots, which
-//! is why the block is `2^16` wide where BLAKE2s needed `2^14`.
+//! bits and the 1600 output bits that is 41,600 slots, which leaves more than a
+//! third of a `2^16` block empty. Three permutations are 124,800 slots, just
+//! under `2^17`, so a block holds three.
 //!
 //! Each product is committed and every other wire is an affine form substituted
 //! into its consumers, so the matrices are dense in their θ cascade, but they
@@ -19,18 +20,28 @@
 //! contracted against row weights) and [`marginal_walk`] backwards. See
 //! doc/leanvm, Annex C "Evaluating the matrices".
 //!
-//! ## Witness layout per instance (`k_log = 16`, 1024 words of 64 bits)
+//! ## Witness layout per block (`k_log = 17`, 2048 words of 64 bits)
 //!
 //! A Keccak lane is one 64-bit word, so every VM-visible value is a whole packed
-//! word and the witness is written with whole-word stores.
+//! word and the witness is written with whole-word stores. The block is four
+//! quarters of 512 words, and every quarter has the same shape:
 //!
 //! ```text
-//!   words   0 ..  25     in[0..25]        the input lanes (free)
-//!   words  25 ..  50     out[0..25]       the output lanes (lin-id)
-//!   word   50, bit 0     1                the constant wire
-//!   words  51 .. 651     p[r][j]          round r's χ products for lane j
+//!   words   0 ..  25     in[0..25]        input lanes
+//!   words  25 ..  50     out[0..25]       output lanes
+//!   word   50, bit 0     1                the constant wire (quarter 0 only)
+//!   words  51 .. 501     p[r][j]          χ products, 18 rounds' worth
 //!   the rest             padding, forced to 0 by empty rows
 //! ```
+//!
+//! Quarter `s < 3` is step `s`: its input (free), its output (lin-id) and its
+//! first 18 rounds of products. Quarter 3 carries no step of its own: its
+//! product words hold the last 6 rounds of the three steps, and its lanes are
+//! pinned to the step of the all-zero state, input zero and output
+//! [`dummy_out`]. So the lanes at words `0..50` of EVERY quarter are the input
+//! and output of a true step, and the embedding protocol can read the batch as
+//! one step per quarter, a power of two of them, provided the step it places on
+//! each fourth quarter is one of the zero state (`leanvm_core::hash_flock`).
 //!
 //! ## Constraint shape (`C = I`)
 //!
@@ -41,7 +52,9 @@
 //! - a χ product of round `r`, lane `j = x + 5y`, bit `k`:
 //!   `A = ¬b[x+1, y]ₖ`, `B = b[x+2, y]ₖ`, where `b` is the round's state after θ,
 //!   ρ and π, an affine form in the inputs and the earlier products;
-//! - an output: `A` = the final state's bit, `B = [1]`.
+//! - an output: `A` = the final state's bit, `B = [1]`;
+//! - a set bit of quarter 3's output: `A = B = [1]`. Its clear bits, like its
+//!   input, are empty rows.
 //!
 //! ## What this does NOT enforce
 //!
@@ -64,10 +77,19 @@ use primitives::hash::{END_BIT, END_LANE, PI, RC, RHO, ROUNDS, STATE_LANES};
 // Public constants
 // ---------------------------------------------------------------------------
 
-/// Block dim: one Keccak step occupies `2^K_LOG = 65,536` z slots.
-pub const K_LOG: usize = 16;
+/// Block dim: three Keccak steps occupy `2^K_LOG = 131,072` z slots.
+pub const K_LOG: usize = 17;
 /// `k = 2^K_LOG`.
 pub const K: usize = 1 << K_LOG;
+/// Steps one block proves.
+pub const STEPS_PER_BLOCK: usize = 3;
+/// `log2` of the quarters in a block.
+pub const QUARTERS_LOG: usize = 2;
+/// The quarter pinned to the zero state's step.
+pub const DUMMY_QUARTER: usize = 3;
+/// `log2` of a quarter's packed words.
+pub const QUARTER_WORDS_LOG: usize = K_LOG - LOG_PACKING - QUARTERS_LOG;
+const QUARTER_WORDS: usize = 1 << QUARTER_WORDS_LOG;
 /// Univariate-skip dim, must match [`crate::zerocheck::K_SKIP`].
 pub const K_SKIP: usize = 6;
 
@@ -89,33 +111,49 @@ pub type Instance = [u64; STATE_LANES];
 // Layout positions (bit indices into the per-instance z slice of length K)
 // ---------------------------------------------------------------------------
 
-/// Word (packed-slot) index of input lane 0.
+/// Word index of input lane 0 within a quarter.
 pub const IN_WORD: usize = 0;
-/// Word index of output lane 0.
+/// Word index of output lane 0 within a quarter.
 pub const OUT_WORD: usize = STATE_LANES;
-/// Word holding the constant wire, in its bit 0.
+/// Word holding the constant wire, in its bit 0 (quarter 0).
 const CONST_WORD: usize = 2 * STATE_LANES;
-/// Word index of round 0's first product lane.
+/// Word index of a quarter's first product lane.
 const PROD_WORD: usize = CONST_WORD + 1;
+/// Rounds whose products sit in their own step's quarter; the rest sit in the
+/// dummy quarter.
+const HOME_ROUNDS: usize = 18;
 
 pub const Z_CONST_POS: usize = CONST_WORD * LANE_BITS; // 3200
 /// Slots up to the last product; everything past is padding.
-pub const USEFUL_BITS: usize = (PROD_WORD + N_ROUNDS * STATE_LANES) * LANE_BITS; // 41,664
+pub const USEFUL_BITS: usize =
+    (DUMMY_QUARTER * QUARTER_WORDS + PROD_WORD + STEPS_PER_BLOCK * (N_ROUNDS - HOME_ROUNDS) * STATE_LANES) * LANE_BITS;
 
-const _: () = assert!(USEFUL_BITS <= K, "Keccak-f does not fit the 2^K_LOG block");
+const _: () = assert!(
+    PROD_WORD + HOME_ROUNDS * STATE_LANES <= QUARTER_WORDS && USEFUL_BITS <= K,
+    "three Keccak-f do not fit the 2^K_LOG block"
+);
 
 #[inline]
-fn in_bit(lane: usize, k: usize) -> usize {
-    (IN_WORD + lane) * LANE_BITS + k
+fn in_bit(q: usize, lane: usize, k: usize) -> usize {
+    (q * QUARTER_WORDS + IN_WORD + lane) * LANE_BITS + k
 }
 #[inline]
-fn out_bit(lane: usize, k: usize) -> usize {
-    (OUT_WORD + lane) * LANE_BITS + k
+fn out_word(q: usize, lane: usize) -> usize {
+    q * QUARTER_WORDS + OUT_WORD + lane
 }
-/// Word of round `r`'s product lane `j`.
 #[inline]
-fn prod_word(r: usize, j: usize) -> usize {
-    PROD_WORD + STATE_LANES * r + j
+fn out_bit(q: usize, lane: usize, k: usize) -> usize {
+    out_word(q, lane) * LANE_BITS + k
+}
+/// Word of step `s`'s round `r` product lane `j`.
+#[inline]
+fn prod_word(s: usize, r: usize, j: usize) -> usize {
+    if r < HOME_ROUNDS {
+        s * QUARTER_WORDS + PROD_WORD + STATE_LANES * r + j
+    } else {
+        let spilled = (N_ROUNDS - HOME_ROUNDS) * s + (r - HOME_ROUNDS);
+        DUMMY_QUARTER * QUARTER_WORDS + PROD_WORD + STATE_LANES * spilled + j
+    }
 }
 
 /// The two lanes χ reads for lane `j = x + 5y`: `(x+1, y)` negated, then `(x+2, y)`.
@@ -130,11 +168,16 @@ pub fn step(input: &Instance) -> [u64; STATE_LANES] {
     primitives::hash::step(input)
 }
 
-/// The padding instance: the step of the all-zero state. Fills unused trailing
-/// slots so every batched block is a valid instance with constant wire 1, as the
+/// The padding instance: the all-zero state. Fills the steps a batch leaves
+/// unused, so every block is a valid instance with constant wire 1, as the
 /// lincheck const-wire pin requires.
 pub fn padding_instance() -> Instance {
     [0; STATE_LANES]
+}
+
+/// What the dummy quarter's output lanes are pinned to: the step of the zero state.
+pub fn dummy_out() -> [u64; STATE_LANES] {
+    step(&padding_instance())
 }
 
 /// Domain separator for this circuit in the Fiat-Shamir seed (`leanvm_core::cpu`):
@@ -142,17 +185,22 @@ pub fn padding_instance() -> Instance {
 /// A deliberate circuit change bumps the label, and the digest is mirrored in
 /// `python-verifier/verifier.py` and in the recursion guest.
 pub const R1CS_DIGEST: [u8; 32] = [
-    0x3e, 0x1e, 0x2d, 0xd8, 0x64, 0xd8, 0xaa, 0xf3, 0x5a, 0xd3, 0x6e, 0x47, 0xd7, 0x64, 0x15, 0x22, 0xea, 0x04, 0x2e,
-    0x54, 0x2c, 0x87, 0x0b, 0x9e, 0x94, 0xf4, 0xb0, 0x7d, 0x35, 0xb6, 0xee, 0x60,
+    0x2d, 0x2a, 0x5f, 0x6e, 0xe0, 0x9e, 0x9d, 0x29, 0x97, 0x09, 0x7f, 0xd6, 0xaf, 0x72, 0xbc, 0xbc, 0x93, 0xdd, 0xd6,
+    0x0f, 0xdd, 0x83, 0xba, 0xeb, 0x29, 0x26, 0x69, 0xad, 0x91, 0xfb, 0x9f, 0x17,
 ];
 /// What [`R1CS_DIGEST`] hashes.
-pub const R1CS_DIGEST_LABEL: &[u8] = b"leanVM flock R1CS: keccak step, k_log 16, in 0, out 25, const 3200, products 51";
+pub const R1CS_DIGEST_LABEL: &[u8] =
+    b"leanVM flock R1CS: 3 keccak steps, k_log 17, quarters of 512: in 0, out 25, const 3200, products 51, 18 home rounds";
 
-/// Minimum `n_blocks_log` needed to prove `n_blocks` steps, subject to the
+/// Minimum `n_blocks_log` needed to prove `n_steps` steps, subject to the
 /// lincheck floor of `n_blocks_log ≥ 3` (`n_outer ≥ 8`).
-pub fn min_n_blocks_log(n_blocks: usize) -> usize {
-    assert!(n_blocks >= 1, "n_blocks must be ≥ 1");
-    n_blocks.max(8).next_power_of_two().trailing_zeros() as usize
+pub fn min_n_blocks_log(n_steps: usize) -> usize {
+    assert!(n_steps >= 1, "n_steps must be ≥ 1");
+    n_steps
+        .div_ceil(STEPS_PER_BLOCK)
+        .max(8)
+        .next_power_of_two()
+        .trailing_zeros() as usize
 }
 
 // ---------------------------------------------------------------------------
@@ -183,28 +231,35 @@ fn theta_rho_pi(a: &[WireLane; STATE_LANES]) -> [WireLane; STATE_LANES] {
 fn forward_walk(sink: &mut RowValues, w: &[F192]) {
     let wc = w[Z_CONST_POS];
     sink.bconst(Z_CONST_POS, wc);
-    let mut a: [WireLane; STATE_LANES] = std::array::from_fn(|i| wire_from_slot_base(w, in_bit(i, 0)));
-    for (i, lane) in a.iter().enumerate() {
-        for k in 0..LANE_BITS {
-            sink.bconst(in_bit(i, k), lane[k]);
-        }
-    }
-    wire_xor_const(&mut a[END_LANE], wc, END_BIT);
-    for (r, &rc) in RC.iter().enumerate() {
-        let b = theta_rho_pi(&a);
-        for (j, lane) in a.iter_mut().enumerate() {
-            let (j1, j2) = chi_operands(j);
-            let base = prod_word(r, j) * LANE_BITS;
+    for s in 0..STEPS_PER_BLOCK {
+        let mut a: [WireLane; STATE_LANES] = std::array::from_fn(|i| wire_from_slot_base(w, in_bit(s, i, 0)));
+        for (i, lane) in a.iter().enumerate() {
             for k in 0..LANE_BITS {
-                sink.product(base + k, b[j1][k] + wc, b[j2][k]);
-                lane[k] = b[j][k] + w[base + k];
+                sink.bconst(in_bit(s, i, k), lane[k]);
             }
         }
-        wire_xor_const(&mut a[0], wc, rc);
+        wire_xor_const(&mut a[END_LANE], wc, END_BIT);
+        for (r, &rc) in RC.iter().enumerate() {
+            let b = theta_rho_pi(&a);
+            for (j, lane) in a.iter_mut().enumerate() {
+                let (j1, j2) = chi_operands(j);
+                let base = prod_word(s, r, j) * LANE_BITS;
+                for k in 0..LANE_BITS {
+                    sink.product(base + k, b[j1][k] + wc, b[j2][k]);
+                    lane[k] = b[j][k] + w[base + k];
+                }
+            }
+            wire_xor_const(&mut a[0], wc, rc);
+        }
+        for (i, lane) in a.iter().enumerate() {
+            for k in 0..LANE_BITS {
+                sink.bconst(out_bit(s, i, k), lane[k]);
+            }
+        }
     }
-    for (i, lane) in a.iter().enumerate() {
-        for k in 0..LANE_BITS {
-            sink.bconst(out_bit(i, k), lane[k]);
+    for (i, lane) in dummy_out().into_iter().enumerate() {
+        for k in (0..LANE_BITS).filter(|k| (lane >> k) & 1 == 1) {
+            sink.bconst(out_bit(DUMMY_QUARTER, i, k), wc);
         }
     }
 }
@@ -251,14 +306,31 @@ fn marginal_walk_side(side: MatrixSide, u: &[F192]) -> Vec<F192> {
     assert_eq!(u.len(), K);
     let mut m = vec![F192::ZERO; K];
     // Everything that lands on the constant column: the constant row itself, the
-    // B side of every free-input and output row, χ's negation and ι.
+    // dummy quarter's set output bits, the B side of every free-input and output
+    // row, χ's negation and ι.
     let mut const_adj = u[Z_CONST_POS];
+    for (i, lane) in dummy_out().into_iter().enumerate() {
+        for k in (0..LANE_BITS).filter(|k| (lane >> k) & 1 == 1) {
+            const_adj += u[out_bit(DUMMY_QUARTER, i, k)];
+        }
+    }
+    for s in 0..STEPS_PER_BLOCK {
+        const_adj += marginal_walk_step(side, u, &mut m, s);
+    }
+    m[Z_CONST_POS] += const_adj;
+    m
+}
+
+/// Step `s`'s part of [`marginal_walk_side`]: adds its columns to `m` and
+/// returns what it lands on the constant column.
+fn marginal_walk_step(side: MatrixSide, u: &[F192], m: &mut [F192], s: usize) -> F192 {
+    let mut const_adj = F192::ZERO;
 
     // Output rows: A = the final state's bit, B = [1].
     let mut adj = [[F192::ZERO; LANE_BITS]; STATE_LANES];
     for (i, lane) in adj.iter_mut().enumerate() {
         for k in 0..LANE_BITS {
-            let (a, b) = side.split(u[out_bit(i, k)]);
+            let (a, b) = side.split(u[out_bit(s, i, k)]);
             lane[k] = a;
             const_adj += b;
         }
@@ -275,7 +347,7 @@ fn marginal_walk_side(side: MatrixSide, u: &[F192]) -> Vec<F192> {
         let mut b_adj = [[F192::ZERO; LANE_BITS]; STATE_LANES];
         for j in 0..STATE_LANES {
             let (j1, j2) = chi_operands(j);
-            let base = prod_word(r, j) * LANE_BITS;
+            let base = prod_word(s, r, j) * LANE_BITS;
             for k in 0..LANE_BITS {
                 let g = adj[j][k];
                 b_adj[j][k] += g;
@@ -307,9 +379,9 @@ fn marginal_walk_side(side: MatrixSide, u: &[F192]) -> Vec<F192> {
     // slot is also its own row, A = [slot], B = [1].
     for (i, lane) in adj.iter().enumerate() {
         for k in 0..LANE_BITS {
-            let s = in_bit(i, k);
-            let (a, b) = side.split(u[s]);
-            m[s] += lane[k] + a;
+            let p = in_bit(s, i, k);
+            let (a, b) = side.split(u[p]);
+            m[p] += lane[k] + a;
             const_adj += b;
         }
     }
@@ -318,8 +390,7 @@ fn marginal_walk_side(side: MatrixSide, u: &[F192]) -> Vec<F192> {
             const_adj += adj[END_LANE][k];
         }
     }
-    m[Z_CONST_POS] += const_adj;
-    m
+    const_adj
 }
 
 /// The two column marginals `(A_0ᵀ u, B_0ᵀ u)`, by one backward walk per matrix.
@@ -376,11 +447,17 @@ fn theta_rho_pi_native(a: &[u64; STATE_LANES]) -> [u64; STATE_LANES] {
     b
 }
 
-/// Build the (z, a, b) blocks for ONE instance, into this instance's `K / 64`
+/// Build the (z, a, b) blocks for ONE block, three steps, into its `K / 64`
 /// words of each packed table. Buffers must be zero on entry.
 ///
 /// **No c buffer.** Since `C = I`, `c == z` word for word.
-fn build_block_witness_ab_packed_into(input: &Instance, z: &mut [u64], a: &mut [u64], b: &mut [u64]) {
+fn build_block_witness_ab_packed_into(
+    inputs: &[Instance; STEPS_PER_BLOCK],
+    dummy: &[u64; STATE_LANES],
+    z: &mut [u64],
+    a: &mut [u64],
+    b: &mut [u64],
+) {
     debug_assert_eq!(z.len(), K / 64);
     debug_assert_eq!(a.len(), K / 64);
     debug_assert_eq!(b.len(), K / 64);
@@ -388,45 +465,66 @@ fn build_block_witness_ab_packed_into(input: &Instance, z: &mut [u64], a: &mut [
     z[CONST_WORD] = 1;
     a[CONST_WORD] = 1;
     b[CONST_WORD] = 1;
-    for (i, &lane) in input.iter().enumerate() {
-        z[IN_WORD + i] = lane;
-        a[IN_WORD + i] = lane;
-        b[IN_WORD + i] = u64::MAX;
-    }
-
-    let mut s = *input;
-    s[END_LANE] ^= END_BIT;
-    for (r, &rc) in RC.iter().enumerate() {
-        let t = theta_rho_pi_native(&s);
-        for (j, lane) in s.iter_mut().enumerate() {
-            let (j1, j2) = chi_operands(j);
-            let (left, right) = (!t[j1], t[j2]);
-            let p = left & right;
-            let w = prod_word(r, j);
-            z[w] = p;
-            a[w] = left;
-            b[w] = right;
-            *lane = t[j] ^ p;
+    for (s, input) in inputs.iter().enumerate() {
+        let q = s * QUARTER_WORDS;
+        for (i, &lane) in input.iter().enumerate() {
+            z[q + IN_WORD + i] = lane;
+            a[q + IN_WORD + i] = lane;
+            b[q + IN_WORD + i] = u64::MAX;
         }
-        s[0] ^= rc;
-    }
 
-    for (i, &lane) in s.iter().enumerate() {
-        z[OUT_WORD + i] = lane;
-        a[OUT_WORD + i] = lane;
-        b[OUT_WORD + i] = u64::MAX;
+        let mut st = *input;
+        st[END_LANE] ^= END_BIT;
+        for (r, &rc) in RC.iter().enumerate() {
+            let t = theta_rho_pi_native(&st);
+            for (j, lane) in st.iter_mut().enumerate() {
+                let (j1, j2) = chi_operands(j);
+                let (left, right) = (!t[j1], t[j2]);
+                let p = left & right;
+                let w = prod_word(s, r, j);
+                z[w] = p;
+                a[w] = left;
+                b[w] = right;
+                *lane = t[j] ^ p;
+            }
+            st[0] ^= rc;
+        }
+
+        for (i, &lane) in st.iter().enumerate() {
+            z[q + OUT_WORD + i] = lane;
+            a[q + OUT_WORD + i] = lane;
+            b[q + OUT_WORD + i] = u64::MAX;
+        }
+    }
+    // The dummy quarter's output: a set bit is the row `1·1`, a clear one is empty.
+    for (i, &lane) in dummy.iter().enumerate() {
+        let w = out_word(DUMMY_QUARTER, i);
+        z[w] = lane;
+        a[w] = lane;
+        b[w] = lane;
     }
 }
 
-/// Produce `(z, a, b, z_lincheck)` for `instances.len()` steps padded to
-/// `2^n_blocks_log` slots.
+/// Produce `(z, a, b, z_lincheck)` for `instances.len()` steps, three to a
+/// block in order, padded to `2^n_blocks_log` blocks with [`padding_instance`].
 pub fn generate_witness_with_ab_packed_and_lincheck(
     instances: &[Instance],
     n_blocks_log: usize,
 ) -> (Vec<u64>, Vec<u64>, Vec<u64>, Vec<u8>) {
-    let padding = padding_instance();
-    drive_witness_packed_and_lincheck(instances, Some(&padding), n_blocks_log, K_LOG, |input, z, a, b| {
-        build_block_witness_ab_packed_into(input, z, a, b)
+    assert!(
+        instances.len() <= STEPS_PER_BLOCK << n_blocks_log,
+        "{} steps > 3 · 2^{n_blocks_log}",
+        instances.len()
+    );
+    let dummy = dummy_out();
+    drive_witness_packed_and_lincheck(n_blocks_log, K_LOG, |t, z, a, b| {
+        let inputs = std::array::from_fn(|s| {
+            instances
+                .get(STEPS_PER_BLOCK * t + s)
+                .copied()
+                .unwrap_or_else(padding_instance)
+        });
+        build_block_witness_ab_packed_into(&inputs, &dummy, z, a, b)
     })
 }
 
@@ -435,17 +533,17 @@ pub fn generate_witness_with_ab_packed_and_lincheck(
 // ---------------------------------------------------------------------------
 
 /// The Keccak step R1CS for the smallest supported power-of-two shape that can
-/// hold `n_blocks` steps.
+/// hold `n_steps` steps.
 #[derive(Clone, Debug)]
 pub struct KeccakSetup {
     n_blocks_log: usize,
 }
 
 impl KeccakSetup {
-    /// Build a setup for `n_blocks` steps.
-    pub fn new(n_blocks: usize) -> Self {
+    /// Build a setup for `n_steps` steps.
+    pub fn new(n_steps: usize) -> Self {
         Self {
-            n_blocks_log: min_n_blocks_log(n_blocks),
+            n_blocks_log: min_n_blocks_log(n_steps),
         }
     }
 
@@ -470,11 +568,11 @@ pub struct SliceClaim {
 }
 
 /// The variable count (`log2` length) of the committed `q_flock` column for
-/// `n_blocks` executed steps: `K_LOG + min_n_blocks_log − LOG_PACKING`. Always
-/// at least one instance: `n_blocks = 0` still commits one padding instance,
-/// keeping the proof shape uniform.
-pub fn qflock_kappa(n_blocks: usize) -> usize {
-    K_LOG + min_n_blocks_log(n_blocks.max(1)) - LOG_PACKING
+/// `n_steps` executed steps: `K_LOG + min_n_blocks_log − LOG_PACKING`. Always
+/// at least one block: `n_steps = 0` still commits padding blocks, keeping the
+/// proof shape uniform.
+pub fn qflock_kappa(n_steps: usize) -> usize {
+    K_LOG + min_n_blocks_log(n_steps.max(1)) - LOG_PACKING
 }
 
 /// One reduction claim as a tower [`RingSwitchClaim`]: the `2^k_skip` slices and
@@ -496,8 +594,8 @@ fn ring_claim(claim: &SliceClaim, qflock_vars: usize) -> RingSwitchClaim {
 /// Package the prover's reduction claim as a [`RingSwitchOpen`], so the PCS
 /// discharges flock's validity in the same opening as the embedder's own point
 /// claims. `offset` is `q_flock`'s slot in the committed stack.
-pub fn ring_switch_open(n_blocks: usize, offset: usize, reduced: &SliceClaim) -> RingSwitchOpen {
-    let qflock_vars = qflock_kappa(n_blocks);
+pub fn ring_switch_open(n_steps: usize, offset: usize, reduced: &SliceClaim) -> RingSwitchOpen {
+    let qflock_vars = qflock_kappa(n_steps);
     RingSwitchOpen {
         offset,
         qflock_vars,
@@ -506,8 +604,8 @@ pub fn ring_switch_open(n_blocks: usize, offset: usize, reduced: &SliceClaim) ->
 }
 
 /// Verifier counterpart of [`ring_switch_open`].
-pub fn ring_switch_verify(n_blocks: usize, offset: usize, claim: &SliceClaim) -> RingSwitchVerify<'_> {
-    let qflock_vars = qflock_kappa(n_blocks);
+pub fn ring_switch_verify(n_steps: usize, offset: usize, claim: &SliceClaim) -> RingSwitchVerify<'_> {
+    let qflock_vars = qflock_kappa(n_steps);
     assert_eq!(
         claim.suffix_point.len(),
         qflock_vars,
@@ -696,7 +794,7 @@ mod tests {
     /// `(⟨A_0(k,·), z⟩, ⟨B_0(k,·), z⟩)` that the relation compares, so no matrix is
     /// needed. `z` is the whole batch, `2^n_blocks_log` blocks of `K` bits.
     fn satisfies(z: &[bool], n_blocks_log: usize) -> bool {
-        assert_eq!(z.len(), K << n_blocks_log, "z must be one K-bit block per instance");
+        assert_eq!(z.len(), K << n_blocks_log, "z must be whole K-bit blocks");
         let bit = |b: bool| if b { F192::ONE } else { F192::ZERO };
         (0..1usize << n_blocks_log).all(|t| {
             let block: Vec<F192> = z[t * K..(t + 1) * K].iter().map(|&b| bit(b)).collect();
@@ -742,10 +840,19 @@ mod tests {
                 expected[s] = true;
             }
         };
-        claim(in_bit(0, 0), STATE_LANES * LANE_BITS);
-        claim(out_bit(0, 0), STATE_LANES * LANE_BITS);
         claim(Z_CONST_POS, 1);
-        claim(prod_word(0, 0) * LANE_BITS, N_ROUNDS * STATE_LANES * LANE_BITS);
+        for s in 0..STEPS_PER_BLOCK {
+            claim(in_bit(s, 0, 0), STATE_LANES * LANE_BITS);
+            claim(out_bit(s, 0, 0), STATE_LANES * LANE_BITS);
+            for r in 0..N_ROUNDS {
+                claim(prod_word(s, r, 0) * LANE_BITS, STATE_LANES * LANE_BITS);
+            }
+        }
+        for (i, lane) in dummy_out().into_iter().enumerate() {
+            for k in (0..LANE_BITS).filter(|k| (lane >> k) & 1 == 1) {
+                claim(out_bit(DUMMY_QUARTER, i, k), 1);
+            }
+        }
         for s in 0..K {
             // A row is empty exactly when it sums nothing; at a random `w` a
             // non-empty row is nonzero but for a `2^-192` accident.
@@ -761,19 +868,27 @@ mod tests {
     #[test]
     fn witness_encodes_correct_output() {
         let mut rng = Rng::new(0x5AA3);
-        let input = random_instance(&mut rng);
-        let z = generate_witness_with_ab_packed_and_lincheck(&[input], 3).0;
-        let expected = step(&input);
-        for i in 0..STATE_LANES {
-            assert_eq!(z[OUT_WORD + i], expected[i], "out[{i}] mismatch");
-            assert_eq!(z[IN_WORD + i], input[i], "in[{i}] mismatch");
+        let inputs: Vec<Instance> = (0..5).map(|_| random_instance(&mut rng)).collect();
+        let z = generate_witness_with_ab_packed_and_lincheck(&inputs, 3).0;
+        // Step `n` is quarter `n mod 3` of block `n / 3`; every fourth quarter
+        // is the zero state's step.
+        let quarter = |t: usize, q: usize| &z[(t * K / 64) + q * QUARTER_WORDS..][..2 * STATE_LANES];
+        for (n, input) in inputs.iter().enumerate() {
+            let lanes = quarter(n / STEPS_PER_BLOCK, n % STEPS_PER_BLOCK);
+            assert_eq!(lanes[IN_WORD..][..STATE_LANES], *input, "in of step {n}");
+            assert_eq!(lanes[OUT_WORD..][..STATE_LANES], step(input), "out of step {n}");
+        }
+        for t in 0..8 {
+            let lanes = quarter(t, DUMMY_QUARTER);
+            assert_eq!(lanes[IN_WORD..][..STATE_LANES], padding_instance(), "dummy in");
+            assert_eq!(lanes[OUT_WORD..][..STATE_LANES], dummy_out(), "dummy out");
         }
     }
 
     #[test]
     fn honest_witness_satisfies_r1cs() {
         let mut rng = Rng::new(0x5A7157);
-        for n in [1usize, 5, 8] {
+        for n in [1usize, 5, 24] {
             let instances: Vec<Instance> = (0..n).map(|_| random_instance(&mut rng)).collect();
             let z = generate_witness(&instances, 3);
             assert!(satisfies(&z, 3), "witness for {n} steps fails R1CS");
@@ -783,15 +898,20 @@ mod tests {
     #[test]
     fn mutated_witness_fails() {
         let mut rng = Rng::new(0x5ADEAD);
-        let mut z = generate_witness(&[random_instance(&mut rng)], 3);
+        let instances: Vec<Instance> = (0..3).map(|_| random_instance(&mut rng)).collect();
+        let mut z = generate_witness(&instances, 3);
         assert!(satisfies(&z, 3));
         // A product in the first and in the last round, an output bit, an input
-        // bit: each breaks some row.
+        // bit, and the dummy quarter's lanes: each breaks some row.
         for bit in [
-            prod_word(0, 3) * LANE_BITS + 5,
-            prod_word(N_ROUNDS - 1, 24) * LANE_BITS + 63,
-            out_bit(7, 11),
-            in_bit(END_LANE, 63),
+            prod_word(0, 0, 3) * LANE_BITS + 5,
+            prod_word(1, HOME_ROUNDS, 0) * LANE_BITS,
+            prod_word(2, N_ROUNDS - 1, 24) * LANE_BITS + 63,
+            out_bit(1, 7, 11),
+            in_bit(2, END_LANE, 63),
+            in_bit(DUMMY_QUARTER, 0, 0),
+            out_bit(DUMMY_QUARTER, 3, 17),
+            out_bit(DUMMY_QUARTER, 24, 40),
         ] {
             z[bit] ^= true;
             assert!(!satisfies(&z, 3), "tampered bit {bit} should violate R1CS");
