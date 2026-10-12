@@ -115,7 +115,11 @@ Four things depend on the witness. Each gets its own randomness.
 
 \section{Cost}
 
-EIP-7623~\cite{EIP7623} charges a transaction $21{,}000 + \max(16 b + \text{execution},\ 40 b)$ gas for $b$ nonzero calldata bytes.
+A transaction with $b$ calldata bytes and execution gas $X$ pays
+\[
+  21{,}000 + \max\bigl(16\, b + X,\ f \cdot b\bigr),
+\]
+counting every byte as nonzero (a proof is pseudorandom). The floor rate is $f = 40$ today, by EIP-7623~\cite{EIP7623}, and $f = 64$ under EIP-7976~\cite{EIP7976}, which is proposed and not adopted. The two execution prices below are assumptions about a future EVM.
 
 \begin{center}
 \begin{tabular}{@{}lrr@{}}
@@ -126,12 +130,18 @@ calldata, at 16 gas & 2{,}384 bytes & 38{,}144 \\
 multiplications and squarings in $\E$, at 10 gas & 2{,}553 & 25{,}530 \\
 evaluation claims, at 20{,}000 gas & 2 & 40{,}000 \\
 \midrule
-total & & 103{,}674 \\
+$16\, b + X$ & & 103{,}674 \\
+floor at $f = 40$ & & 95{,}360 \\
+floor at $f = 64$ & & 152{,}576 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\noindent The floor, $40 \times 2{,}384 = 95{,}360$, is below that total, so it does not bind. Not counted: the transaction's base cost, the 64 bytes of public input, additions (XORs), transcript hashing, and one inversion in $\K$. The three lines are of the same order, so none is worth trading against another: two scalars a round, no scalar the verifier could derive, and two claims. The prover commits one table of $2^{26}$ words and runs two sumchecks over $2^{22}$ entries; the claim on the circuit is about public data, so anyone can open it.
+\noindent So the proof costs 103{,}674 gas today and 152{,}576 under EIP-7976, plus the 21{,}000 of the transaction. Not counted: the other calldata (64 bytes of public input, a selector), and in $X$ the additions (XORs), the transcript hashing, the call overhead of the precompile and one inversion in $\K$.
+
+Which side of the maximum binds decides what is worth optimizing. Today the standard side binds, a scalar costs 384 gas, as much as 38 multiplications, and the three lines are of the same order. Under EIP-7976 the floor binds: a scalar costs 1{,}536 gas, and execution is free as long as it stays under 48 gas per calldata byte, here 114{,}432 against the 65{,}530 counted. Only proof size would then matter.
+
+The prover commits one table of $2^{26}$ words and runs two sumchecks over $2^{22}$ entries; the claim on the circuit is about public data, so anyone can open it.
 
 \bibliographystyle{alpha}
 \bibliography{refs}
