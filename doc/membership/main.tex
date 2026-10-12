@@ -33,7 +33,7 @@
 \begin{document}
 \maketitle
 
-\noindent\textbf{In one paragraph.} Suppose the EVM had a precompile that checks one multilinear evaluation claim (commitment, point, value) on a WHIR commitment~\cite{ACFY25}, at a flat price, the openings travelling beside transactions and being aggregated before the block. Then a proof should be a short reduction of its statement to a few such claims. This note does that for one statement, a BLAKE2s preimage plus a Merkle path of depth 32, in zero knowledge: \textbf{98 field elements and a root (2{,}384 bytes), about 2{,}500 field multiplications to verify, two claims}. The verifier never reads the circuit. The code is \code{flock::membership}.
+\noindent\textbf{In one paragraph.} Suppose the EVM had a precompile that checks one multilinear evaluation claim (commitment, point, value) on a WHIR commitment~\cite{ACFY25}, at a flat price, the openings travelling beside transactions and being aggregated before the block. Then a proof should be a short reduction of its statement to a few such claims. This note does that for one statement, a BLAKE2s preimage plus a Merkle path of depth 32, in zero knowledge: \textbf{98 field elements and a root (2{,}384 bytes), about 2{,}500 field multiplications to verify, two claims}. The verifier never reads the circuit's matrices. The code is \code{flock::membership}.
 
 \section{Statement}
 
@@ -50,12 +50,12 @@ Every input is one 64-byte block, so this is 34 compressions.
 
 Fields: $\K = \mathrm{GF}(2^{64})$ for the witness, $\E = \mathrm{GF}(2^{192})$ for challenges and proof scalars (24 bytes).
 
-It is an R1CS $(Az) \circ (Bz) = Cz$ over $\K$ with $2^{22}$ wires, row $\ell$ defining wire $\ell$. \textbf{A wire is one bit}, held as a whole element of $\K$: free inputs carry $z = z \cdot z$, and the rest is XORs and ANDs (a 32-bit addition is 31 carry rows). Wasteful for the prover, but nothing needs unpacking: no ring switching, and public values are pinned by linear conditions.
+It is an R1CS $(Az) \circ (Bz) = Cz$ over $\K$ with $2^{22}$ wires, row $\ell$ defining wire $\ell$. \textbf{A wire of the computation is one bit}, held as a whole element of $\K$: free inputs carry $z = z \cdot z$, and the rest is XORs and ANDs (a 32-bit addition is 31 carry rows). The only other wires are free field elements added for zero knowledge (below). Wasteful for the prover, but nothing needs unpacking: no ring switching, and public values are pinned by linear conditions.
 
 The wires are 64 compressions (34 real) $\times$ 32 blocks $\times$ 2048 wires, and a block has one of three types: $\mathsf S$ (builds the message), $\mathsf H$ (half a BLAKE2s round, twenty per compression), $\mathsf F$ (final XOR). So the matrices split in two:
 \begin{itemize}
-  \item \textbf{Local matrices} $A_T, B_T \in \{0,1\}^{2048 \times 2048}$, one pair per type $T$. These are the only circuit data worth committing: one polynomial $\idx$ of 25 variables with $\mle\idx(x, y, T, \alpha) = (A_T + \alpha B_T)(x, y)$.
-  \item \textbf{Wiring}: copy rows from one block to the next (state, message schedule, previous hash). It is a product of small maps on the index coordinates, so the verifier evaluates its multilinear extension in closed form.
+  \item \textbf{Local matrices} $A_T, B_T \in \{0,1\}^{2048 \times 2048}$, one pair per type $T$. These are the only circuit data worth committing: one table $\idx$ of 25 variables, holding $A_T$ and $A_T + B_T$, so that its last coordinate at $\alpha$ gives $A_T + \alpha B_T$.
+  \item \textbf{Wiring}: copy rows between blocks (state, message schedule, previous hash). It is a product of small maps on the index coordinates, so the verifier evaluates its multilinear extension in closed form.
 \end{itemize}
 $C$ is the identity, except on a few mask wires (below) where it is zero.
 
@@ -64,45 +64,46 @@ $C$ is the identity, except on a few mask wires (below) where it is zero.
 Let $n = 22$. The prover commits $P = (z, m_0, m_1, m_2)$: the witness and three random tables over $\K$. The transcript is seeded with the commitment to $\idx$, $y$ and $\rootnode$. Write $a = Az$, $b = Bz$, $c = Cz$. The skeleton is Flock's zerocheck then lincheck~\cite{Flock26}.
 
 \begin{enumerate}[leftmargin=*,itemsep=0.5em]
-  \item \textbf{Zerocheck.} With a mask $g(x) = g_\varnothing + \sum_i (g_i x_i + h_i x_i^2)$ whose coefficients are wires of $z$, the verifier sends $r$, the prover sends $S = \sum_x \eq(r,x) g(x)$, the verifier sends $\lambda$, and they sumcheck
+  \item \textbf{Zerocheck.} With a mask $g(x) = g_\varnothing + \sum_i (g_i x_i + g'_i x_i^2)$ whose coefficients in $\E$ are wires of $z$ (three each), the verifier sends $r$, the prover sends $S = \sum_x \eq(r,x) g(x)$, the verifier sends $\lambda$, and they sumcheck
   \[
     \sum_{x} \eq(r, x) \bigl[\, \mle a(x)\, \mle b(x) + \mle c(x) + \lambda\, g(x) \,\bigr] = \lambda S ,
   \]
   two scalars a round, down to a point $\rho$. The prover sends $\hat a = \mle a(\rho)$, $\hat b = \mle b(\rho)$, $\gamma = g(\rho)$; the verifier \emph{derives} $\hat c$ from the final claim. Left over: four claims, all linear in $z$.
 
-  \item \textbf{Lincheck.} A random combination turns those four claims, plus ``each block's constant wire is 1'' and ``these wires hold $\mathtt{0x11}^{32}$, $\mathtt{0x22}^{32}$, $y$, $\rootnode$'', into one:
+  \item \textbf{Lincheck.} A random combination (challenge $\alpha$, and two more for the pins) turns those four claims, plus ``the constant wire of every used block is 1'', ``these wires hold $\mathtt{0x11}^{32}$, $\mathtt{0x22}^{32}$, $y$, $\rootnode$'' and ``the first two direction bits are 0'', into one:
   \[
-    \sum_{y} \comb(y)\, z(y) = v, \qquad \comb(y) = \sum_x \eq(\rho, x) (A + \alpha B + \alpha^2 C)(x, y) + (\text{weights of the pinned wires}) .
+    \sum_{y} \comb(y)\, z(y) = v, \qquad \comb(y) = \sum_x \eq(\rho, x) (A + \alpha B + \alpha^2 C)(x, y) + \dots,
   \]
+  the dots being the weights of $g(\rho)$ and of the fixed wires.
   The prover sends $S_k = \sum_y \comb(y) m_k(y)$, the verifier sends $\mu$, and the sumcheck runs on $t = z + \mu m_0 + \mu^2 m_1 + \mu^3 m_2$ against $v + \mu S_0 + \mu^2 S_1 + \mu^3 S_2$, two scalars a round, down to a point $q$ and a value $\mle\comb(q) \cdot \mle t(q)$.
 
-  \item \textbf{Two claims.} The prover sends three scalars $V_T = \mle\idx(\rho_\loc, q_\loc, T, \alpha)$, one per block type. With them and the wiring's closed form the verifier computes $\mle\comb(q)$ itself, hence $\mle t(q)$. It outputs:
+  \item \textbf{Two claims.} The prover sends three scalars $V_T = \mle\idx(\rho_\loc, q_\loc, T, \alpha)$, one per block type, where $\rho_\loc$ and $q_\loc$ are the coordinates inside a block. With them and the wiring's closed form the verifier computes $\mle\comb(q)$ itself, hence $\mle t(q)$. It outputs:
   \begin{itemize}
     \item on the prover's commitment, $\mle t(q)$ as a single evaluation of $P$: the two extra coordinates set to $\mu/(1+\mu)$ and $\mu^2/(1+\mu^2)$ weight the four tables by $1, \mu, \mu^2, \mu^3$, up to a known factor;
-    \item on the circuit's commitment, $\mle\idx(\rho_\loc, q_\loc, \tau, \alpha) = \sum_T \eq(\tau, T) V_T$ at a fresh random $\tau$, which checks the three $V_T$ at once.
+    \item on the circuit's commitment, $\mle\idx(\rho_\loc, q_\loc, \tau, \alpha) = \sum_T \eq(\tau, T) V_T$ at a fresh random $\tau \in \E^2$, which checks the three $V_T$ at once.
   \end{itemize}
 \end{enumerate}
 
-\noindent The proof is $(1 + 2n + 3) + (3 + 2n + 3) = 98$ scalars and one root. The masks cost nothing in soundness: each is committed, or its sum sent, before the challenge that multiplies it.
+\noindent The proof is $(1 + 2n + 3) + (3 + 2n + 3) = 98$ scalars and one root. The masks cost only a negligible soundness error: each is committed, and its sum sent, before the challenge that multiplies it.
 
 \section{Zero knowledge}
 
 Four things depend on the witness. Each gets its own randomness.
 
 \begin{itemize}[itemsep=0.4em]
-  \item \textbf{Zerocheck rounds.} Round $i$ is the first to see $g_i$ and $h_i$, which move its two scalars independently, so the round messages are exactly uniform. This is Libra's mask~\cite{Libra} (a sum of univariates); the square term is needed because a round sends two scalars. A multilinear mask times a public factor fails: its round polynomial has a root the verifier knows, and there the message is the witness's own. The mask's wires sit outside the constraint system (in no row, $C$ zero on them), otherwise the witness part of the rounds would depend on them.
+  \item \textbf{Zerocheck rounds.} Round $i$ is the first to see $g_i$ and $g'_i$, which move its two scalars independently, so the round messages are exactly uniform (barring $\lambda = 0$ or an $r_i = 1$). This is Libra's mask~\cite{Libra} (a sum of univariates); the square term is needed because a round sends two scalars. A multilinear mask times a public factor $\prod_i p_i(x_i)$ fails: round $i$'s mask term vanishes at the root of $p_i$, where the message is the witness's own. The mask's wires sit outside the constraint system (in no row, $C$ zero on them), otherwise the witness part of the rounds would depend on them.
   \item \textbf{$\hat a, \hat b, \hat c$.} Each compression has six extra triples $(u, v, w = u \cdot v)$ with random $u, v \in \K$, read by nothing else. They make the three evaluations statistically uniform.
-  \item \textbf{Lincheck rounds.} $\mu, \mu^2, \mu^3$ is a basis of $\E$ over $\K$ (unless $\mu \in \K$), so $t$ is a uniformly random table and the whole lincheck is a function of $t$. Note that $\mle z(q)$ is never sent: only $\mle t(q)$ reaches the commitment.
-  \item \textbf{The opening.} A WHIR opening shows Merkle leaves and folded tables. So $P$ is committed inside a table four times larger, the rest random, placed to match WHIR's layout (its first commitment interleaves 64 codewords, one symbol of each per leaf): $P$ fills the high half of each of its codewords, so the random low half is a random lower-degree polynomial that makes any opened positions uniform; and every codeword of $P$ is paired with a fully random one, so the first fold is a uniform table and everything shown later is a function of it.
+  \item \textbf{Lincheck rounds.} $\mu, \mu^2, \mu^3$ is a basis of $\E$ over $\K$ (unless $\mu \in \K$), so $t$ is a uniformly random table, and the whole lincheck is a function of $t$ and public values. Note that $\mle z(q)$ is never sent: only $\mle t(q)$ reaches the commitment.
+  \item \textbf{The opening.} A WHIR opening shows Merkle leaves and folded tables. So $P$ is committed inside a table four times larger, the rest random, placed to match WHIR's layout (its first commitment interleaves 64 codewords, one symbol of each per leaf): $P$ fills the high half of each of its codewords' messages, so the random low half is a random lower-degree polynomial that makes the opened positions uniform; and half of the 64 codewords are random throughout, so the table left by WHIR's first fold (six variables) is uniform, and everything after that fold is a function of it.
 \end{itemize}
 
 \paragraph{What is proved.} Honest-verifier zero knowledge with statistical error below $2^{-118}$, the hash being a random oracle only where it hides the unopened Merkle leaves. The simulator samples the sumcheck transcript directly (uniform scalars, a uniform $t$), then commits and opens any table that has the right value at the right point. The one hard step is showing that this opening is distributed like the real one. The full proof is in \code{crates/flock/membership-zk.md}.
 
-\paragraph{What is not.} The Fiat-Shamir transfer (including WHIR's grinding nonces) is the standard programmable-oracle argument, not reproved. Nothing is claimed against a malicious verifier. The proof relies on WHIR taking no out-of-domain sample on its first commitment at these parameters; a commitment that includes one reveals a second evaluation, which would need its own mask. No concrete soundness bound is derived here.
+\paragraph{What is not.} The Fiat-Shamir transfer (including WHIR's grinding nonces) is the standard programmable-oracle argument, not reproved. Nothing is claimed against a malicious verifier. The proof relies on this WHIR taking no out-of-domain sample on its first commitment; a commitment that includes one reveals a second evaluation, which would need its own mask. The prover's randomness must be uniform: the code takes it as input, and the benchmark uses a test generator. No concrete soundness bound is derived here.
 
 \section{Cost}
 
-Calldata at 40 gas per byte~\cite{EIP7623}; the other two prices are assumptions about a future EVM.
+All three prices are assumptions: calldata at 40 gas per byte, the floor rate of EIP-7623~\cite{EIP7623}, and two prices for a future EVM.
 
 \begin{center}
 \begin{tabular}{@{}lrr@{}}
@@ -118,7 +119,7 @@ total & & 160{,}890 \\
 \end{tabular}
 \end{center}
 
-\noindent Not counted: the transaction's base cost, additions (XORs) and transcript hashing. Calldata dominates, hence two scalars a round and no scalar the verifier could derive. The prover commits one table of $2^{26}$ words and runs two sumchecks over $2^{22}$ entries; the claim on the circuit is about public data, so anyone can open it.
+\noindent Not counted: the transaction's base cost, additions (XORs), transcript hashing, and one inversion in $\K$. Charging calldata at the floor rate on top of execution is pessimistic: under EIP-7623 as written the floor does not bind here, and the same three lines come to 103{,}674 with calldata at 16 gas per byte. Calldata dominates, hence two scalars a round and no scalar the verifier could derive. The prover commits one table of $2^{26}$ words and runs two sumchecks over $2^{22}$ entries; the claim on the circuit is about public data, so anyone can open it.
 
 \bibliographystyle{alpha}
 \bibliography{refs}
