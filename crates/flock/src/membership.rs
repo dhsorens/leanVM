@@ -1112,6 +1112,8 @@ mod tests {
         for k in 0..N_KINDS {
             proof.stream[n_scalars - N_KINDS + k] += F192::ONE;
             let (_, tampered) = verify(&index_root, &statement, &proof).expect("a reduction");
+            // The point is drawn after the evaluations it checks.
+            assert_ne!(tampered.index.point, claims.index.point, "kind {k}");
             assert_ne!(
                 mle_eval(&index, &tampered.index.point),
                 tampered.index.value,
