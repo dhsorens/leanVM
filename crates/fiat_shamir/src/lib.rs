@@ -33,8 +33,8 @@ pub fn digest_words(digest: &[u8; 32]) -> [F64; 4] {
 // never adversary-controlled, so distinct constants are all it takes to make two
 // roles unable to alias. The seeding block ([`FiatShamirState::new`]) is the
 // exception: it is fixed at the head of the chain, so its position is its tag.
-const DS_OBSERVE: F64 = F64(1);
-const DS_SQUEEZE: F64 = F64(2);
+pub const DS_OBSERVE: F64 = F64(1);
+pub const DS_SQUEEZE: F64 = F64(2);
 const DS_POW_BASE: F64 = F64(3);
 const DS_POW_NONCE: F64 = F64(4);
 
@@ -57,6 +57,29 @@ fn pow_bits_ok(base: [F64; 4], nonce: F192, bits: u32) -> bool {
 pub struct FiatShamirState {
     /// The 256-bit chaining value: a Merkle-Damgård hash of the transcript so far.
     cv: [F64; 4],
+    /// The chain runs on [`keccak_step`] instead of [`compress`].
+    keccak: bool,
+}
+
+/// The chain step an EVM contract replays with one `KECCAK256`: the two halves as 256-bit words, low limb last,
+/// which is how that machine stores a word.
+fn keccak_step(a: [F64; 4], b: [F64; 4]) -> [F64; 4] {
+    let mut input = [0u8; 64];
+    for (slot, w) in input
+        .as_chunks_mut::<8>()
+        .0
+        .iter_mut()
+        .zip(a.iter().rev().chain(b.iter().rev()))
+    {
+        *slot = w.0.to_be_bytes();
+    }
+    keccak_words(&input)
+}
+
+fn keccak_words(input: &[u8]) -> [F64; 4] {
+    use sha3::Digest;
+    let digest = sha3::Keccak256::digest(input);
+    std::array::from_fn(|i| F64(u64::from_be_bytes(digest[24 - 8 * i..32 - 8 * i].try_into().unwrap())))
 }
 
 impl FiatShamirState {
@@ -69,6 +92,7 @@ impl FiatShamirState {
     pub fn new(iv: [F64; 4], public_input: [F64; 4]) -> Self {
         Self {
             cv: compress(iv, public_input),
+            keccak: false,
         }
     }
 
@@ -77,13 +101,30 @@ impl FiatShamirState {
     pub fn from_label(label: &[u8]) -> Self {
         Self {
             cv: digest_words(&primitives::hash::hash(label)),
+            keccak: false,
+        }
+    }
+
+    /// [`Self::from_label`] on Keccak-256, for a verifier that is an EVM contract. It has no grinding.
+    pub fn keccak(label: &[u8]) -> Self {
+        Self {
+            cv: keccak_words(label),
+            keccak: true,
+        }
+    }
+
+    fn step(&self, block: [F64; 4]) -> [F64; 4] {
+        if self.keccak {
+            keccak_step(self.cv, block)
+        } else {
+            compress(self.cv, block)
         }
     }
 
     /// Absorb one 24-byte scalar (three little-endian `K` limbs):
     /// `cv ← compress(cv, (c0, c1, c2, DS_OBSERVE))`.
     pub fn observe(&mut self, x: F192) {
-        self.cv = compress(self.cv, [F64(x.c0), F64(x.c1), F64(x.c2), DS_OBSERVE]);
+        self.cv = self.step([F64(x.c0), F64(x.c1), F64(x.c2), DS_OBSERVE]);
     }
 
     /// Squeeze a challenge and ratchet: the challenge's three limbs are the
@@ -93,7 +134,7 @@ impl FiatShamirState {
     /// public; soundness comes from each challenge being a random-oracle image
     /// of the entire prior transcript.
     pub fn sample(&mut self) -> F192 {
-        let out = compress(self.cv, [F64::ZERO, F64::ZERO, F64::ZERO, DS_SQUEEZE]);
+        let out = self.step([F64::ZERO, F64::ZERO, F64::ZERO, DS_SQUEEZE]);
         self.cv = out;
         F192::new(out[0].0, out[1].0, out[2].0)
     }
@@ -106,6 +147,7 @@ impl FiatShamirState {
     /// The PoW base `compress(cv, (0, 0, 0, DS_POW_BASE))`, read without mutating
     /// the live state (the nonce is bound separately by [`Self::absorb_nonce`]).
     fn pow_base(&self) -> [F64; 4] {
+        assert!(!self.keccak, "the Keccak chain does not grind");
         compress(self.cv, [F64::ZERO, F64::ZERO, F64::ZERO, DS_POW_BASE])
     }
 

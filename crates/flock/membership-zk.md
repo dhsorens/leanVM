@@ -19,7 +19,7 @@ Symbols are local to a section where they must be: `ρ`, `r`, `λ` are the zeroc
 
 The bound is an average: it is the probability of a set of bad challenges, outside which the two views differ by at most `2^-11000` plus the oracle term. The challenges are uniform and independent (an honest verifier).
 
-**The non-interactive proof.** The code derives the challenges from a transcript hash and, in the opening, grinds: at each level it sends the smallest nonce that makes a hash of the transcript start with 17 zero bits. Both are outside the interactive model above. Zero knowledge transfers by the standard argument for public-coin protocols in the programmable random oracle model, which this document does not reprove: the simulator draws the challenges, simulates the view, and programs the transcript hash at the transcript's prefixes; a nonce is a function of the transcript so far and of the oracle, so the simulator draws it from its distribution and programs the oracle accordingly. This uses the transcript hash as a programmable oracle, a second and separate use of the same function from the one in the theorem.
+**The non-interactive proof.** The code derives the challenges from a transcript hash (Keccak-256 for the sumchecks, BLAKE2s inside the opening) and, in the opening, grinds: at each level it sends the smallest nonce that makes the low 17 bits of a hash of the transcript zero. Both are outside the interactive model above. Zero knowledge transfers by the standard argument for public-coin protocols in the programmable random oracle model, which this document does not reprove: the simulator draws the challenges, simulates the view, and programs the transcript hash at the transcript's prefixes; a nonce is a function of the transcript so far and of the oracle, so the simulator draws it from its distribution and programs the oracle accordingly. This uses the transcript hashes as programmable oracles. The opening's is BLAKE2s, a second and separate use of the function the theorem models.
 
 ## 2. Algebra used throughout
 
@@ -95,7 +95,7 @@ The claim is `P~(p) = v`, which `hidden_point` writes as `T~(p_low, 1, 0, π) = 
 What the opening shows, in the order of `whir::recursive_prover_with_basis`:
 
 1. six rounds of a sumcheck of `Σ T·eq((p_low, 1, 0, π), ·) = v` that bind the lane variables in order, with challenges `φ_0` and `φ = (φ_1, …, φ_5)`;
-2. the folded table `f¹(y) = Σ_lanes eq((φ_0, φ), lane)·T(y, lane)`, an `E`-valued table of 20 variables. Everything after the lane rounds is a function of `f¹` and the challenges alone: the first in-lane round message, the commitment to `f¹`, its out-of-domain values, every later sumcheck message, commitment and opened row, and the final polynomial;
+2. the folded table `f¹(y) = Σ_lanes eq((φ_0, φ), lane)·T(y, lane)`, an `E`-valued table of 20 variables. Everything after the lane rounds is a function of `f¹` and the challenges alone (the first in-lane message is computed from the opened rows of item 3, which give `f¹`'s codeword on `Q`): the first in-lane round message, the commitment to `f¹`, its out-of-domain values, every later sumcheck message, commitment and opened row, and the final polynomial;
 3. the rows of the first commitment at a set `Q` of positions: for each lane, the value at each `x ∈ Q` of the lane's codeword. A lane's codeword is the evaluation, on a domain of `2^21` points, of the polynomial whose coefficients in the novel basis are the lane's `2^20` entries; the basis polynomial of index `j` has degree `j` (`doc/leanvm`, annex D), so the entries with variable 19 equal to 0 carry an arbitrary polynomial of degree below `2^19`;
 4. Merkle siblings of the first commitment: hashes of rows outside `Q`, and of nodes above them. (The later commitments' siblings are functions of `f¹`, under item 2.)
 
@@ -131,7 +131,7 @@ Now take (∗). For a `K`-linear relation `Σ_l c_l e_l = 0`, summing (∗) give
 
 ### Lemma 5 (the hashes)
 
-Under the hypotheses of Lemma 4 with `|Q| < 2^19`, for each position `x ∉ Q` there is a `K`-space `C_x ⊆ K^64` of dimension at least 61 such that the joint law of (items 1 to 3, the row at `x`) is invariant under translating the row by any element of `C_x`. So, conditioned on items 1 to 3, the row at `x` takes any given value with probability at most `2^(-64·61)`.
+Under the hypotheses of Lemma 4 with `|Q| < 2^19`, for each position `x ∉ Q` there is a `K`-space `C_x ⊆ K^64` of dimension at least 61 such that the joint law of (items 1 to 3, the row at `x`) is invariant under translating the row by any element of `C_x`. So, conditioned on items 1 to 3 and on the sumcheck transcript (which does not depend on the padding), the row at `x` takes any given value with probability at most `2^(-64·61)`.
 
 *Proof.* Fix a `u ∈ K^(2^19)` whose polynomial vanishes on `Q` and is 1 at `x`. Let `C_x = {c ∈ K^64 : Σ_lane ε_lane c_lane = 0}`, one `E`-linear condition, that is three `K`-linear ones, so of dimension at least `64 − 3`. For `c ∈ C_x`, translating the padding by `ΔL_lane = c_lane·u` is a bijection that leaves items 1 (the weight is zero on the lower half), 2 (by the condition on `c`) and 3 unchanged, and moves the row at `x` by `c`. ∎
 
@@ -151,7 +151,7 @@ Given the challenges:
 
 | hypothesis | probability at most |
 | --- | --- |
-| some `r_i = 1` (the prover aborts), `λ = 0`, a coordinate of `ρ` in `{0, 1}`; in the opening, a coincidence `φ_j = π_j` or `σ^i φ_5 = π_5`, or `φ_0 = 0` | `2^-180` |
+| some `r_i = 1` or `μ = 1` (the prover aborts), `λ = 0`, a coordinate of `ρ` in `{0, 1}`; in the opening, a coincidence `φ_j = π_j` or `σ^i φ_5 = π_5`, or `φ_0 = 0` | `2^-180` |
 | Lemma 2: `ρ_a ∈ K` | `2^-128` |
 | Lemma 2: one of the 121 products of `τ_j^(±1)` in `K` | `121·2^-128` |
 | Lemma 3: `μ ∈ K` | `2^-128` |

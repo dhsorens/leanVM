@@ -24,10 +24,10 @@ The matrices are never written out. They are:
 
 ## Protocol
 
-The prover commits `P = (z, m₀, m₁, m₂)`: the witness and three uniformly random tables of its size. The transcript is seeded with the circuit's commitment, `y` and `root`, and absorbs the commitment to `P` before any challenge. `ρ`, `q` are the two sumcheck points, 22 coordinates each.
+The prover commits `P = (z, m₀, m₁, m₂)`: the witness and three uniformly random tables of its size. The transcript is seeded with the circuit's commitment, `y` and `root`, and absorbs the commitment to `P` before any challenge. It is a Keccak-256 chain, the hash an EVM contract has. `ρ`, `q` are the two sumcheck points, 22 coordinates each.
 
 1. **Zerocheck.** `Σ_x eq(r,x)·[(Az)(x)·(Bz)(x) + (Cz)(x) + λ·g(x)] = λ·S` for random `r`, `λ`, where `g(x) = c + Σ_i (g_i·x_i + h_i·x_i²)` is a mask whose coefficients are wires of `z`. The prover sends `S` first, two scalars a round, then `â = (Az)~(ρ)`, `b̂ = (Bz)~(ρ)` and `γ = g(ρ)`. The verifier derives `ĉ = (Cz)~(ρ)` from the final claim.
-2. **Lincheck.** One linear claim on `z` gathers `â + α·b̂ + α²·ĉ`, the constant wire of every used block (`α³`; an unused block is all zeros, by its rows), the public values, and `γ` (`α⁴`): `Σ_y comb(y)·z(y) = v`, with `comb` the matrices' column weights at `ρ` plus the weights of those wires. The prover sends `S_k = Σ_y comb(y)·m_k(y)`, the verifier samples `μ`, and the sumcheck runs on the masked table `t = z + μ·m₀ + μ²·m₁ + μ³·m₂` against `v + μ·S₀ + μ²·S₁ + μ³·S₂`. Two scalars a round, then the three local-matrix evaluations `V_T = I~(ρ_local, q_local, T, α)`.
+2. **Lincheck.** One linear claim on `z` gathers `â + α·b̂ + α²·ĉ`, the constant wire of every used block (`α³`; an unused block is all zeros, by its rows), the public values (a 256-bit one as two field elements, each the sum of 128 wires weighted by a basis of the field over `GF(2)`, which determines them since they hold bits), and `γ` (`α⁴`): `Σ_y comb(y)·z(y) = v`, with `comb` the matrices' column weights at `ρ` plus the weights of those wires. The prover sends `S_k = Σ_y comb(y)·m_k(y)`, the verifier samples `μ`, and the sumcheck runs on the masked table `t = z + μ·m₀ + μ²·m₁ + μ³·m₂` against `v + μ·S₀ + μ²·S₁ + μ³·S₂`. Two scalars a round, then the three local-matrix evaluations `V_T = I~(ρ_local, q_local, T, α)`.
 3. **Two claims.** The verifier evaluates `comb~(q)` from the `V_T` and the wiring. The sumcheck ends on `comb~(q)·t~(q)`, and `t~(q)` is one evaluation of `P`: its two top coordinates at `μ/(1 + μ)` and `μ²/(1 + μ²)`, scaled by `(1 + μ)(1 + μ²)`. The second claim is `I~(ρ_local, q_local, t', α) = Σ_T eq(t',T)·V_T` at a random `t'`.
 
 The proof is `2·22 + 4` scalars for the zerocheck and `2·22 + 6` for the lincheck, plus the commitment root. `P` is `2^24` words, committed as `2^26`, and `I` is `2^25` words.
@@ -44,3 +44,7 @@ The proof is honest-verifier zero knowledge, with statistical error below `2^-11
 The wiring terms and everything about `I` are public, and need no hiding.
 
 The prover's randomness (the mask, the hiding wires, the three tables and the padding) must be uniform. The benchmark draws it from the test generator.
+
+## The verifier as a contract
+
+`membership::reduce` is the verifier written over any scalar type. Run on the field it is `verify`; run on a recorder of operations it yields the EVM contract (`crates/evm`), so the two cannot disagree on what is computed.

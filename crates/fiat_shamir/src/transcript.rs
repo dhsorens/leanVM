@@ -125,6 +125,11 @@ impl ProverState {
         Self::from_fs(FiatShamirState::from_label(label))
     }
 
+    /// [`Self::from_label`] on the Keccak chain ([`FiatShamirState::keccak`]).
+    pub fn keccak(label: &[u8]) -> Self {
+        Self::from_fs(FiatShamirState::keccak(label))
+    }
+
     fn from_fs(fs: FiatShamirState) -> Self {
         Self {
             fs,
@@ -162,6 +167,11 @@ impl<'a> VerifierState<'a> {
     /// A protocol with no public input of its own, seeded from `label` alone.
     pub fn from_label(label: &[u8], proof: &'a Proof) -> Self {
         Self::from_fs(FiatShamirState::from_label(label), proof)
+    }
+
+    /// [`Self::from_label`] on the Keccak chain ([`FiatShamirState::keccak`]).
+    pub fn keccak(label: &[u8], proof: &'a Proof) -> Self {
+        Self::from_fs(FiatShamirState::keccak(label), proof)
     }
 
     fn from_fs(fs: FiatShamirState, proof: &'a Proof) -> Self {
