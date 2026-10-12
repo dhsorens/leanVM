@@ -22,8 +22,8 @@ pub enum Node {
     Frobenius(u32),
     /// The transcript's seed: the hash of the label.
     Seed,
-    /// The transcript's step: the hash of a state and of a scalar under a tag.
-    Hash(u32, u32, u8),
+    /// The transcript's step: the hash of a state and of the first `n` of three scalars.
+    Hash(u32, [u32; 3], u8),
     /// The low 192 bits of a state: a challenge.
     Low(u32),
 }

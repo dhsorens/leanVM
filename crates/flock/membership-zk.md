@@ -8,7 +8,7 @@ Symbols are local to a section where they must be: `ρ`, `r`, `λ` are the zeroc
 
 **The prover's randomness**, all uniform and independent:
 
-- `G = (c, g_1, h_1, …, g_n, h_n) ∈ E^(2n+1)`, the zerocheck mask's coefficients, held as `3(2n+1)` wires of `z` (three `K` limbs each). These wires are in no row of `A` or `B`, and `C` is zero on them (`C` is the identity elsewhere).
+- `G = (c, g_1, h_1, …, g_n, h_n) ∈ E^(2n+1)`, the zerocheck mask's coefficients, held as `3(2n+1)` wires of `z` (three `K` limbs each), in an aligned run of 256 wires whose others are zero. The run is in no row of `A` or `B`, and `C` is zero on it (`C` is the identity elsewhere).
 - `(u_{c,i}, v_{c,i}) ∈ K²` for each compression `c < 64` and `i < 6`, the hiding wires; `w_{c,i} = u_{c,i}·v_{c,i}` is the third wire. Their rows are `u = u·1`, `v = v·1`, `w = u·v`.
 - `m_0, m_1, m_2 ∈ K^(2^n)`, the lincheck masks, entering as `t = z + μ m_0 + μ² m_1 + μ³ m_2`.
 - `R`, the `3·2^24` words of padding in the committed table.
@@ -48,7 +48,7 @@ with `W_i` a function of `a, b, c` and the earlier challenges, and, writing `g(x
 
 The map `G ↦ (S, M_1(1), M_1(∞), …, M_n(1), M_n(∞))` is an `E`-linear bijection of `E^(2n+1)`: the `M_i(∞)` give the `h_i`; then `M_i(1) + S` is, up to known terms in the `h_j`, `Σ_{j<i} (ρ_j + r_j) g_j + (1 + r_i) g_i`, a triangular system in the `g_i` with diagonal `1 + r_i ≠ 0`; and `S` then gives `c`. Since `G` is uniform and independent of everything else, so is its image, and so is that image times `λ` plus anything independent of `G`. ∎
 
-The last three scalars are `â = (Az)~(ρ)`, `b̂ = (Bz)~(ρ)` and `γ = g(ρ)`. The verifier's final equation is `claim = â·b̂ + ĉ + λ·γ` with `ĉ = (Cz)~(ρ)`, so, given the rounds, `γ` and `ĉ` determine each other: the zerocheck's view is the `2n + 1` uniform scalars and `(â, b̂, ĉ)`.
+The last two scalars are `â = (Az)~(ρ)` and `b̂ = (Bz)~(ρ)`. The final claim is `â·b̂ + ĉ + λ·γ` with `ĉ = (Cz)~(ρ)` and `γ = g(ρ)`, neither of which is sent: the verifier only uses their combination `ĉ + λ·γ`, which the rounds and `(â, b̂)` determine. So the zerocheck's view is the `2n + 1` uniform scalars and `(â, b̂)`, and Lemma 2 below is used through its first two coordinates only.
 
 ### Lemma 2 (the three evaluations)
 
@@ -82,9 +82,9 @@ Let `μ ∉ K`. The table `t = z + μ m_0 + μ² m_1 + μ³ m_2` is uniform in `
 
 since the honest `z` satisfies `Σ comb·z = v`. ∎
 
-The verifier's `v` is a function of `(â, b̂, ĉ, γ)`, the statement and the challenges. The sumcheck ends on `comb~(q)·t~(q)`, and the claim left to the commitment is `P~(q, s_1, s_2) = t~(q)/((1 + μ)(1 + μ²))` at `s_1 = μ/(1 + μ)`, `s_2 = μ²/(1 + μ²)`, on `P = (z, m_0, m_1, m_2)`: a function of `t`.
+The verifier's `v` is a function of the zerocheck's scalars, the statement and the challenges. The sumcheck ends on `comb~(q)·t~(q)`, and the claim left to the commitment is `P~(q, s_1, s_2) = t~(q)/((1 + μ)(1 + μ²))` at `s_1 = μ/(1 + μ)`, `s_2 = μ²/(1 + μ²)`, on `P = (z, m_0, m_1, m_2)`: a function of `t`.
 
-**Summary.** Outside the bad challenges of Lemmas 1 to 3, the sumcheck transcript is a fixed function of: `2n + 1` uniform scalars, a triple `2^-11000`-close to uniform on `E³`, and a uniform table `t`, the three independent. None depends on the witness.
+**Summary.** Outside the bad challenges of Lemmas 1 to 3, the sumcheck transcript is a fixed function of: `2n + 1` uniform scalars, a pair `(â, b̂)` that is `2^-11000`-close to uniform on `E²`, and a uniform table `t`, the three independent. None depends on the witness.
 
 ## 4. The commitment and its opening
 
@@ -141,8 +141,8 @@ Under the hypotheses of Lemma 4 with `|Q| < 2^19`, for each position `x ∉ Q` t
 
 Given the challenges:
 
-1. Draw the `2n + 1` zerocheck scalars and `(â, b̂, ĉ)` uniformly; set `γ` by the verifier's final zerocheck equation.
-2. Draw `t ∈ E^(2^n)` uniformly. Compute the lincheck's claim `v` as the verifier does, then `S_k = Σ comb·pr_k(t) + pr_k(1)·v`, and run the lincheck's sumcheck on `comb·t` honestly. The circuit's three evaluations and its opening are public.
+1. Draw the `2n + 1` zerocheck scalars and `(â, b̂)` uniformly.
+2. Draw `t ∈ E^(2^n)` uniformly. Compute the lincheck's claim `v` as the verifier does, then `S_k = Σ comb·pr_k(t) + pr_k(1)·v`, and run the lincheck's sumcheck on `comb·t` honestly. The circuit's evaluation `V` and its opening are public.
 3. The claim on the commitment is now fixed: `P~(p) = v'`. Choose any `K`-valued `P'` with `P'~(p) = v'` (one exists by (A1) and (A6)), draw fresh padding, commit `T'` and open it honestly.
 
 **Correctness.** Steps 1 and 2 have the distribution of the honest sumcheck transcript by Lemmas 1 to 3, up to `2^-11000`. Given that transcript, the honest opening is the opening of `P` under uniform padding independent of the transcript, and step 3 is the opening of `P'` under uniform padding. By Lemma 4 items 1 to 3 have the same distribution in both. By the argument after Lemma 5 the siblings are indistinguishable but with probability `H·2^-3800`.
@@ -151,7 +151,7 @@ Given the challenges:
 
 | hypothesis | probability at most |
 | --- | --- |
-| some `r_i = 1` or `μ = 1` (the prover aborts), `λ = 0`, a coordinate of `ρ` in `{0, 1}`; in the opening, a coincidence `φ_j = π_j` or `σ^i φ_5 = π_5`, or `φ_0 = 0` | `2^-180` |
+| some `r_i = 1`, `μ = 1`, or a zero in `(w_S + w_H)(w_S + w_F)` of the circuit's claim (the prover aborts), `λ = 0`, a coordinate of `ρ` in `{0, 1}`; in the opening, a coincidence `φ_j = π_j` or `σ^i φ_5 = π_5`, or `φ_0 = 0` | `2^-180` |
 | Lemma 2: `ρ_a ∈ K` | `2^-128` |
 | Lemma 2: one of the 121 products of `τ_j^(±1)` in `K` | `121·2^-128` |
 | Lemma 3: `μ ∈ K` | `2^-128` |

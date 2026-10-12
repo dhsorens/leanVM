@@ -51,10 +51,9 @@ fn push_usize(value: usize) -> Vec<u8> {
     push(&value.to_be_bytes())
 }
 
-/// A field element as a word: limb 0 lowest. `tag` rides above it, in the fourth limb.
-fn word(limbs: [u64; 3], tag: u8) -> [u8; 32] {
+/// A field element as a word: limb 0 lowest.
+fn word(limbs: [u64; 3]) -> [u8; 32] {
     let mut bytes = [0; 32];
-    bytes[..8].copy_from_slice(&u64::from(tag).to_be_bytes());
     for (i, limb) in limbs.iter().enumerate() {
         bytes[24 - 8 * i..32 - 8 * i].copy_from_slice(&limb.to_be_bytes());
     }
@@ -92,7 +91,8 @@ impl Compiler<'_> {
     fn operands(node: Node) -> Vec<u32> {
         match node {
             Node::Add(a, b) | Node::Mul(a, b) if a == b => vec![a],
-            Node::Add(a, b) | Node::Mul(a, b) | Node::Hash(a, b, _) => vec![a, b],
+            Node::Add(a, b) | Node::Mul(a, b) => vec![a, b],
+            Node::Hash(state, scalars, n) => [&[state][..], &scalars[..n as usize]].concat(),
             Node::Frobenius(a) | Node::Low(a) => vec![a],
             _ => vec![],
         }
@@ -106,7 +106,7 @@ impl Compiler<'_> {
             return;
         }
         match self.graph.nodes[at] {
-            Node::Const(limbs) => self.code(&push(&word(limbs, 0))),
+            Node::Const(limbs) => self.code(&push(&word(limbs))),
             Node::Statement(k) | Node::Root(k) => {
                 let offset = match self.graph.nodes[at] {
                     Node::Root(_) => COMMITMENT,
@@ -160,18 +160,17 @@ impl Compiler<'_> {
                 self.code(&[&push_usize(64)[..], &[PUSH0], &push_usize(48), &[CALLDATACOPY]].concat());
                 self.code(&[&push_usize(112)[..], &[PUSH0, KECCAK256]].concat());
             }
-            Node::Hash(state, scalar, tag) => {
-                // Both operands reach the stack before either is written to the scratch words.
+            Node::Hash(state, scalars, n) => {
+                // Every operand reaches the stack before any is written to the scratch words.
                 self.eval(state);
-                match self.graph.nodes[scalar as usize] {
-                    Node::Const(limbs) => self.code(&push(&word(limbs, tag))),
-                    _ => {
-                        self.eval(scalar);
-                        self.code(&[&push_usize(tag as usize)[..], &push_usize(192), &[SHL, OR]].concat());
-                    }
+                for &scalar in &scalars[..n as usize] {
+                    self.eval(scalar);
                 }
-                self.code(&[&push_usize(32)[..], &[MSTORE, PUSH0, MSTORE]].concat());
-                self.code(&[&push_usize(64)[..], &[PUSH0, KECCAK256]].concat());
+                for k in (1..=n as usize).rev() {
+                    self.code(&[&push_usize(32 * k)[..], &[MSTORE]].concat());
+                }
+                self.code(&[PUSH0, MSTORE]);
+                self.code(&[&push_usize(32 * (n as usize + 1))[..], &[PUSH0, KECCAK256]].concat());
             }
             Node::Low(a) => {
                 self.eval(a);
@@ -214,12 +213,28 @@ pub fn compile(graph: &Graph, outputs: &[u32], prefix: &[u8; 48], calldata_len: 
         .collect();
     let mut depth = vec![1u32; n];
     for at in 0..n {
-        if let [a, b] = Compiler::operands(graph.nodes[at])[..] {
-            let of = |id: u32| if shared[id as usize] { 1 } else { depth[id as usize] };
-            depth[at] = if of(a) == of(b) { of(a) + 1 } else { of(a).max(of(b)) };
-        } else if let [a] = Compiler::operands(graph.nodes[at])[..] {
-            depth[at] = if shared[a as usize] { 1 } else { depth[a as usize] }.max(3);
-        }
+        let of = |id: u32| if shared[id as usize] { 1 } else { depth[id as usize] };
+        depth[at] = match Compiler::operands(graph.nodes[at])[..] {
+            [] => 1,
+            // A lone operand, and what the instruction works in above it.
+            [a] => of(a).max(3),
+            [a, b] if matches!(graph.nodes[at], Node::Add(..) | Node::Mul(..)) => {
+                if of(a) == of(b) {
+                    of(a) + 1
+                } else {
+                    of(a).max(of(b))
+                }
+            }
+            ref operands => {
+                operands
+                    .iter()
+                    .zip(0..)
+                    .map(|(&id, below)| of(id) + below)
+                    .max()
+                    .unwrap()
+                    + 2
+            }
+        };
     }
 
     let mut compiler = Compiler {

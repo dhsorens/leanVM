@@ -7,6 +7,7 @@ use revm::database::{CacheDB, EmptyDB};
 use revm::handler::{ExecuteEvm, MainBuilder, MainContext};
 use revm::interpreter::interpreter_types::{InterpreterTypes, StackTr};
 use revm::interpreter::{InstructionContext, InstructionResult, gas};
+use revm::primitives::hardfork::SpecId;
 use revm::primitives::{Address, Bytes, TxKind, U256};
 use revm::state::{AccountInfo, Bytecode};
 
@@ -35,8 +36,18 @@ fn field_mul<W: InterpreterTypes, H: ?Sized>(context: InstructionContext<'_, H, 
 pub struct Outcome {
     /// What it returned, or `None` if it reverted or halted.
     pub output: Option<Vec<u8>>,
-    /// The transaction's gas, intrinsic cost and calldata floor included.
-    pub gas: u64,
+    /// The gas of the contract's execution: the transaction's without its base cost and its calldata.
+    pub execution: u64,
+}
+
+/// A transaction's gas: its base cost, then the larger of its calldata at the standard rate plus `execution`, and
+/// of its calldata at the floor rate, `floor` gas a nonzero byte. EIP-7623 has a floor of 40, and 10 for a zero
+/// byte; EIP-7976 has 64 for every byte.
+pub fn transaction_gas(calldata: &[u8], execution: u64, floor: u64) -> u64 {
+    let zeros = calldata.iter().filter(|&&byte| byte == 0).count() as u64;
+    let nonzeros = calldata.len() as u64 - zeros;
+    let floor_gas = floor * nonzeros + if floor == 64 { 64 } else { floor / 4 } * zeros;
+    21_000 + (16 * nonzeros + 4 * zeros + execution).max(floor_gas)
 }
 
 /// Call a contract holding `code` with `calldata`, in one transaction.
@@ -47,7 +58,11 @@ pub fn call(code: &[u8], calldata: &[u8]) -> Outcome {
         contract,
         AccountInfo::from_bytecode(Bytecode::new_legacy(Bytes::copy_from_slice(code))),
     );
-    let mut evm = Context::mainnet().with_db(db).build_mainnet();
+    // Cancun has no calldata floor, so the gas it reports separates into calldata and execution.
+    let mut evm = Context::mainnet()
+        .with_db(db)
+        .modify_cfg_chained(|cfg| cfg.spec = SpecId::CANCUN)
+        .build_mainnet();
     evm.instruction.insert_instruction(FIELD_MUL, field_mul);
     let tx = TxEnv::builder()
         .caller(caller)
@@ -56,18 +71,14 @@ pub fn call(code: &[u8], calldata: &[u8]) -> Outcome {
         .gas_limit(10_000_000)
         .build()
         .expect("a transaction");
-    match evm.transact_one(tx).expect("a valid transaction") {
+    let result = evm.transact_one(tx).expect("a valid transaction");
+    let execution = result.gas_used() - transaction_gas(calldata, 0, 0);
+    let output = match result {
         ExecutionResult::Success {
-            gas_used,
             output: Output::Call(output),
             ..
-        } => Outcome {
-            output: Some(output.to_vec()),
-            gas: gas_used,
-        },
-        other => Outcome {
-            output: None,
-            gas: other.gas_used(),
-        },
-    }
+        } => Some(output.to_vec()),
+        _ => None,
+    };
+    Outcome { output, execution }
 }

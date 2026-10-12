@@ -55,9 +55,9 @@ const SWAP: usize = 48;
 const DIRECTION: usize = 56 * 32;
 const HIDING: [usize; 3] = [57 * 32, 58 * 32, 59 * 32];
 const N_HIDING: usize = 6;
-/// `S`: the zerocheck's mask, three limbs a coefficient. Compression 0's are free, in no row and on no row's
-/// right-hand side (`C` is the identity but for them); the other compressions' are zero.
-const MASK: usize = DIRECTION + 112;
+/// `F`: the zerocheck's mask, an aligned run of 256 wires: coefficient `j`'s limb `l` at `4 j + l`. Compression 0's
+/// are free, in no row and on no row's right-hand side (`C` is the identity but for them); the others are zero.
+const MASK: usize = 40 * 32;
 /// The mask is `c + sum_i (g_i x_i + h_i x_i^2)`.
 const MASK_COEFFS: usize = 2 * N_VARS + 1;
 /// `H`: its carry products.
@@ -273,12 +273,12 @@ fn message_source(slot: usize, p: usize) -> usize {
     SIGMA[(slot - 1) / 2][8 * ((slot - 1) % 2) + p]
 }
 
-/// Where compression `c` reads its previous hash: the one before it along the path, or `x`.
+/// Where compression `c` reads its previous hash: the one before it, or `x` for the two hashes of `x`. The padding
+/// compressions go on up the path, which keeps the rule one carry chain.
 fn previous_source(c: usize) -> (usize, usize) {
     match c {
-        2..N_HASHES => (c - 1, OUT),
-        1 => (0, AUX),
-        _ => (c, AUX),
+        0 | 1 => (0, AUX),
+        _ => (c - 1, OUT),
     }
 }
 
@@ -369,14 +369,14 @@ impl Witness {
     /// `C z`: `z` without the mask wires.
     fn c(&self) -> Vec<F192> {
         let mut c = lift(&self.z);
-        c[mask_wires()].fill(F192::ZERO);
+        c[mask_block()].fill(F192::ZERO);
         c
     }
 
     fn satisfied(&self) -> bool {
         (0..N_WIRES).all(|i| {
             self.a[i] * self.b[i]
-                == if mask_wires().contains(&i) {
+                == if mask_block().contains(&i) {
                     F64::ZERO
                 } else {
                     self.z[i]
@@ -385,9 +385,14 @@ impl Witness {
     }
 }
 
-/// The wires holding the zerocheck's mask.
-fn mask_wires() -> std::ops::Range<usize> {
-    wire(0, 0, MASK)..wire(0, 0, MASK) + 3 * MASK_COEFFS
+/// The wires `C` is zero on: the mask's run.
+fn mask_block() -> std::ops::Range<usize> {
+    wire(0, F_SLOT, MASK)..wire(0, F_SLOT, MASK) + 256
+}
+
+/// The wire holding limb `limb` of the mask's coefficient `j`.
+fn mask_wire(j: usize, limb: usize) -> usize {
+    wire(0, F_SLOT, MASK + 4 * j + limb)
 }
 
 /// A compression's free inputs: its sibling, its direction bit, and `x`.
@@ -485,11 +490,11 @@ impl Circuit {
                         (a[u], a[v], a[w], b[w]) = (z[u], z[v], z[u], z[v]);
                     }
                 }
-                if k == S && c == 0 {
+                if k == F && c == 0 {
                     for j in 0..MASK_COEFFS {
                         let limbs: [u64; 3] = std::array::from_fn(|_| random());
                         for (limb, &value) in limbs.iter().enumerate() {
-                            z[base + MASK + 3 * j + limb] = F64(value);
+                            z[mask_wire(j, limb)] = F64(value);
                         }
                         mask.push(F192::new(limbs[0], limbs[1], limbs[2]));
                     }
@@ -677,18 +682,22 @@ fn zero_pins() -> [usize; 2] {
     [wire(0, 0, DIRECTION), wire(1, 0, DIRECTION)]
 }
 
-/// The lincheck's batching: powers of `alpha` over its claims, and a power of `beta` for each half of a 256-bit
-/// public value, then for each zero bit.
+/// The lincheck's batching: powers of `alpha` over its claims, the mask's weight in the third, and a power of `beta`
+/// for each half of a 256-bit public value, then for each zero bit.
 struct Batching<S> {
-    alpha: [S; 5],
+    alpha: [S; 4],
+    /// `alpha^2 lambda`: the zerocheck's third claim is `(C z)~(rho) + lambda g(rho)`.
+    mask: S,
     pins: Vec<S>,
 }
 
 impl<S: Scalar> Batching<S> {
-    fn new(alpha: S, beta: S) -> Self {
+    fn new(alpha: S, beta: S, lambda: S) -> Self {
         let n = 2 * word_pins().len() + zero_pins().len();
+        let alpha: [S; 4] = std::array::from_fn(|i| (0..i).fold(unity(), |acc, _| acc * alpha));
         Self {
-            alpha: std::array::from_fn(|i| (0..i).fold(unity(), |acc, _| acc * alpha)),
+            alpha,
+            mask: alpha[2] * lambda,
             pins: std::iter::successors(Some(beta), |&power| Some(power * beta))
                 .take(n)
                 .collect(),
@@ -705,10 +714,9 @@ impl<S: Scalar> Batching<S> {
     }
 }
 
-/// The eq tables of a point over the slots and over the compressions.
-fn instance_tables<S: Scalar>(point: &[S]) -> [Vec<S>; 2] {
-    let (slot, compression) = point[LOG_BLOCK..].split_at(LOG_SLOTS);
-    [eq_points(slot), eq_points(compression)]
+/// The eq table of a point over the slots.
+fn slot_table<S: Scalar>(point: &[S]) -> Vec<S> {
+    eq_points(&point[LOG_BLOCK..LOG_BLOCK + LOG_SLOTS])
 }
 
 /// The eq weight of the used slots, which is what the constant wires sum to.
@@ -716,10 +724,20 @@ fn used_slots<S: Scalar>(slots: &[S]) -> S {
     sum(slots[..N_SLOTS].iter().copied())
 }
 
+/// The weight of each block type in the lincheck's weight at `q`: its slots' `eq(rho, slot) eq(q, slot)`.
+fn kind_weights<S: Scalar>(rho: &[S], q: &[S]) -> [S; N_KINDS] {
+    let (slots_r, slots_q) = (slot_table(rho), slot_table(q));
+    std::array::from_fn(|k| {
+        sum((0..N_SLOTS)
+            .filter(|&slot| kind(slot) == Some(k))
+            .map(|slot| slots_r[slot] * slots_q[slot]))
+    })
+}
+
 /// The lincheck's weight on every wire, and each block type's column marginal `(A + alpha B)^T eq(rho_local, .)`.
 fn comb_table(circuit: &Circuit, rho: &[F192], batching: &Batching<F192>) -> (Vec<F192>, [Vec<F192>; N_KINDS]) {
     let local = eq_table(&rho[..LOG_BLOCK]);
-    let [slots, compressions] = instance_tables(rho);
+    let (slots, compressions) = (slot_table(rho), eq_table(&rho[LOG_BLOCK + LOG_SLOTS..]));
     let alpha = batching.alpha;
     let marginals: [Vec<F192>; N_KINDS] = std::array::from_fn(|k| {
         let block = &circuit.blocks[k];
@@ -763,35 +781,44 @@ fn comb_table(circuit: &Circuit, rho: &[F192], batching: &Batching<F192>) -> (Ve
     for (r, at) in zero_pins().into_iter().enumerate() {
         comb[at] += batching.pins[2 * word_pins().len() + r];
     }
-    // A mask wire carries its weight in the mask's value, and none in `C z`.
-    let unit = compressions[0] * slots[0];
-    for (at, weight) in mask_wires().zip(mask_weights(rho)) {
-        comb[at] += alpha[4] * weight + alpha[2] * unit * local[at];
+    // The mask's run is out of `C z`, and a mask wire carries its weight in the mask's value.
+    let unit = compressions[0] * slots[F_SLOT];
+    for at in mask_block() {
+        comb[at] += alpha[2] * unit * local[at % BLOCK];
+    }
+    for (j, weight) in mask_weights(rho).into_iter().enumerate() {
+        for (limb, power) in limb_weights().into_iter().enumerate() {
+            comb[mask_wire(j, limb)] += batching.mask * weight * power;
+        }
     }
     (comb, marginals)
 }
 
-/// The weight of each mask wire in the mask's value at `rho`: a coefficient's own weight, times each limb's.
+/// The weight of each mask coefficient in the mask's value at `rho`.
 fn mask_weights<S: Scalar>(rho: &[S]) -> Vec<S> {
-    let (y, y2) = (S::constant(F192::Y), S::constant(F192::Y.square()));
-    let coefficients = [unity()].into_iter().chain(rho.iter().flat_map(|&x| [x, x * x]));
-    coefficients.flat_map(|w| [w, w * y, w * y2]).collect()
+    [unity()]
+        .into_iter()
+        .chain(rho.iter().flat_map(|&x| [x, x * x]))
+        .collect()
 }
 
-/// [`comb_table`]'s multilinear extension at `q`, from the three local-matrix evaluations `values` and the wiring.
-fn comb_at<S: Scalar>(rho: &[S], q: &[S], batching: &Batching<S>, values: &[S]) -> S {
+/// A coefficient is its three limbs under the field's basis over `GF(2^64)`.
+fn limb_weights() -> [F192; 3] {
+    [F192::ONE, F192::Y, F192::Y.square()]
+}
+
+/// [`comb_table`]'s multilinear extension at `q`, from the wiring and from `local`: the three local matrices at
+/// `(rho, q)`, summed under their [`kind_weights`].
+fn comb_at<S: Scalar>(rho: &[S], q: &[S], batching: &Batching<S>, local: S) -> S {
     let alpha = batching.alpha;
-    let [slots_r, comps_r] = instance_tables(rho);
-    let [slots_q, comps_q] = instance_tables(q);
+    let (slots_r, slots_q) = (slot_table(rho), slot_table(q));
     // A local index is a bit, then a word.
     let (words_r, words_q) = (eq_points(&rho[5..LOG_BLOCK]), eq_points(&q[5..LOG_BLOCK]));
     let same_bit = eq_of(&rho[..5], &q[..5]);
     let same_compression = eq_of(&rho[LOG_BLOCK + LOG_SLOTS..], &q[LOG_BLOCK + LOG_SLOTS..]);
 
-    // The local matrices, and the constant wire of every used block.
-    let diagonal = |slot: usize| slots_r[slot] * slots_q[slot];
-    let blocks = sum((0..N_SLOTS).map(|slot| diagonal(slot) * values[kind(slot).expect("a used slot")]));
-    let constants = alpha[3] * eq_index(CONST, &q[..LOG_BLOCK]) * sum((0..N_SLOTS).map(diagonal));
+    // The constant wire of every used block.
+    let constants = alpha[3] * eq_index(CONST, &q[..LOG_BLOCK]) * sum(kind_weights(rho, q).into_iter());
 
     // The wiring: state words from the previous slot, message words from slot 0, the previous hash from another F.
     let words =
@@ -804,12 +831,24 @@ fn comb_at<S: Scalar>(rho: &[S], q: &[S], batching: &Batching<S>, values: &[S]) 
         * sum((1..F_SLOT).map(|slot| slots_r[slot] * words(AUX, &|p| STATE_IN + message_source(slot, p), 8)));
     let from_base = |base: usize| words(AUX, &|k| base + k, 8);
     let (from_hash, from_x) = (from_base(OUT), from_base(AUX));
+    // The previous hash: compression `c` reads `c - 1`, a carry chain over the compression's bits, but for
+    // compression 1, which reads `x` as compression 0 does.
+    let (comp_r, comp_q) = (&rho[LOG_BLOCK + LOG_SLOTS..], &q[LOG_BLOCK + LOG_SLOTS..]);
+    let mut above = [unity::<S>(); LOG_COMPRESSIONS];
+    for k in (0..LOG_COMPRESSIONS - 1).rev() {
+        above[k] = above[k + 1] * (unity::<S>() + comp_r[k + 1] + comp_q[k + 1]);
+    }
+    let mut below = unity::<S>();
+    let mut successor = S::constant(F192::ZERO);
+    for k in 0..LOG_COMPRESSIONS {
+        successor = successor + below * comp_r[k] * (unity::<S>() + comp_q[k]) * above[k];
+        below = below * (unity::<S>() + comp_r[k]) * comp_q[k];
+    }
+    let to_first = eq_index(0, comp_q);
+    let (first, second) = (eq_index(0, comp_r), eq_index(1, comp_r));
     let previous = slots_r[0]
         * slots_q[F_SLOT]
-        * sum((0..1 << LOG_COMPRESSIONS).map(|c| {
-            let (from, base) = previous_source(c);
-            comps_r[c] * comps_q[from] * if base == OUT { from_hash } else { from_x }
-        }));
+        * ((successor + second * to_first) * from_hash + (first + second) * to_first * from_x);
     let wiring = same_bit * (same_compression * (state + message) + previous);
 
     // A half's bit weights are a product over the bits of the bit's position: `x^(2^k)` for bit `k` under 6, the
@@ -834,13 +873,16 @@ fn comb_at<S: Scalar>(rho: &[S], q: &[S], batching: &Batching<S>, values: &[S]) 
             .enumerate()
             .map(|(r, &at)| batching.pins[2 * word_pins.len() + r] * eq_index(at, q)));
 
-    // The mask wires sit in one aligned run of 256, in the first block. Each leaves `C z` and enters the mask's value.
-    let (low_r, low_q) = (eq_points(&rho[..8]), eq_points(&q[..8]));
-    let run = MASK % 256..MASK % 256 + 3 * MASK_COEFFS;
-    let value = sum(mask_weights(rho).iter().zip(&low_q[run.clone()]).map(|(&w, &x)| w * x));
-    let leaves = sum(run.map(|at| low_r[at] * low_q[at]));
-    let mask = eq_index(MASK >> 8, &q[8..]) * (alpha[4] * value + alpha[2] * eq_index(MASK >> 8, &rho[8..]) * leaves);
-    same_compression * (blocks + constants) + alpha[2] * eq_of(rho, q) + wiring + pinned + mask
+    // The mask's run of 256: all of it leaves `C z`, and a coefficient's limb enters the mask's value.
+    let run = mask_block().start >> 8;
+    let limbs = sum(limb_weights()
+        .into_iter()
+        .enumerate()
+        .map(|(limb, power)| S::constant(power) * eq_index(limb, &q[..2])));
+    let value = limbs * sum(mask_weights(rho).iter().zip(eq_points(&q[2..8])).map(|(&w, e)| w * e));
+    let mask = eq_index(run, &q[8..])
+        * (batching.mask * value + alpha[2] * eq_index(run, &rho[8..]) * eq_of(&rho[..8], &q[..8]));
+    same_compression * (local + constants) + alpha[2] * eq_of(rho, q) + wiring + pinned + mask
 }
 
 /// The zerocheck's mask `g(x) = c + sum_i (g_i x_i + h_i x_i^2)`, summed under the zerocheck's own `eq(r, x)`.
@@ -938,13 +980,12 @@ pub fn prove(
         },
         &mut ps,
     );
-    let gamma = mask.eval(&rho);
-    ps.add_scalars(&[a_eval, b_eval, gamma]);
+    ps.add_scalars(&[a_eval, b_eval]);
     drop(span);
 
     // Lincheck on the witness plus a combination of the masks that is a uniformly random table.
     let span = tracing::info_span!("Lincheck").entered();
-    let batching = Batching::new(ps.sample(), ps.sample());
+    let batching = Batching::new(ps.sample(), ps.sample(), lambda);
     let (comb, marginals) = comb_table(circuit, &rho, &batching);
     let alpha = batching.alpha;
     let mask_sums = masks
@@ -963,12 +1004,15 @@ pub fn prove(
     let (q, _, masked_eval, _) = lincheck::product_sumcheck(comb, masked, 0, &mut ps);
     let local = eq_table(&q[..LOG_BLOCK]);
     let values = marginals.map(|marginal| pcs::ring_switch::inner_product_ext(&marginal, &local));
-    ps.add_scalars(&values);
-    let kinds = ps.sample_vec(2);
+    let weights = kind_weights(&rho, &q);
+    let local = sum(weights.iter().zip(&values).map(|(&w, &v)| w * v));
+    ps.add_scalar(local);
     drop(span);
 
     let [d0, d1] = [F192::ONE + mu, F192::ONE + mu * mu];
-    let index = index_claim(&rho, &q, &kinds, alpha[1], &values);
+    let [u0, u1] = [weights[S] + weights[H], weights[S] + weights[F]];
+    assert!(u0 * u1 != F192::ZERO, "a degenerate block weight");
+    let index = index_claim(&rho, &q, alpha[1], weights, local, (u0 * u1).inv());
     let claims = Claims {
         witness: Claim {
             point: [&q[..], &[mu * d0.inv(), mu * mu * d1.inv()]].concat(),
@@ -982,11 +1026,16 @@ pub fn prove(
     (ps.into_proof(), claims)
 }
 
-/// The circuit's claim: its point, and the value the three local-matrix evaluations give there.
-fn index_claim<S: Scalar>(rho: &[S], q: &[S], kinds: &[S], alpha: S, values: &[S]) -> (Vec<S>, S) {
-    let point = [&rho[..LOG_BLOCK], &q[..LOG_BLOCK], kinds, &[alpha]].concat();
-    let value = sum(values.iter().enumerate().map(|(k, &v)| eq_index(k, kinds) * v));
-    (point, value)
+/// The circuit's claim. The three local matrices enter the lincheck's weight under `weights`, and that sum,
+/// `local`, is one evaluation of the committed table scaled: the type's two coordinates at `a`, `b` with
+/// `a / (1 + a) = w_H / w_S` and `b / (1 + b) = w_F / w_S`. `inverse` is that of `(w_S + w_H)(w_S + w_F)`.
+fn index_claim<S: Scalar>(rho: &[S], q: &[S], alpha: S, weights: [S; N_KINDS], local: S, inverse: S) -> (Vec<S>, S) {
+    let kinds = [
+        weights[H] * (weights[S] + weights[F]) * inverse,
+        weights[F] * (weights[S] + weights[H]) * inverse,
+    ];
+    let point = [&rho[..LOG_BLOCK], &q[..LOG_BLOCK], &kinds, &[alpha]].concat();
+    (point, local * weights[S] * inverse)
 }
 
 /// The verifier, on any [`Scalar`]: the proof read from `channel`, down to the witness commitment it names and the
@@ -1010,10 +1059,10 @@ pub fn reduce<S: Scalar>(channel: &mut impl Channel<S>) -> Result<Reduced<S>, Ve
     }
     let a_eval = channel.next().map_err(transcript)?;
     let b_eval = channel.next().map_err(transcript)?;
-    let gamma = channel.next().map_err(transcript)?;
-    let c_eval = claim + a_eval * b_eval + lambda * gamma;
+    // The third claim, `(C z)~(rho) + lambda g(rho)`, is what the final claim leaves: the mask's value is not sent.
+    let c_eval = claim + a_eval * b_eval;
 
-    let batching = Batching::new(channel.sample(), channel.sample());
+    let batching = Batching::new(channel.sample(), channel.sample(), lambda);
     let alpha = batching.alpha;
     let mut mask_sums = Vec::with_capacity(3);
     for _ in 0..3 {
@@ -1024,9 +1073,8 @@ pub fn reduce<S: Scalar>(channel: &mut impl Channel<S>) -> Result<Reduced<S>, Ve
     let mut claim = a_eval
         + alpha[1] * b_eval
         + alpha[2] * c_eval
-        + alpha[3] * used_slots(&instance_tables(&rho)[0])
+        + alpha[3] * used_slots(&slot_table(&rho))
         + batching.pin_target(channel.statement())
-        + alpha[4] * gamma
         + mu * mask_sums[0]
         + mu2 * mask_sums[1]
         + mu * mu2 * mask_sums[2];
@@ -1040,26 +1088,31 @@ pub fn reduce<S: Scalar>(channel: &mut impl Channel<S>) -> Result<Reduced<S>, Ve
         q.push(x);
     }
     q.reverse();
-    let mut values = Vec::with_capacity(N_KINDS);
-    for _ in 0..N_KINDS {
-        values.push(channel.next().map_err(transcript)?);
-    }
-    let kinds = [channel.sample(), channel.sample()];
+    let local = channel.next().map_err(transcript)?;
     channel.finish().map_err(transcript)?;
 
     // The sumcheck ends on `comb~(q) * (z + mu m_0 + mu^2 m_1 + mu^3 m_2)~(q)`: one evaluation of `P`, its two top
     // coordinates at `mu / (1 + mu)` and `mu^2 / (1 + mu^2)`, scaled by `(1 + mu)(1 + mu^2)`.
-    let comb = comb_at(&rho, &q, &batching, &values);
+    let comb = comb_at(&rho, &q, &batching, local);
+    let weights = kind_weights(&rho, &q);
     let [d0, d1] = [unity::<S>() + mu, unity::<S>() + mu2];
-    if !(comb * d0 * d1).is_nonzero() {
+    let [u0, u1] = [weights[S] + weights[H], weights[S] + weights[F]];
+    // One inversion serves both claims.
+    let (scale, kinds) = (comb * d0 * d1, u0 * u1);
+    if !(scale * kinds).is_nonzero() {
         return Err(VerifyError::Degenerate);
     }
-    let inverse = inverse(comb * d0 * d1);
-    let point = [&q[..], &[mu * inverse * comb * d1, mu2 * inverse * comb * d0]].concat();
+    let both = inverse(scale * kinds);
+    let scale_inverse = both * kinds;
+    let point = [
+        &q[..],
+        &[mu * scale_inverse * comb * d1, mu2 * scale_inverse * comb * d0],
+    ]
+    .concat();
     Ok(Reduced {
         root,
-        witness: (point, claim * inverse),
-        index: index_claim(&rho, &q, &kinds, alpha[1], &values),
+        witness: (point, claim * scale_inverse),
+        index: index_claim(&rho, &q, alpha[1], weights, local, both * scale),
     })
 }
 
@@ -1190,19 +1243,21 @@ mod tests {
         let mut rng = Rng::new(0xC0B);
         let circuit = Circuit::new();
         let (rho, q) = (rng.ext_vec(N_VARS), rng.ext_vec(N_VARS));
-        let batching = Batching::new(rng.ext(), rng.ext());
+        let lambda = rng.ext();
+        let batching = Batching::new(rng.ext(), rng.ext(), lambda);
         let secret = secret(&mut rng);
         let (comb, marginals) = comb_table(&circuit, &rho, &batching);
         let local = eq_table(&q[..LOG_BLOCK]);
         let values = marginals.map(|m| pcs::ring_switch::inner_product_ext(&m, &local));
+        let local = sum(kind_weights(&rho, &q).iter().zip(&values).map(|(&w, &v)| w * v));
         let eq_q = eq_table(&q);
         let want = parallel::map_reduce(N_WIRES, || F192::ZERO, |i| comb[i] * eq_q[i], |x, y| x + y);
-        assert_eq!(comb_at(&rho, &q, &batching, &values), want);
+        assert_eq!(comb_at(&rho, &q, &batching, local), want);
 
         let witness = circuit.witness(&secret, &mut || rng.next_u64());
         let alpha = batching.alpha;
         let coefficient = |j: usize| {
-            let limb = |l: usize| witness.z[mask_wires().start + 3 * j + l].0;
+            let limb = |l: usize| witness.z[mask_wire(j, l)].0;
             F192::new(limb(0), limb(1), limb(2))
         };
         let gamma = (0..N_VARS).fold(coefficient(0), |acc, i| {
@@ -1216,10 +1271,9 @@ mod tests {
             .fold(F192::ZERO, |acc, (&c, &e)| acc + c * e);
         let claim = mle_eval(&witness.a, &rho)
             + alpha[1] * mle_eval(&witness.b, &rho)
-            + alpha[2] * c_eval
-            + alpha[3] * used_slots(&instance_tables(&rho)[0])
-            + batching.pin_target(secret.statement().halves())
-            + alpha[4] * gamma;
+            + alpha[2] * (c_eval + lambda * gamma)
+            + alpha[3] * used_slots(&slot_table(&rho))
+            + batching.pin_target(secret.statement().halves());
         let sum = (0..N_WIRES).fold(F192::ZERO, |acc, i| acc + comb[i].mul_base(witness.z[i]));
         assert_eq!(sum, claim);
     }
@@ -1239,7 +1293,7 @@ mod tests {
         let (root, data) = opening::commit(&table);
 
         let (mut proof, claims) = prove(&circuit, &index_root, &statement, &root, &witness, &masks);
-        let n_scalars = 2 + (2 * N_VARS + 4) + (2 * N_VARS + 3 + N_KINDS);
+        let n_scalars = 2 + (2 * N_VARS + 3) + (2 * N_VARS + 3 + 1);
         assert_eq!(proof.stream.len(), n_scalars);
         assert_eq!(verify(&index_root, &statement, &proof), Ok((root, claims.clone())));
 
@@ -1263,18 +1317,10 @@ mod tests {
         }
 
         // A local-matrix evaluation the prover made up is caught by the circuit's claim.
-        for k in 0..N_KINDS {
-            proof.stream[n_scalars - N_KINDS + k] += F192::ONE;
-            let (_, tampered) = verify(&index_root, &statement, &proof).expect("a reduction");
-            // The point is drawn after the evaluations it checks.
-            assert_ne!(tampered.index.point, claims.index.point, "kind {k}");
-            assert_ne!(
-                mle_eval(&index, &tampered.index.point),
-                tampered.index.value,
-                "kind {k}"
-            );
-            proof.stream[n_scalars - N_KINDS + k] += F192::ONE;
-        }
+        proof.stream[n_scalars - 1] += F192::ONE;
+        let (_, tampered) = verify(&index_root, &statement, &proof).expect("a reduction");
+        assert_ne!(mle_eval(&index, &tampered.index.point), tampered.index.value);
+        proof.stream[n_scalars - 1] += F192::ONE;
 
         // Nothing rides after the last message.
         proof.stream.push(F192::ONE);
@@ -1369,16 +1415,23 @@ mod tests {
             mask: honest.mask.clone(),
         };
 
-        // A padding compression of zeros, its constant wires included, satisfies every row.
+        // The last compression as zeros, its constant wires included, satisfies every row: only its copies of the
+        // one before it keep their left-hand sides.
         let mut zeroed = copy();
-        for table in [&mut zeroed.z, &mut zeroed.a, &mut zeroed.b] {
-            table[wire(40, 0, 0)..wire(41, 0, 0)].fill(F64::ZERO);
+        let last = (1 << LOG_COMPRESSIONS) - 1;
+        for i in wire(last, 0, 0)..N_WIRES {
+            let (slot, local) = ((i >> LOG_BLOCK) % (1 << LOG_SLOTS), i % BLOCK);
+            let routed = kind(slot).is_some_and(|k| circuit.blocks[k].routed[local]);
+            (zeroed.z[i], zeroed.b[i]) = (F64::ZERO, F64::ZERO);
+            if !routed {
+                zeroed.a[i] = F64::ZERO;
+            }
         }
         assert!(zeroed.satisfied());
         assert!(leaves_a_false_claim(&circuit, &statement, &zeroed, &mut rng));
 
         let mut other_mask = copy();
-        other_mask.z[mask_wires().start + 4] += F64(7);
+        other_mask.z[mask_wire(1, 1)] += F64(7);
         assert!(other_mask.satisfied());
         assert!(leaves_a_false_claim(&circuit, &statement, &other_mask, &mut rng));
     }

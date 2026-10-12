@@ -2,8 +2,7 @@
 
 use fiat_shamir::merkle::{Hash, scalars_to_hash};
 use fiat_shamir::transcript::{Error, Proof};
-use fiat_shamir::{DS_OBSERVE, DS_SQUEEZE};
-use flock::membership::{Channel, Claims, Reduced, Scalar, Statement, label, reduce};
+use flock::membership::{Channel, Claims, Reduced, Statement, label, reduce};
 use flock::standalone::Claim;
 use primitives::field::F192;
 
@@ -13,13 +12,9 @@ use crate::record::{Node, Sym, record};
 /// The proof as the recorder reads it: every read and every challenge is a node.
 struct Recorder {
     state: Sym,
+    /// Read since the last challenge.
+    pending: Vec<Sym>,
     read: u16,
-}
-
-impl Recorder {
-    fn observe(&mut self, scalar: Sym) {
-        self.state = Sym::new(Node::Hash(self.state.0, scalar.0, DS_OBSERVE.0 as u8));
-    }
 }
 
 impl Channel<Sym> for Recorder {
@@ -29,20 +24,25 @@ impl Channel<Sym> for Recorder {
 
     fn next_root(&mut self) -> Result<[Sym; 2], Error> {
         let scalars = std::array::from_fn(|k| Sym::new(Node::Root(k as u8)));
-        scalars.iter().for_each(|&scalar| self.observe(scalar));
+        self.pending.extend(scalars);
         Ok(scalars)
     }
 
     fn next(&mut self) -> Result<Sym, Error> {
         let scalar = Sym::new(Node::Input(self.read));
         self.read += 1;
-        self.observe(scalar);
+        self.pending.push(scalar);
         Ok(scalar)
     }
 
     fn sample(&mut self) -> Sym {
-        let zero = Sym::constant(F192::ZERO);
-        self.state = Sym::new(Node::Hash(self.state.0, zero.0, DS_SQUEEZE.0 as u8));
+        let mut scalars = [0; 3];
+        for (slot, scalar) in scalars.iter_mut().zip(&self.pending) {
+            *slot = scalar.0;
+        }
+        assert!(self.pending.len() <= 3, "a challenge follows at most three scalars");
+        self.state = Sym::new(Node::Hash(self.state.0, scalars, self.pending.len() as u8));
+        self.pending.clear();
         Sym::new(Node::Low(self.state.0))
     }
 
@@ -56,6 +56,7 @@ pub fn contract(index_root: &Hash) -> Contract {
     let ((reduced, read), graph) = record(|| {
         let mut recorder = Recorder {
             state: Sym::new(Node::Seed),
+            pending: Vec::new(),
             read: 0,
         };
         let reduced = reduce(&mut recorder).unwrap_or_else(|_| unreachable!("a recorder rejects nothing"));
@@ -130,7 +131,7 @@ pub fn decode(output: &[u8]) -> Option<(Hash, Claims)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::machine::call;
+    use crate::machine::{call, transaction_gas};
     use flock::membership::{Circuit, DEPTH, N_VARS, Secret, prove, verify};
     use primitives::field::F64;
     use primitives::test_rng::Rng;
@@ -161,7 +162,7 @@ mod tests {
         let expected = verify(&index_root, &statement, &proof).expect("a reduction");
         assert_eq!(outcome.output.as_deref().and_then(decode), Some(expected));
 
-        for at in [2, 3, 40, 49, 50, 53, 97, 99] {
+        for at in [2, 3, 40, 48, 49, 52, 93, 96] {
             proof.stream[at] += F192::new(1, 2, 3);
             let returned = call(&code, &calldata(&statement, &proof)).output;
             assert_eq!(
@@ -194,23 +195,32 @@ mod tests {
         let data = calldata(&statement, &proof);
         let outcome = call(&contract.code, &data);
         assert!(outcome.output.is_some());
-        let zeros = data.iter().filter(|&&byte| byte == 0).count();
-        let standard = 16 * (data.len() - zeros) + 4 * zeros;
-        let execution = outcome.gas as usize - 21_000 - standard;
         println!("code                 : {} bytes", contract.code.len());
-        println!("calldata             : {} bytes, {zeros} of them zero", data.len());
+        println!("calldata             : {} bytes", data.len());
         println!("FIELD_MUL            : {}", contract.field_muls);
         println!("KECCAK256            : {}", contract.hashes);
         println!("memory               : {} words", contract.memory_words);
-        println!("execution            : {execution} gas");
-        println!("transaction, EIP-7623: {} gas", outcome.gas);
-        for claims in [0, 2] {
-            let execution = execution + 20_000 * claims;
-            println!(
-                "with {claims} claims at 20,000: {} gas at a floor of 40 per byte, {} at 64",
-                21_000 + (standard + execution).max(40 * (data.len() - zeros) + 10 * zeros),
-                21_000 + (standard + execution).max(64 * data.len())
-            );
+        println!("execution            : {} gas", outcome.execution);
+        for (name, floor) in [("EIP-7623", 40), ("EIP-7976", 64)] {
+            let gas = transaction_gas(&data, outcome.execution, floor);
+            println!("transaction, {name}: {gas} gas, {} without its base cost", gas - 21_000);
+        }
+        // Where the execution goes, by instruction: the code is straight-line, so each runs once.
+        let mut counts = std::collections::BTreeMap::<u8, usize>::new();
+        let mut at = 0;
+        while at < contract.code.len() {
+            let op = contract.code[at];
+            *counts
+                .entry(if (0x5f..0x80).contains(&op) { 0x60 } else { op })
+                .or_default() += 1;
+            at += 1 + if (0x60..0x80).contains(&op) {
+                (op - 0x5f) as usize
+            } else {
+                0
+            };
+        }
+        for (op, count) in counts {
+            println!("  opcode {op:#04x}: {count}");
         }
     }
 }
