@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use lean_compiler::{compile, parse, parse_with_replacements};
-use lean_vm::cpu::{prove, verify};
+use leanvm_core::cpu::{prove, verify};
 use primitives::field::g_pow;
 
 /// A global constant substitutes exactly like writing its value inline: even
@@ -97,7 +97,7 @@ def main():
         );
         let program = compile(&parse(&src).unwrap_or_else(|e| panic!("`{decl}`: {e}")));
         let want = [g_pow(exp).into(), g_pow(0).into()];
-        let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+        let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
         verify(&program, &want, &proof).unwrap_or_else(|e| panic!("`{decl}` is not g^{exp}: {e:?}"));
     }
 }
@@ -209,10 +209,7 @@ fn const_is_transparent_where_the_reading_is_already_integer() {
     // An `unroll` count keeps its expression for the lowerer to fold, in either
     // spelling, so the baseline is the unwrapped expression rather than a literal.
     let count = |b: &str| format!("def main():\n    for i in unroll(0, {b}):\n        v = 1\n    return\n");
-    let unrolled = |b: &str| {
-        let program = compile(&parse(&count(b)).unwrap_or_else(|e| panic!("{b}: {e}")));
-        program.fn_ranges.iter().map(|(_, _, len)| *len as usize).sum::<usize>()
-    };
+    let unrolled = |b: &str| compile(&parse(&count(b)).unwrap_or_else(|e| panic!("{b}: {e}"))).code_len();
     assert_eq!(
         unrolled("const(1 + 1)"),
         unrolled("1 + 1"),

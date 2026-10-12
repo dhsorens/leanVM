@@ -193,11 +193,11 @@ theorem tweakableHash (parameter : PublicParameter) (domain : HashDomain)
   unfold Concrete.tweakableHash
   exact (oracleHash _).map truncateHash
 
-theorem chainWalk (parameter : PublicParameter) (epoch : Epoch)
+theorem chainWalk (parameter : PublicParameter) (leafIndex : LeafIndex)
     (chain : ChainIndex) (position steps : Nat) (value : Digest)
     (hposition : position + steps ≤ chainLength - 1) :
     ExactQueryCount
-      (Concrete.chainWalk (m := OracleComp HashSpec) parameter epoch chain
+      (Concrete.chainWalk (m := OracleComp HashSpec) parameter leafIndex chain
         position steps value) steps := by
   induction steps generalizing value with
   | zero => exact .pure value
@@ -206,9 +206,9 @@ theorem chainWalk (parameter : PublicParameter) (epoch : Epoch)
       have hstep : position + steps < chainLength - 1 := by omega
       simp only [hstep, ↓reduceDIte]
       exact (ih value (by omega)).bind
-        (fun previous => Concrete.chainHash parameter epoch chain
+        (fun previous => Concrete.chainHash parameter leafIndex chain
           ⟨position + steps, hstep⟩ previous) 1
-        (fun previous => tweakableHash parameter (.chain epoch chain
+        (fun previous => tweakableHash parameter (.chain leafIndex chain
           ⟨position + steps, hstep⟩) (Concrete.digestBytes previous))
 
 theorem sequenceFin {n : Nat} (computation : Fin n → OracleComp spec α)

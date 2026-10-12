@@ -1,5 +1,5 @@
 use lean_compiler::{compile, parse};
-use lean_vm::cpu::{prove, verify};
+use leanvm_core::cpu::{Fault, prove, verify};
 use primitives::field::{F64, F192};
 
 use crate::common::mix;
@@ -23,7 +23,7 @@ def main():
 ";
     let program = compile(&parse(src).expect("parse"));
     let want = [F192::new(5, 7, 0), F192::new(5, 7, 0)];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     let counts = mix(src, want);
     assert_eq!(
         (counts[0], counts[1], counts[4]),
@@ -34,7 +34,6 @@ def main():
 }
 
 #[test]
-#[should_panic(expected = "JUMP target is not a K-valued word")]
 fn pack64x2_rejects_extension_field_source() {
     let src = "\
 @inline
@@ -53,5 +52,18 @@ def main():
 ";
     let mut program = compile(&parse(src).expect("parse"));
     program.set_witness("a", vec![vec![F192::new(5, 1, 0)]]);
-    let _ = program.execute([F192::from(F64::ONE), F192::from(F64::ONE)]);
+    let err = program
+        .execute([F192::from(F64::ONE), F192::from(F64::ONE)])
+        .err()
+        .expect("the run must fail");
+    assert!(
+        matches!(
+            err.fault,
+            Fault::NotInK {
+                what: "JUMP target",
+                ..
+            }
+        ),
+        "{err}"
+    );
 }

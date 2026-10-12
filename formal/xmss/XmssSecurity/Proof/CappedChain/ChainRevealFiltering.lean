@@ -5,16 +5,16 @@ namespace XmssSecurity.CappedChain
 
 open OracleSpec
 
-noncomputable def chainSuffixValueIndices (epoch : Epoch) (start : Digit) :
+noncomputable def chainSuffixValueIndices (leafIndex : LeafIndex) (start : Digit) :
     List ChainValueIndex :=
   ((Finset.univ.filter fun later : Digit => start ≤ later).toList.map fun later =>
-    (epoch, later))
+    (leafIndex, later))
 
 @[simp]
 theorem mem_chainSuffixValueIndices_iff
-    (epoch candidateEpoch : Epoch) (start candidate : Digit) :
-    (candidateEpoch, candidate) ∈ chainSuffixValueIndices epoch start ↔
-      candidateEpoch = epoch ∧ start ≤ candidate := by
+    (leafIndex candidateLeafIndex : LeafIndex) (start candidate : Digit) :
+    (candidateLeafIndex, candidate) ∈ chainSuffixValueIndices leafIndex start ↔
+      candidateLeafIndex = leafIndex ∧ start ≤ candidate := by
   simp [chainSuffixValueIndices, and_comm, eq_comm]
 
 noncomputable def returnedChainValueIndexList
@@ -27,10 +27,10 @@ noncomputable def returnedChainValueIndexList
     | some signature =>
         match TargetSum.decodeDigest
             (Concrete.CacheView.encodingHash cache secretKey.parameter
-              entry.1.epoch (entry.1.message, signature.randomness)) with
+              entry.1.leafIndex (entry.1.message, signature.randomness)) with
         | none => []
         | some encoding =>
-            chainSuffixValueIndices entry.1.epoch (encoding chain)).dedup
+            chainSuffixValueIndices entry.1.leafIndex (encoding chain)).dedup
 
 set_option maxRecDepth 100000 in
 @[simp]
@@ -42,9 +42,9 @@ theorem mem_returnedChainValueIndexList_iff
       ∃ request signature encoding,
         SigningTranscript.Returned log request signature ∧
           TargetSum.decodeDigest
-            (Concrete.CacheView.encodingHash cache secretKey.parameter request.epoch
+            (Concrete.CacheView.encodingHash cache secretKey.parameter request.leafIndex
               (request.message, signature.randomness)) = some encoding ∧
-          index.1 = request.epoch ∧ encoding chain ≤ index.2 := by
+          index.1 = request.leafIndex ∧ encoding chain ≤ index.2 := by
   simp only [returnedChainValueIndexList, List.mem_dedup, List.mem_flatMap]
   constructor
   · rintro ⟨entry, hentry, hindex⟩
@@ -53,22 +53,22 @@ theorem mem_returnedChainValueIndexList_iff
     | some signature =>
         cases hdecode : TargetSum.decodeDigest
             (Concrete.CacheView.encodingHash cache secretKey.parameter
-              entry.1.epoch (entry.1.message, signature.randomness)) with
+              entry.1.leafIndex (entry.1.message, signature.randomness)) with
         | none => simp [hsignature, hdecode] at hindex
         | some encoding =>
             simp only [hsignature, hdecode] at hindex
             have hsuffix := (mem_chainSuffixValueIndices_iff
-              entry.1.epoch index.1 (encoding chain) index.2).1 hindex
+              entry.1.leafIndex index.1 (encoding chain) index.2).1 hindex
             exact ⟨entry.1, signature, encoding,
               ⟨entry, hentry, rfl, hsignature⟩, hdecode,
               hsuffix.1, hsuffix.2⟩
   · rintro ⟨request, signature, encoding,
-      ⟨entry, hentry, hrequest, hsignature⟩, hdecode, hepoch, hdigit⟩
+      ⟨entry, hentry, hrequest, hsignature⟩, hdecode, hleafIndex, hdigit⟩
     subst request
     refine ⟨entry, hentry, ?_⟩
     simp only [hsignature, hdecode]
     exact (mem_chainSuffixValueIndices_iff
-      entry.1.epoch index.1 (encoding chain) index.2).2 ⟨hepoch, hdigit⟩
+      entry.1.leafIndex index.1 (encoding chain) index.2).2 ⟨hleafIndex, hdigit⟩
 
 theorem AttackerActionTrace.sign_mem_toSigningLog
     (trace : AttackerActionTrace) (request : SignRequest) (signature : Signature)

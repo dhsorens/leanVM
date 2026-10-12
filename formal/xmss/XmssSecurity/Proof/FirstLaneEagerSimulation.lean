@@ -82,8 +82,8 @@ def traceFragment
     ActionTrace Index :=
   match input with
   | .uniform _ => []
-  | .encodingQuery epoch => [.encoding (.query epoch output)]
-  | .encodingSignAttempt epoch => [.encoding (.sign epoch output)]
+  | .encodingQuery leafIndex => [.encoding (.query leafIndex output)]
+  | .encodingSignAttempt leafIndex => [.encoding (.sign leafIndex output)]
   | .probe index target => [.chain (.probe index target)]
   | .reveal index => [.chain (.reveal index output)]
 
@@ -133,7 +133,7 @@ theorem simulate_eagerTrace_support_hazardCount_le
           obtain ⟨tail, htail, rfl⟩ := htail
           exact ih output fuel
             (by simpa [IsHazardQuery] using hbound.2 output) tail htail
-      | encodingQuery epoch =>
+      | encodingQuery leafIndex =>
           cases fuel with
           | zero => simp [IsHazardQuery] at hbound
           | succ remaining =>
@@ -145,7 +145,7 @@ theorem simulate_eagerTrace_support_hazardCount_le
               have htailCount := ih output remaining
                 (by simpa [IsHazardQuery] using hbound.2 output) tail htail
               simpa [Prod.map, hazardCount] using Nat.succ_le_succ htailCount
-      | encodingSignAttempt epoch =>
+      | encodingSignAttempt leafIndex =>
           simp [eagerTraceImpl, eagerImpl, traceFragment,
             QueryImpl.withTraceAppend_apply, WriterT.run_tell] at hhead
           obtain ⟨output, _houtput, rfl⟩ := hhead

@@ -29,14 +29,14 @@ theorem Concrete.CacheReplay.signWithEncoding_chainValue_eq_keygenChainValueTabl
     (hkeygen : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (randomness : Randomness) (encoding : Encoding)
+    (leafIndex : LeafIndex) (randomness : Randomness) (encoding : Encoding)
     (chain : ChainIndex) :
     (Concrete.CacheReplay.signWithEncoding largerCache keyResult.1.2
-      epoch randomness encoding).chainValue chain =
+      leafIndex randomness encoding).chainValue chain =
       keygenChainValueTable keyResult.2 keyResult.1.2 chain
-        (epoch, encoding chain) := by
+        (leafIndex, encoding chain) := by
   have hwalk := Concrete.keygen_chainWalk_eq_of_cache_le keyResult hkeygen
-    largerCache hle epoch chain (encoding chain).val
+    largerCache hle leafIndex chain (encoding chain).val
     (Nat.le_pred_of_lt (encoding chain).isLt)
   simp only [Concrete.CacheReplay.signWithEncoding,
     Concrete.CacheReplay.signedChainValues, keygenChainValueTable]

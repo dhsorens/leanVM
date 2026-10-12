@@ -5,11 +5,11 @@ open OracleComp OracleSpec
 
 namespace XmssSecurity
 
-/-- Map a leaf input to the honest leaf input fixed by key generation at the same epoch. -/
+/-- Map a leaf input to the honest leaf input fixed by key generation at the same leaf index. -/
 noncomputable def keygenLeafTargetInput (secretKey : SecretKey)
     (cache : QueryCache HashSpec) (input : HashInput) : HashInput :=
-  if h : ∃ epoch endpoints,
-      input = Concrete.CacheView.leafInput secretKey.parameter epoch endpoints then
+  if h : ∃ leafIndex endpoints,
+      input = Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints then
     Concrete.CacheView.leafInput secretKey.parameter h.choose
       (Concrete.CacheReplay.oneTimePublicKey cache secretKey.parameter
         secretKey.chainStart h.choose)
@@ -17,25 +17,25 @@ noncomputable def keygenLeafTargetInput (secretKey : SecretKey)
 
 @[simp]
 theorem keygenLeafTargetInput_leafInput (secretKey : SecretKey)
-    (cache : QueryCache HashSpec) (epoch : Epoch) (endpoints : ChainIndex → Digest) :
+    (cache : QueryCache HashSpec) (leafIndex : LeafIndex) (endpoints : ChainIndex → Digest) :
     keygenLeafTargetInput secretKey cache
-      (Concrete.CacheView.leafInput secretKey.parameter epoch endpoints) =
-      Concrete.CacheView.leafInput secretKey.parameter epoch
+      (Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints) =
+      Concrete.CacheView.leafInput secretKey.parameter leafIndex
         (Concrete.CacheReplay.oneTimePublicKey cache secretKey.parameter
-          secretKey.chainStart epoch) := by
+          secretKey.chainStart leafIndex) := by
   unfold keygenLeafTargetInput
   split
   · rename_i h
     obtain ⟨chosenEndpoints, hinput⟩ := h.choose_spec
-    have hepoch : h.choose = epoch := by
+    have hleafIndex : h.choose = leafIndex := by
       have hdomain := domain_eq_of_tweakableHashInput_eq secretKey.parameter
         (hinput.trans rfl)
       simp only [HashDomain.leaf.injEq] at hdomain
       exact hdomain.symm
-    rw [hepoch]
+    rw [hleafIndex]
   · rename_i h
     exfalso
-    exact h ⟨epoch, endpoints, rfl⟩
+    exact h ⟨leafIndex, endpoints, rfl⟩
 
 attribute [irreducible] keygenLeafTargetInput
 

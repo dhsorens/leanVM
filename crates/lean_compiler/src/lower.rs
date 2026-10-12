@@ -21,7 +21,7 @@
 
 use super::*;
 use crate::filler::FillerOp;
-use lean_vm::cpu::filler::Block;
+use leanvm_core::cpu::filler::Block;
 
 mod builtins;
 mod call;
@@ -82,7 +82,7 @@ impl Abi {
 /// the largest immediate, so beyond this a huge constant index falls back to a
 /// materialized pointer instead of inflating that table. The one cap: every site
 /// that folds an exponent into `β` measures it against this.
-const FOLD_MAX: u128 = 1 << lean_vm::cpu::MIN_LOG_MEM;
+const FOLD_MAX: u128 = 1 << leanvm_core::cpu::MIN_LOG_MEM;
 
 /// The two pure operations worth interning. Both are commutative, so operands
 /// are stored sorted.
@@ -290,14 +290,6 @@ impl FnLower<'_> {
         }
     }
 
-    fn cached_load(&mut self, ptr: Off, offset: u32) -> Option<Off> {
-        let &dst = self.scope.load_cells.get(&(ptr, offset))?;
-        // The dominating DEREF may have deferred an equality between unwritten cells.
-        self.pending
-            .push(Hint::Resolved(RHint::ResolveDeref { ptr, offset, dst }));
-        Some(dst)
-    }
-
     /// A no-op instruction to hang a pending hint on, so it fires exactly here
     /// instead of drifting onto whatever is emitted next (which may sit past a
     /// branch join, or on a path this hint does not belong to).
@@ -427,14 +419,14 @@ impl FnLower<'_> {
         });
     }
 
-    /// Emit the fill blocks: per table and per size in `lean_vm::cpu::filler::SIZES`,
+    /// Emit the fill blocks: per table and per size in `leanvm_core::cpu::filler::SIZES`,
     /// that many dummy instructions of the table's opcode, then a `JUMP` back to the
     /// block's own first instruction, in the same frame.
     ///
     /// A block is a cycle and nothing jumps into one: they sit past `main`'s halt
     /// and the interpreter enters them itself once the program has stopped. The
     /// state tuples a traversal pushes are the ones it pulls, so the cycle
-    /// balances for any number of traversals (`lean_vm::cpu::filler`).
+    /// balances for any number of traversals (`leanvm_core::cpu::filler`).
     ///
     /// The closing jump is always taken (its destination is a g-power, so
     /// nonzero) and reads its destination and frame from cells the interpreter
@@ -442,7 +434,7 @@ impl FnLower<'_> {
     /// one scratch cell as each operand, writing the value already there, so a
     /// block costs one cell whatever its size.
     fn lower_filler_blocks(&mut self) -> Vec<Block> {
-        use lean_vm::cpu::filler::{SIZES, frame as fr};
+        use leanvm_core::cpu::filler::{SIZES, frame as fr};
 
         // No statement wrote these, so they get the "unknown" line rather than
         // whatever `main` happened to end on.
@@ -492,7 +484,7 @@ impl FnLower<'_> {
                         // Its input cells are ones no instruction writes: the
                         // interpreter leaves those zero, and a prover choosing
                         // otherwise only picks which state the dummy permutes, which
-                        // nothing reads (`lean_vm::cpu::filler`).
+                        // nothing reads (`leanvm_core::cpu::filler`).
                         FillerOp::Sha3 => LOp::Sha3 {
                             m: [fr::SHA3_IN, fr::SHA3_IN + 1, fr::SHA3_IN + 2, fr::SHA3_IN + 3],
                             tail: fr::SHA3_IN,
@@ -627,7 +619,10 @@ impl FnLower<'_> {
         // Calls with identical runtime args share one callee frame and a
         // two-instruction trampoline per arm. Const args select specializations;
         // see `lower_dispatched_call` for the shared argument/return layout checks.
-        if arms.iter().all(|a| matches!(a, Expr::Call(..))) {
+        // `@inline` arms instead expand into this frame, below.
+        let inline_arm =
+            |s: &Self, a: &Expr| matches!(a, Expr::Call(f, _) if s.defs.get(f.as_str()).is_some_and(|d| d.inline));
+        if arms.iter().all(|a| matches!(a, Expr::Call(..)) && !inline_arm(self, a)) {
             let specialized: Vec<(String, Vec<&Expr>)> = arms
                 .iter()
                 .map(|a| {
@@ -702,12 +697,13 @@ impl FnLower<'_> {
         kset
     }
 
-    /// The `n` trampoline slots themselves, each `SET c = k(j); JUMP c`.
-    /// Returns the table's start; slot `j` has its `SET` at `start + 2*j`.
+    /// The `n` trampoline slots themselves, each `SET c = k(j); JUMP c`, sharing
+    /// `c` since one slot runs. Returns the table's start; slot `j` has its
+    /// `SET` at `start + 2*j`.
     fn emit_slots(&mut self, n: usize, one: Off, of: Off, k: impl Fn(usize) -> KVal) -> usize {
         let start = self.code.len();
+        let c = self.fresh();
         for j in 0..n {
-            let c = self.fresh();
             self.set(c, k(j));
             self.emit(LOp::Jump { oc: one, od: c, of });
         }
@@ -718,6 +714,8 @@ impl FnLower<'_> {
     /// `d = g^T · x²` (slot `j` of the two-instruction table at bytecode base
     /// `T`), then to `body(j)`'s code; every non-final body exits to the
     /// join. `body` lowers arm `j`, with its own branch-local scope.
+    ///
+    /// One arm runs, so the arms allocate their locals over the same cells.
     fn lower_match_dispatch(&mut self, xo: Off, n: usize, mut body: impl FnMut(&mut Self, usize)) {
         // Hoisted on purpose: these SETs must dominate the join.
         let sfp = self.self_fp();
@@ -731,7 +729,10 @@ impl FnLower<'_> {
         self.patch_local(kset, self.code.len());
         let start = self.emit_slots(n, one, sfp, |_| KVal::Local(0));
         // The arm blocks, each exiting to the join (the last falls through).
+        let arms_base = self.next;
+        let mut arms_end = arms_base;
         for j in 0..n {
+            self.next = arms_base;
             self.patch_local(start + 2 * j, self.code.len());
             body(self, j);
             if j + 1 != n {
@@ -741,7 +742,11 @@ impl FnLower<'_> {
                     of: sfp,
                 });
             }
+            arms_end = arms_end.max(self.next);
+            // The next arm may reuse these cells for something other than a `HeapBuf`.
+            self.heap_sizes.retain(|&o, _| o < arms_base);
         }
+        self.next = arms_end;
         self.patch_local(jset, self.code.len());
     }
 
@@ -900,10 +905,10 @@ impl FnLower<'_> {
                 if *k < 1 {
                     self.fail("range-check bound GEN ** 0 names the empty set")
                 };
-                if *k > 1 << lean_vm::cpu::MIN_LOG_MEM {
+                if *k > 1 << leanvm_core::cpu::MIN_LOG_MEM {
                     self.fail(format!(
                         "range-check bound GEN ** {k} exceeds 2^{} (the minimum memory size)",
-                        lean_vm::cpu::MIN_LOG_MEM
+                        leanvm_core::cpu::MIN_LOG_MEM
                     ))
                 };
                 self.bound_cell(*k)
@@ -917,7 +922,7 @@ impl FnLower<'_> {
                     self.fail(format!(
                         "a compile-time range-check bound must be written as `log GEN ** k` or an \
                      integer, so that the 2^{} cap applies",
-                        lean_vm::cpu::MIN_LOG_MEM
+                        leanvm_core::cpu::MIN_LOG_MEM
                     ))
                 };
                 let bcell = self.expr(b);
@@ -1072,7 +1077,7 @@ impl FnLower<'_> {
                     return c;
                 }
                 let (ptr, o2) = self.heap_addr(arr, idx);
-                if let Some(cell) = self.cached_load(ptr, o2) {
+                if let Some(&cell) = self.scope.load_cells.get(&(ptr, o2)) {
                     return cell;
                 }
                 let dst = self.fresh();
@@ -1135,7 +1140,8 @@ impl FnLower<'_> {
                 Some(c) => self.copy(c, dst),
                 None => {
                     let (ptr, o2) = self.heap_addr(arr, idx);
-                    // A DEREF can defer two unwritten sides; a MUL copy would write zero.
+                    // A DEREF links two unwritten sides; a MUL copy would read the
+                    // source, writing zero to it.
                     self.deref(ptr, o2, dst, DerefMode::Cell);
                 }
             },

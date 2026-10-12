@@ -17,10 +17,10 @@ noncomputable def keygenStructuralTargetInput
 
 theorem CappedSuffix.keygenChainTargetInput_leafInput_eq_self
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (endpoints : ChainIndex → Digest) :
+    (leafIndex : LeafIndex) (endpoints : ChainIndex → Digest) :
     CappedSuffix.keygenChainTargetInput secretKey cache
-      (Concrete.CacheView.leafInput secretKey.parameter epoch endpoints) =
-    Concrete.CacheView.leafInput secretKey.parameter epoch endpoints := by
+      (Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints) =
+    Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints := by
   unfold CappedSuffix.keygenChainTargetInput
   split
   · rename_i h
@@ -47,11 +47,11 @@ theorem CappedSuffix.keygenChainTargetInput_merkleInput_eq_self
 
 theorem CappedLeaf.keygenLeafTargetInput_chainInput_eq_self
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (value : Digest) :
     CappedLeaf.keygenLeafTargetInput secretKey cache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step value) =
-    Concrete.CacheView.chainInput secretKey.parameter epoch chain step value := by
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step value) =
+    Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step value := by
   unfold CappedLeaf.keygenLeafTargetInput
   split
   · rename_i h
@@ -78,11 +78,11 @@ theorem CappedLeaf.keygenLeafTargetInput_merkleInput_eq_self
 
 theorem CappedMerkle.keygenMerkleTargetInput_chainInput_eq_self
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (value : Digest) :
     CappedMerkle.keygenMerkleTargetInput secretKey cache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step value) =
-    Concrete.CacheView.chainInput secretKey.parameter epoch chain step value := by
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step value) =
+    Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step value := by
   unfold CappedMerkle.keygenMerkleTargetInput
   split
   · rename_i h
@@ -94,10 +94,10 @@ theorem CappedMerkle.keygenMerkleTargetInput_chainInput_eq_self
 
 theorem CappedMerkle.keygenMerkleTargetInput_leafInput_eq_self
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (endpoints : ChainIndex → Digest) :
+    (leafIndex : LeafIndex) (endpoints : ChainIndex → Digest) :
     CappedMerkle.keygenMerkleTargetInput secretKey cache
-      (Concrete.CacheView.leafInput secretKey.parameter epoch endpoints) =
-    Concrete.CacheView.leafInput secretKey.parameter epoch endpoints := by
+      (Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints) =
+    Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints := by
   unfold CappedMerkle.keygenMerkleTargetInput
   split
   · rename_i h
@@ -110,12 +110,12 @@ theorem CappedMerkle.keygenMerkleTargetInput_leafInput_eq_self
 @[simp]
 theorem keygenStructuralTargetInput_chainInput
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (value : Digest) :
     keygenStructuralTargetInput secretKey cache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step value) =
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step value) =
     CappedSuffix.keygenChainTargetInput secretKey cache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step value) := by
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step value) := by
   unfold keygenStructuralTargetInput
   rw [CappedSuffix.keygenChainTargetInput_chainInput,
     CappedLeaf.keygenLeafTargetInput_chainInput_eq_self,
@@ -124,11 +124,11 @@ theorem keygenStructuralTargetInput_chainInput
 @[simp]
 theorem keygenStructuralTargetInput_leafInput
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (endpoints : ChainIndex → Digest) :
+    (leafIndex : LeafIndex) (endpoints : ChainIndex → Digest) :
     keygenStructuralTargetInput secretKey cache
-      (Concrete.CacheView.leafInput secretKey.parameter epoch endpoints) =
+      (Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints) =
     CappedLeaf.keygenLeafTargetInput secretKey cache
-      (Concrete.CacheView.leafInput secretKey.parameter epoch endpoints) := by
+      (Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints) := by
   unfold keygenStructuralTargetInput
   rw [CappedSuffix.keygenChainTargetInput_leafInput_eq_self,
     CappedLeaf.keygenLeafTargetInput_leafInput,
@@ -149,7 +149,7 @@ theorem keygenStructuralTargetInput_merkleInput
 theorem chainInput_exists_of_keygenChainTargetInput_ne
     (secretKey : SecretKey) (cache : QueryCache HashSpec) (input : HashInput)
     (hne : CappedSuffix.keygenChainTargetInput secretKey cache input ≠ input) :
-    ∃ address : Epoch × ChainIndex × ChainStep, ∃ value,
+    ∃ address : LeafIndex × ChainIndex × ChainStep, ∃ value,
       input = Concrete.CacheView.chainInput secretKey.parameter address.1
         address.2.1 address.2.2 value := by
   unfold CappedSuffix.keygenChainTargetInput at hne
@@ -160,8 +160,8 @@ theorem chainInput_exists_of_keygenChainTargetInput_ne
 theorem leafInput_exists_of_keygenLeafTargetInput_ne
     (secretKey : SecretKey) (cache : QueryCache HashSpec) (input : HashInput)
     (hne : CappedLeaf.keygenLeafTargetInput secretKey cache input ≠ input) :
-    ∃ epoch endpoints,
-      input = Concrete.CacheView.leafInput secretKey.parameter epoch endpoints := by
+    ∃ leafIndex endpoints,
+      input = Concrete.CacheView.leafInput secretKey.parameter leafIndex endpoints := by
   unfold CappedLeaf.keygenLeafTargetInput at hne
   split at hne
   · assumption
@@ -226,9 +226,9 @@ theorem adaptiveFreshLeafCollision_implies_structural
     (CappedLeaf.keygenLeafTargetInput secretKey initialCache)
     (keygenStructuralTargetInput secretKey initialCache) _ hcollision
   intro input hne
-  obtain ⟨epoch, endpoints, rfl⟩ :=
+  obtain ⟨leafIndex, endpoints, rfl⟩ :=
     leafInput_exists_of_keygenLeafTargetInput_ne secretKey initialCache input hne
-  exact keygenStructuralTargetInput_leafInput secretKey initialCache epoch endpoints
+  exact keygenStructuralTargetInput_leafInput secretKey initialCache leafIndex endpoints
 
 theorem adaptiveFreshMerkleCollision_implies_structural
     (initialCache finalCache : QueryCache HashSpec)

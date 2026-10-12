@@ -15,20 +15,20 @@ theorem SigningTranscript.length_le_lifetime {log : QueryLog SigningSpec}
   unfold SigningTranscript.Valid at hvalid
   simpa using List.Nodup.length_le_card hvalid
 
-theorem SigningTranscript.returned_eq_of_same_epoch
+theorem SigningTranscript.returned_eq_of_same_leafIndex
     {log : QueryLog SigningSpec} {leftRequest rightRequest : SignRequest}
     {leftSignature rightSignature : Signature}
     (hvalid : SigningTranscript.Valid log)
     (hleft : SigningTranscript.Returned log leftRequest leftSignature)
     (hright : SigningTranscript.Returned log rightRequest rightSignature)
-    (hepoch : leftRequest.epoch = rightRequest.epoch) :
+    (hleafIndex : leftRequest.leafIndex = rightRequest.leafIndex) :
     leftRequest = rightRequest ∧ leftSignature = rightSignature := by
   obtain ⟨leftEntry, hleftMem, hleftRequest, hleftSignature⟩ := hleft
   obtain ⟨rightEntry, hrightMem, hrightRequest, hrightSignature⟩ := hright
   unfold SigningTranscript.Valid at hvalid
   have hentry : leftEntry = rightEntry :=
     List.inj_on_of_nodup_map hvalid hleftMem hrightMem (by
-      simpa only [hleftRequest, hrightRequest] using hepoch)
+      simpa only [hleftRequest, hrightRequest] using hleafIndex)
   subst rightEntry
   constructor
   · exact hleftRequest.symm.trans hrightRequest
@@ -53,14 +53,14 @@ theorem WinningOutcomeBadEventOccurs.forgery_decode
     (hevent : WinningOutcomeBadEventOccurs cache outcome event) :
     ∃ encoding, TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash cache outcome.secretKey.parameter
-        outcome.forgery.epoch
+        outcome.forgery.leafIndex
         (outcome.forgery.message, outcome.forgery.signature.randomness)) = some encoding := by
   rcases hevent.2.2 with hsame | hfresh
   · obtain ⟨request, signature, signedEncoding, forgedEncoding, hsignedDecode,
-      hforgedDecode, hreturned, hepoch, hbad⟩ := hsame
-    rw [hepoch] at hforgedDecode
+      hforgedDecode, hreturned, hleafIndex, hbad⟩ := hsame
+    rw [hleafIndex] at hforgedDecode
     exact ⟨forgedEncoding, hforgedDecode⟩
-  · obtain ⟨forgedEncoding, hvalid, hfreshEpoch, hforgedDecode, hbad⟩ := hfresh
+  · obtain ⟨forgedEncoding, hvalid, hfreshLeafIndex, hforgedDecode, hbad⟩ := hfresh
     exact ⟨forgedEncoding, hforgedDecode⟩
 
 end XmssSecurity

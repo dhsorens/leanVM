@@ -197,8 +197,8 @@ def SourceFirstLaneExactGoodStateRelation
       (globalStateOfFirstLane firstLaneState trace) ∧
     List.Sublist leftState.1.2 trace.encodingActions ∧
     List.Sublist
-      (CappedEncodingMonitor.validObservedSignEpochs trace.encodingActions)
-      (firstLaneState.attackerTrace.toSigningLog.map fun entry => entry.1.epoch)
+      (CappedEncodingMonitor.validObservedSignLeafIndices trace.encodingActions)
+      (firstLaneState.attackerTrace.toSigningLog.map fun entry => entry.1.leafIndex)
 
 theorem cappedBothTracedMappedAdversaryImpl_cache_projection
     (publicKey : PublicKey) (secretKey : SecretKey) (input : (OracleWorld + SigningSpec).Domain)
@@ -258,7 +258,7 @@ theorem relTriple_sourceExact_firstLane_action
   have hsourceHigh : GlobalSigningMonitoredTracedStateRelation left right.1
       (sourceExactSigningProjection leftState) highState := hstate.1
   have hencodingTrace := hstate.2.1
-  have hvalidEpochs := hstate.2.2
+  have hvalidLeafIndices := hstate.2.2
   have hsource :=
     relTriple_programmed_globalHighMonitored_sourceExact_action left right hrel
       hleftSupport hrightSupport leftState highState hsourceHigh input
@@ -298,19 +298,19 @@ theorem relTriple_sourceExact_firstLane_action
       firstLaneResult (by
         simpa [highState, globalStateOfFirstLane] using hprojection)
   have hfragmentValid :=
-    globalFirstLaneExactTracedMappedAdversary_validSignEpochs_sublist
+    globalFirstLaneExactTracedMappedAdversary_validSignLeafIndices_sublist
       right.1.2 right.1.1 right.2 (liftM (OracleSpec.query input))
         (GlobalHighDirectTracedState.mk highState.1.causal highState.2)
           firstLaneResult
           (by simpa only [simulateQ_spec_query] using hfirstLaneSupport)
-  have hnextValidEpochs : List.Sublist
-      (CappedEncodingMonitor.validObservedSignEpochs
+  have hnextValidLeafIndices : List.Sublist
+      (CappedEncodingMonitor.validObservedSignLeafIndices
         (trace ++ firstLaneResult.2).encodingActions)
-      (highResult.2.2.toSigningLog.map fun entry => entry.1.epoch) := by
+      (highResult.2.2.toSigningLog.map fun entry => entry.1.leafIndex) := by
     rw [FirstLaneOracleSimulation.ActionTrace.encodingActions_append,
-      CappedEncodingMonitor.validObservedSignEpochs_append,
+      CappedEncodingMonitor.validObservedSignLeafIndices_append,
       hprojectionFacts.attacker]
-    exact (hvalidEpochs.append (List.Sublist.refl _)).trans hfragmentValid
+    exact (hvalidLeafIndices.append (List.Sublist.refl _)).trans hfragmentValid
   rcases hsourceResult with hgood | hbad
   · apply Or.inl
     refine ⟨hgood.1.trans ?_, ?_, htotalCount, ?_⟩
@@ -324,7 +324,7 @@ theorem relTriple_sourceExact_firstLane_action
       refine ⟨?_, hnextEncodingTrace, ?_⟩
       · rw [hprojectionFacts.state]
         exact hgood.2.1
-      · simpa [← hprojectionFacts.attacker] using hnextValidEpochs
+      · simpa [← hprojectionFacts.attacker] using hnextValidLeafIndices
     · have hinitialTrace : leftState.2 = highState.2 := hsourceHigh.2
       have hfinalTrace : leftResult.2.2 = highResult.2.2 := hgood.2.1.2
       rw [hfinalTrace, hhighActionTrace, ← hinitialTrace,
@@ -531,7 +531,7 @@ theorem relTriple_sourceExact_firstLane_verifier_action
   have hsourceHigh : GlobalSigningMonitoredTracedStateRelation left right.1
       (sourceExactSigningProjection leftState) highState := hstate.1
   have hencodingTrace := hstate.2.1
-  have hvalidEpochs := hstate.2.2
+  have hvalidLeafIndices := hstate.2.2
   have hsource :=
     relTriple_programmed_globalHighMonitored_sourceExact_verifier_action
       left right
@@ -564,7 +564,7 @@ theorem relTriple_sourceExact_firstLane_verifier_action
     rw [FirstLaneOracleSimulation.hazardCount_append]
     omega
   have hfragmentValid :=
-    globalFirstLaneExactTracedVerifier_validSignEpochs_eq_nil right.1.2
+    globalFirstLaneExactTracedVerifier_validSignLeafIndices_eq_nil right.1.2
       right.1.1 right.2 (liftM (OracleSpec.query input))
         (GlobalHighDirectTracedState.mk highState.1.causal highState.2)
           firstLaneResult
@@ -583,15 +583,15 @@ theorem relTriple_sourceExact_firstLane_verifier_action
             (by simpa only [simulateQ_spec_query] using hfirstLaneSupport)
     rw [hresultEq]
     rfl
-  have hnextValidEpochs : List.Sublist
-      (CappedEncodingMonitor.validObservedSignEpochs
+  have hnextValidLeafIndices : List.Sublist
+      (CappedEncodingMonitor.validObservedSignLeafIndices
         (trace ++ firstLaneResult.2).encodingActions)
-      (highResult.2.2.toSigningLog.map fun entry => entry.1.epoch) := by
+      (highResult.2.2.toSigningLog.map fun entry => entry.1.leafIndex) := by
     rw [FirstLaneOracleSimulation.ActionTrace.encodingActions_append,
-      CappedEncodingMonitor.validObservedSignEpochs_append,
+      CappedEncodingMonitor.validObservedSignLeafIndices_append,
       hfragmentValid, List.append_nil, hprojectionFacts.attacker]
     rw [hfirstAttacker]
-    exact hvalidEpochs
+    exact hvalidLeafIndices
   rcases hsourceResult with hgood | hbad
   · apply Or.inl
     refine ⟨hgood.1.trans ?_, ?_, htotalCount⟩
@@ -604,7 +604,7 @@ theorem relTriple_sourceExact_firstLane_verifier_action
       refine ⟨?_, hnextEncodingTrace, ?_⟩
       · rw [hprojectionFacts.state]
         exact hgood.2.1
-      · simpa [← hprojectionFacts.attacker] using hnextValidEpochs
+      · simpa [← hprojectionFacts.attacker] using hnextValidLeafIndices
   · apply Or.inr
     exact ⟨hprojectionFacts.combinedHit_of_bad right.1.2 hbad, htotalCount⟩
 
@@ -821,13 +821,13 @@ theorem relTriple_sourceExact_firstLane_detailedExecution_boundedHit
           hleftSupport hrightSupport
     · simp [sourceInitial,
         FirstLaneOracleSimulation.ActionTrace.encodingActions]
-    · simp [CappedEncodingMonitor.validObservedSignEpochs,
+    · simp [CappedEncodingMonitor.validObservedSignLeafIndices,
         FirstLaneOracleSimulation.ActionTrace.encodingActions,
         CappedEncodingMonitor.validActions,
-        EncodingMonitor.observedSignEpochs]
+        EncodingMonitor.observedSignLeafIndices]
   let finish : Forgery → OracleComp OracleWorld (Forgery × Bool) :=
     fun forgery => Prod.mk forgery <$> Concrete.scheme.verify
-      left.publicKey forgery.epoch forgery.message forgery.signature
+      left.publicKey forgery.leafIndex forgery.message forgery.signature
   let Budget := fun
     (rest : OracleComp (OracleWorld + SigningSpec) Forgery)
     (remaining : Nat) (state : SourceExactTracedState) =>
@@ -837,7 +837,7 @@ theorem relTriple_sourceExact_firstLane_detailedExecution_boundedHit
   let leftFinish := fun (forgery : Forgery)
     (initial : SourceExactTracedState) => do
       let verified ← (simulateQ sourceSigningTracedVerifierImpl
-        (Concrete.scheme.verify left.publicKey forgery.epoch forgery.message
+        (Concrete.scheme.verify left.publicKey forgery.leafIndex forgery.message
           forgery.signature)).run (sourceExactSigningProjection initial)
       pure ((forgery, verified.1),
         ((verified.2.1,
@@ -847,7 +847,7 @@ theorem relTriple_sourceExact_firstLane_detailedExecution_boundedHit
     (initial : GlobalHighDirectTracedState) => do
       let verified ← (simulateQ
         (globalFirstLaneExactTracedVerifierImpl right.1.1 right.2)
-        (Concrete.scheme.verify left.publicKey forgery.epoch forgery.message
+        (Concrete.scheme.verify left.publicKey forgery.leafIndex forgery.message
           forgery.signature)).run initial
       pure ((forgery, verified.1),
         firstLaneAppendVerificationState right.1.1.secretKey forgery initial
@@ -891,13 +891,13 @@ theorem relTriple_sourceExact_firstLane_detailedExecution_boundedHit
       unfold Budget finish at hremaining
       simp only [simulateQ_pure, pure_bind] at hremaining
       have hverifyBound :
-          HashQueryBound (Concrete.scheme.verify left.publicKey forgery.epoch forgery.message
+          HashQueryBound (Concrete.scheme.verify left.publicKey forgery.leafIndex forgery.message
             forgery.signature) state.1.1.1 remaining :=
         (hashQueryBound_map_iff _ _ _ _).mp hremaining
       have hverifier :=
         relTriple_sourceExact_firstLane_verifier_boundedHit countLimit hitLimit
           spent remaining left right hrel hleftSupport hrightSupport
-            (Concrete.scheme.verify left.publicKey forgery.epoch
+            (Concrete.scheme.verify left.publicKey forgery.leafIndex
               forgery.message forgery.signature) state hverifyBound firstState
                 history hstates hcount htotal hlimits
       let sourceFinish := fun verified : Bool × SourceExactTracedState =>
@@ -912,13 +912,13 @@ theorem relTriple_sourceExact_firstLane_detailedExecution_boundedHit
       have hlifted : RelTriple
           (sourceFinish <$>
             (simulateQ sourceExactTracedVerifierImpl
-              (Concrete.scheme.verify left.publicKey forgery.epoch
+              (Concrete.scheme.verify left.publicKey forgery.leafIndex
                 forgery.message forgery.signature)).run state)
           (firstFinish <$>
             (simulateQ (FirstLaneOracleSimulation.eagerTraceImpl right.1.2)
               ((simulateQ
                 (globalFirstLaneExactTracedVerifierImpl right.1.1 right.2)
-                (Concrete.scheme.verify left.publicKey forgery.epoch
+                (Concrete.scheme.verify left.publicKey forgery.leafIndex
                   forgery.message forgery.signature)).run firstState)).run)
           (fun leftResult firstResult =>
             (leftResult.1 = firstResult.1.1 ∧
@@ -972,7 +972,7 @@ theorem relTriple_sourceExact_firstLane_detailedExecution_boundedHit
         · exact Or.inr hhit
       have hsource : leftFinish forgery state = sourceFinish <$>
           (simulateQ sourceExactTracedVerifierImpl
-            (Concrete.scheme.verify left.publicKey forgery.epoch
+            (Concrete.scheme.verify left.publicKey forgery.leafIndex
               forgery.message forgery.signature)).run state := by
         unfold leftFinish
         rw [sourceExactTracedVerifierImpl_run_eq]
@@ -984,7 +984,7 @@ theorem relTriple_sourceExact_firstLane_detailedExecution_boundedHit
             (simulateQ (FirstLaneOracleSimulation.eagerTraceImpl right.1.2)
               ((simulateQ
                 (globalFirstLaneExactTracedVerifierImpl right.1.1 right.2)
-                (Concrete.scheme.verify left.publicKey forgery.epoch
+                (Concrete.scheme.verify left.publicKey forgery.leafIndex
                   forgery.message forgery.signature)).run firstState)).run := by
         unfold rightFinish
         rw [simulateQ_bind, WriterT.run_bind']
@@ -1426,9 +1426,9 @@ theorem sourceFirstLaneExactGood_to_globalHighRelation
             right.2.2.chainActions)) ∧
       List.Sublist left.2.2.1.2 right.2.2.encodingActions ∧
       List.Sublist
-        (CappedEncodingMonitor.validObservedSignEpochs
+        (CappedEncodingMonitor.validObservedSignLeafIndices
           right.2.2.encodingActions)
-        (left.2.2.2.toSigningLog.map fun entry => entry.1.epoch) := by
+        (left.2.2.2.toSigningLog.map fun entry => entry.1.leafIndex) := by
   obtain ⟨highResult, hhighSupport, hprojection⟩ :=
     exists_globalHighMonitored_of_coupled_support adversary right
       hrightSupport
@@ -1436,7 +1436,7 @@ theorem sourceFirstLaneExactGood_to_globalHighRelation
   have hwitnessRelation : GlobalSigningMonitoredTracedStateRelation left.1
       right.1.1 (sourceExactSigningProjection left.2.2) witness := hgood.2.1
   have hwitnessEncoding := hgood.2.2.1
-  have hwitnessValidEpochs := hgood.2.2.2
+  have hwitnessValidLeafIndices := hgood.2.2.2
   have hbase : highResult.1.1.2 = right.1.1.2 :=
     congrArg Prod.fst hprojection
   have hdirect :
@@ -1491,7 +1491,7 @@ theorem sourceFirstLaneExactGood_to_globalHighRelation
         sourceExactSigningProjection, sourceSigningTracedStateProjection] using
           hwitnessRelation.2
     rw [hattacker]
-    exact hwitnessValidEpochs
+    exact hwitnessValidLeafIndices
 
 theorem sourceWinningExactFirstLane_good_implies_public_combinedHit
     (adversary : Adversary)

@@ -10,17 +10,17 @@ namespace XmssSecurity
 def SigningCacheEntry.PreservesOtherValidEncodingInputs
     (secretKey : SecretKey) (entry : SigningCacheEntry) : Prop :=
   ∀ signature, entry.signature = some signature →
-    ∀ targetEpoch targetInput encoding,
+    ∀ targetLeafIndex targetInput encoding,
       TargetSum.decodeDigest
           (Concrete.CacheView.encodingHash entry.finalCache secretKey.parameter
-            targetEpoch targetInput) = some encoding →
-      Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+            targetLeafIndex targetInput) = some encoding →
+      Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
           (entry.request.message, signature.randomness) ≠
-        Concrete.CacheView.encodingInput secretKey.parameter targetEpoch targetInput →
+        Concrete.CacheView.encodingInput secretKey.parameter targetLeafIndex targetInput →
       entry.initialCache
-          (Concrete.CacheView.encodingInput secretKey.parameter targetEpoch targetInput) = none →
+          (Concrete.CacheView.encodingInput secretKey.parameter targetLeafIndex targetInput) = none →
       entry.finalCache
-          (Concrete.CacheView.encodingInput secretKey.parameter targetEpoch targetInput) = none
+          (Concrete.CacheView.encodingInput secretKey.parameter targetLeafIndex targetInput) = none
 
 def SigningCacheTrace.PreservesOtherValidEncodingInputs
     (secretKey : SecretKey) (trace : SigningCacheTrace) : Prop :=
@@ -35,7 +35,7 @@ noncomputable def cappedUnloggedMappedAdversaryImpl
   | inl worldInput => exact romImpl worldInput
   | inr request =>
       exact simulateQ romImpl
-        (Concrete.scheme.sign secretKey request.epoch request.message)
+        (Concrete.scheme.sign secretKey request.leafIndex request.message)
 
 noncomputable def cappedCacheTracedMappedAdversaryImpl
     (publicKey : PublicKey) (secretKey : SecretKey) :
@@ -76,7 +76,7 @@ theorem cappedUnloggedMappedAdversaryImpl_cache_le
             result hmem
   | inr request =>
       exact xmssRom_cache_le
-        (Concrete.scheme.sign secretKey request.epoch request.message)
+        (Concrete.scheme.sign secretKey request.leafIndex request.message)
         initialCache result hmem
 
 theorem cappedCacheTracedMappedAdversaryImpl_query_cache_le
@@ -175,12 +175,12 @@ theorem cappedCacheTracedMappedAdversaryImpl_query_preservesOtherValidEncodingIn
       · exact htrace entry hentry
       · simp only [List.mem_singleton] at hentry
         subst entry
-        intro signature hsignature targetEpoch targetInput encoding hdecode hother hnone
+        intro signature hsignature targetLeafIndex targetInput encoding hdecode hother hnone
         change output = some signature at hsignature
         subst output
-        by_cases hepoch : request.epoch = targetEpoch
+        by_cases hleafIndex : request.leafIndex = targetLeafIndex
         · exact Concrete.precomputedCappedSign_preserves_later_valid_other_encodingInput
-            secretKey request.epoch targetEpoch request.message targetInput
+            secretKey request.leafIndex targetLeafIndex request.message targetInput
             initialCache finalCache finalCache (some signature) hbase le_rfl encoding hdecode
             (by
               intro candidate hcand
@@ -188,9 +188,9 @@ theorem cappedCacheTracedMappedAdversaryImpl_query_preservesOtherValidEncodingIn
               subst candidate
               exact hother)
             hnone
-        · exact Concrete.precomputedCappedSign_preserves_other_epoch_encodingInput
-            secretKey request.epoch targetEpoch request.message targetInput
-            initialCache finalCache (some signature) hbase hepoch hnone
+        · exact Concrete.precomputedCappedSign_preserves_other_leafIndex_encodingInput
+            secretKey request.leafIndex targetLeafIndex request.message targetInput
+            initialCache finalCache (some signature) hbase hleafIndex hnone
 
 theorem cappedCacheTracedMappedAdversaryImpl_cachesLe
     (publicKey : PublicKey) (secretKey : SecretKey)
@@ -270,7 +270,7 @@ theorem cappedSelectivelyLoggedMappedAdversaryImpl_apply_inr
       QueryImpl.withLogging
         (fun request => simulateQ romImpl
           (Concrete.scheme.sign secretKey
-            request.epoch request.message)) request := by
+            request.leafIndex request.message)) request := by
   rfl
 
 theorem cappedMappedAdversaryImpl_apply_inr
@@ -279,11 +279,11 @@ theorem cappedMappedAdversaryImpl_apply_inr
       QueryImpl.withLogging
         (fun request => simulateQ romImpl
           (Concrete.scheme.sign secretKey
-            request.epoch request.message)) request := by
+            request.leafIndex request.message)) request := by
   change WriterT.mk (simulateQ romImpl
       ((QueryImpl.withLogging (spec := SigningSpec)
         (fun request => Concrete.scheme.sign secretKey
-          request.epoch request.message) request).run)) = _
+          request.leafIndex request.message) request).run)) = _
   apply WriterT.ext
   rw [WriterT.run_mk, QueryImpl.run_withLogging_apply,
     QueryImpl.run_withLogging_apply, simulateQ_bind]
@@ -413,7 +413,7 @@ noncomputable def cappedDetailedGameAfterKeygenWithSigningTrace
       (adversary.main publicKey)).run (initialCache, [])
   let (verified, finalCache) ←
     (simulateQ romImpl
-      (Concrete.scheme.verify publicKey forgery.epoch forgery.message
+      (Concrete.scheme.verify publicKey forgery.leafIndex forgery.message
         forgery.signature)).run adversaryCache
   pure (⟨publicKey, secretKey, forgery, trace.toSigningLog, verified⟩,
     (finalCache, trace))
@@ -432,7 +432,7 @@ theorem cappedDetailedGameAfterKeygenWithSigningTrace_cache_projection
       ProbComp (GameOutcome × QueryCache HashSpec) := fun result => do
     let (verified, finalCache) ←
       (simulateQ romImpl
-        (Concrete.scheme.verify publicKey result.1.epoch result.1.message
+        (Concrete.scheme.verify publicKey result.1.leafIndex result.1.message
           result.1.signature)).run result.2.1
     pure (⟨publicKey, secretKey, result.1, result.2.2, verified⟩, finalCache)
   have hbridge := congrArg (fun computation => computation >>= finish)
@@ -486,7 +486,7 @@ theorem cappedDetailedGameAfterKeygenWithSigningTrace_invariants
       (forgery, (adversaryCache, trace)) (by simp [SigningCacheTrace.CachesLe])
       hadversary
     exact htrace.mono (xmssRom_cache_le
-      (Concrete.scheme.verify publicKey forgery.epoch forgery.message
+      (Concrete.scheme.verify publicKey forgery.leafIndex forgery.message
         forgery.signature) adversaryCache (verified, finalCache) hverify)
   · exact cappedCacheTracedMappedAdversaryImpl_successfulEncodingsCached
       publicKey secretKey (adversary.main publicKey) initialCache []
@@ -553,15 +553,15 @@ theorem SigningCacheEntry.freshForgedEncodingCollision_finalCache_none_of_valid
     (hevent : entry.FreshForgedEncodingCollision secretKey forgery gameCache)
     (encoding : Encoding)
     (hdecode : TargetSum.decodeDigest
-      (Concrete.CacheView.encodingHash gameCache secretKey.parameter forgery.epoch
+      (Concrete.CacheView.encodingHash gameCache secretKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness)) = some encoding) :
     entry.finalCache
-      (Concrete.CacheView.encodingInput secretKey.parameter forgery.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness)) = none := by
-  obtain ⟨signature, _signedOutput, forgedOutput, hsignature, _hepoch,
+  obtain ⟨signature, _signedOutput, forgedOutput, hsignature, _hleafIndex,
     hinitial, _hsigned, hforged, hne, _hdigest⟩ := hevent
   let forgedInput := Concrete.CacheView.encodingInput secretKey.parameter
-    forgery.epoch (forgery.message, forgery.signature.randomness)
+    forgery.leafIndex (forgery.message, forgery.signature.randomness)
   cases hlocal : entry.finalCache forgedInput with
   | none => rfl
   | some localOutput =>
@@ -570,14 +570,14 @@ theorem SigningCacheEntry.freshForgedEncodingCollision_finalCache_none_of_valid
         Option.some.inj (hgame.symm.trans hforged)
       have hdecodeLocal : TargetSum.decodeDigest
           (Concrete.CacheView.encodingHash entry.finalCache secretKey.parameter
-            forgery.epoch (forgery.message, forgery.signature.randomness)) =
+            forgery.leafIndex (forgery.message, forgery.signature.randomness)) =
           some encoding := by
         rw [Concrete.CacheView.encodingHash,
           Concrete.CacheView.digestAt_eq_of_cache_eq_some hlocal, houtput,
           ← Concrete.CacheView.digestAt_eq_of_cache_eq_some hforged,
           ← Concrete.CacheView.encodingHash]
         exact hdecode
-      have hnone := hpreserves signature hsignature forgery.epoch
+      have hnone := hpreserves signature hsignature forgery.leafIndex
         (forgery.message, forgery.signature.randomness) encoding hdecodeLocal hne
         hinitial
       rw [hlocal] at hnone
@@ -591,11 +591,11 @@ theorem SigningCacheEntry.postSigningFreshForgedEncodingCollision_of_valid_fresh
     (hevent : entry.FreshForgedEncodingCollision secretKey forgery gameCache)
     (encoding : Encoding)
     (hdecode : TargetSum.decodeDigest
-      (Concrete.CacheView.encodingHash gameCache secretKey.parameter forgery.epoch
+      (Concrete.CacheView.encodingHash gameCache secretKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness)) = some encoding)
     (signature : Signature) (hsignature : entry.signature = some signature)
     (hsignedFresh : entry.initialCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness)) = none) :
     entry.PostSigningFreshForgedEncodingCollision secretKey forgery gameCache :=
   ⟨hevent, entry.freshForgedEncodingCollision_finalCache_none_of_valid secretKey

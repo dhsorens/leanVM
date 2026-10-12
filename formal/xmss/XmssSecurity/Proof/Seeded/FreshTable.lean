@@ -86,7 +86,7 @@ theorem cacheRows_apply_of_not_mem {rows cols : Nat} (cache : QueryCache (D →�
       rw [cacheRows, ih _ _ _ (fun i j => hinput i.succ j)]
       exact cacheFin_apply_of_not_mem _ _ _ _ (hinput 0)
 
-/-- The row-major version used by the epoch and chain loops in XMSS key generation. -/
+/-- The row-major version used by the leaf index and chain loops in XMSS key generation. -/
 theorem run_sequenceFin_rows_fresh {rows cols : Nat} (inputs : Fin rows → Fin cols → D)
     (hinj : ∀ i j i' j', inputs i j = inputs i' j' → i = i' ∧ j = j')
     (cache : QueryCache (D →ₒ R)) (hfresh : ∀ i j, cache (inputs i j) = none) :

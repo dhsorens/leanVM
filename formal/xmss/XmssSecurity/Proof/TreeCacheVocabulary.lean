@@ -16,60 +16,60 @@ def MerkleHashInput
 
 def LeafCacheOutputsCorrespond
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (left right : QueryCache HashSpec) : Prop :=
-  ∀ epoch,
-    hashCacheLookup left (Concrete.CacheView.leafInput parameter epoch
-      (leftEndpoints epoch)) =
-    hashCacheLookup right (Concrete.CacheView.leafInput parameter epoch
-      (rightEndpoints epoch))
+  ∀ leafIndex,
+    hashCacheLookup left (Concrete.CacheView.leafInput parameter leafIndex
+      (leftEndpoints leafIndex)) =
+    hashCacheLookup right (Concrete.CacheView.leafInput parameter leafIndex
+      (rightEndpoints leafIndex))
 
 def LeafReplayOutputsCorrespond
     (parameter : PublicParameter)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec) : Prop :=
-  ∀ epoch,
-    hashCacheLookup leftCache (Concrete.CacheView.leafInput parameter epoch
+  ∀ leafIndex,
+    hashCacheLookup leftCache (Concrete.CacheView.leafInput parameter leafIndex
       (Concrete.CacheReplay.oneTimePublicKey leftCache parameter
-        leftSecret epoch)) =
-    hashCacheLookup rightCache (Concrete.CacheView.leafInput parameter epoch
+        leftSecret leafIndex)) =
+    hashCacheLookup rightCache (Concrete.CacheView.leafInput parameter leafIndex
       (Concrete.CacheReplay.oneTimePublicKey rightCache parameter
-        rightSecret epoch))
+        rightSecret leafIndex))
 
 def ReplayEndpointsMatch
     (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest)
-    (endpoints : Epoch → ChainIndex → Digest)
+    (secret : LeafIndex → ChainIndex → Digest)
+    (endpoints : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec) : Prop :=
-  ∀ epoch,
-    endpoints epoch =
-      Concrete.CacheReplay.oneTimePublicKey cache parameter secret epoch
+  ∀ leafIndex,
+    endpoints leafIndex =
+      Concrete.CacheReplay.oneTimePublicKey cache parameter secret leafIndex
 
 theorem Concrete.CacheView.chainInput_ne_merkleInput
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (value : Digest) (level : MerkleLevel)
     (node : MerkleNode) (left right : Digest) :
-    Concrete.CacheView.chainInput parameter epoch chain step value ≠
+    Concrete.CacheView.chainInput parameter leafIndex chain step value ≠
       Concrete.CacheView.merkleInput parameter level node left right := by
   intro heq
   have hdomain := domain_eq_of_tweakableHashInput_eq parameter heq
   simp at hdomain
 
 theorem Concrete.CacheView.chainInput_ne_leafInput
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
-    (step : ChainStep) (value : Digest) (targetEpoch : Epoch)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
+    (step : ChainStep) (value : Digest) (targetLeafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) :
-    Concrete.CacheView.chainInput parameter epoch chain step value ≠
-      Concrete.CacheView.leafInput parameter targetEpoch endpoints := by
+    Concrete.CacheView.chainInput parameter leafIndex chain step value ≠
+      Concrete.CacheView.leafInput parameter targetLeafIndex endpoints := by
   intro heq
   have hdomain := domain_eq_of_tweakableHashInput_eq parameter heq
   simp at hdomain
 
 theorem Concrete.CacheView.leafInput_ne_merkleInput
-    (parameter : PublicParameter) (epoch : Epoch)
+    (parameter : PublicParameter) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) (level : MerkleLevel)
     (node : MerkleNode) (left right : Digest) :
-    Concrete.CacheView.leafInput parameter epoch endpoints ≠
+    Concrete.CacheView.leafInput parameter leafIndex endpoints ≠
       Concrete.CacheView.merkleInput parameter level node left right := by
   intro heq
   have hdomain := domain_eq_of_tweakableHashInput_eq parameter heq
@@ -77,71 +77,71 @@ theorem Concrete.CacheView.leafInput_ne_merkleInput
 
 theorem Concrete.CacheView.chainStep_cacheQuery_merkleInput
     (cache : QueryCache HashSpec) (output : HashOutput)
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (level : MerkleLevel) (node : MerkleNode) (left right : Digest) :
     Concrete.CacheView.chainStep
         (cache.cacheQuery
           (Concrete.CacheView.merkleInput parameter level node left right)
-          output) parameter epoch chain =
-      Concrete.CacheView.chainStep cache parameter epoch chain := by
+          output) parameter leafIndex chain =
+      Concrete.CacheView.chainStep cache parameter leafIndex chain := by
   funext position value
   unfold Concrete.CacheView.chainStep
   split
   · unfold Concrete.CacheView.digestAt
     rw [QueryCache.cacheQuery_of_ne]
-    exact Concrete.CacheView.chainInput_ne_merkleInput parameter epoch chain
+    exact Concrete.CacheView.chainInput_ne_merkleInput parameter leafIndex chain
       _ value level node left right
   · rfl
 
 theorem Concrete.CacheView.chainStep_cacheQuery_leafInput
     (cache : QueryCache HashSpec) (output : HashOutput)
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
-    (targetEpoch : Epoch) (endpoints : ChainIndex → Digest) :
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
+    (targetLeafIndex : LeafIndex) (endpoints : ChainIndex → Digest) :
     Concrete.CacheView.chainStep
         (cache.cacheQuery
-          (Concrete.CacheView.leafInput parameter targetEpoch endpoints)
-          output) parameter epoch chain =
-      Concrete.CacheView.chainStep cache parameter epoch chain := by
+          (Concrete.CacheView.leafInput parameter targetLeafIndex endpoints)
+          output) parameter leafIndex chain =
+      Concrete.CacheView.chainStep cache parameter leafIndex chain := by
   funext position value
   unfold Concrete.CacheView.chainStep
   split
   · unfold Concrete.CacheView.digestAt
     rw [QueryCache.cacheQuery_of_ne]
-    exact Concrete.CacheView.chainInput_ne_leafInput parameter epoch chain
-      _ value targetEpoch endpoints
+    exact Concrete.CacheView.chainInput_ne_leafInput parameter leafIndex chain
+      _ value targetLeafIndex endpoints
   · rfl
 
 theorem Concrete.CacheReplay.oneTimePublicKey_cacheQuery_merkleInput
     (cache : QueryCache HashSpec) (output : HashOutput)
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (level : MerkleLevel) (node : MerkleNode)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (level : MerkleLevel) (node : MerkleNode)
     (left right : Digest) :
     Concrete.CacheReplay.oneTimePublicKey
         (cache.cacheQuery
           (Concrete.CacheView.merkleInput parameter level node left right)
-          output) parameter secret epoch =
-      Concrete.CacheReplay.oneTimePublicKey cache parameter secret epoch := by
+          output) parameter secret leafIndex =
+      Concrete.CacheReplay.oneTimePublicKey cache parameter secret leafIndex := by
   unfold Concrete.CacheReplay.oneTimePublicKey
   funext chain
   rw [Concrete.CacheView.chainStep_cacheQuery_merkleInput]
 
 theorem Concrete.CacheReplay.oneTimePublicKey_cacheQuery_leafInput
     (cache : QueryCache HashSpec) (output : HashOutput)
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch targetEpoch : Epoch) (endpoints : ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex targetLeafIndex : LeafIndex) (endpoints : ChainIndex → Digest) :
     Concrete.CacheReplay.oneTimePublicKey
         (cache.cacheQuery
-          (Concrete.CacheView.leafInput parameter targetEpoch endpoints)
-          output) parameter secret epoch =
-      Concrete.CacheReplay.oneTimePublicKey cache parameter secret epoch := by
+          (Concrete.CacheView.leafInput parameter targetLeafIndex endpoints)
+          output) parameter secret leafIndex =
+      Concrete.CacheReplay.oneTimePublicKey cache parameter secret leafIndex := by
   unfold Concrete.CacheReplay.oneTimePublicKey
   funext chain
   rw [Concrete.CacheView.chainStep_cacheQuery_leafInput]
 
 theorem ReplayEndpointsMatch.cacheQuery_merkleInput
     (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest)
-    (endpoints : Epoch → ChainIndex → Digest)
+    (secret : LeafIndex → ChainIndex → Digest)
+    (endpoints : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec)
     (hrel : ReplayEndpointsMatch parameter secret endpoints cache)
     (level : MerkleLevel) (node : MerkleNode) (left right : Digest)
@@ -150,89 +150,89 @@ theorem ReplayEndpointsMatch.cacheQuery_merkleInput
       (cache.cacheQuery
         (Concrete.CacheView.merkleInput parameter level node left right)
         output) := by
-  intro epoch
+  intro leafIndex
   rw [Concrete.CacheReplay.oneTimePublicKey_cacheQuery_merkleInput]
-  exact hrel epoch
+  exact hrel leafIndex
 
 theorem ReplayEndpointsMatch.cacheQuery_leafInput
     (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest)
-    (endpoints : Epoch → ChainIndex → Digest)
+    (secret : LeafIndex → ChainIndex → Digest)
+    (endpoints : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec)
     (hrel : ReplayEndpointsMatch parameter secret endpoints cache)
-    (targetEpoch : Epoch) (targetEndpoints : ChainIndex → Digest)
+    (targetLeafIndex : LeafIndex) (targetEndpoints : ChainIndex → Digest)
     (output : HashOutput) :
     ReplayEndpointsMatch parameter secret endpoints
       (cache.cacheQuery
-        (Concrete.CacheView.leafInput parameter targetEpoch targetEndpoints)
+        (Concrete.CacheView.leafInput parameter targetLeafIndex targetEndpoints)
         output) := by
-  intro epoch
+  intro leafIndex
   rw [Concrete.CacheReplay.oneTimePublicKey_cacheQuery_leafInput]
-  exact hrel epoch
+  exact hrel leafIndex
 
 theorem LeafCacheOutputsCorrespond.cacheQuery_distinct
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (left right : QueryCache HashSpec)
     (hrel : LeafCacheOutputsCorrespond parameter leftEndpoints rightEndpoints
       left right)
     (leftInput rightInput : HashInput) (output : HashOutput)
-    (hleft : ∀ epoch, leftInput ≠ Concrete.CacheView.leafInput parameter
-      epoch (leftEndpoints epoch))
-    (hright : ∀ epoch, rightInput ≠ Concrete.CacheView.leafInput parameter
-      epoch (rightEndpoints epoch)) :
+    (hleft : ∀ leafIndex, leftInput ≠ Concrete.CacheView.leafInput parameter
+      leafIndex (leftEndpoints leafIndex))
+    (hright : ∀ leafIndex, rightInput ≠ Concrete.CacheView.leafInput parameter
+      leafIndex (rightEndpoints leafIndex)) :
     LeafCacheOutputsCorrespond parameter leftEndpoints rightEndpoints
       (left.cacheQuery leftInput output) (right.cacheQuery rightInput output) := by
-  intro epoch
+  intro leafIndex
   unfold hashCacheLookup
-  rw [QueryCache.cacheQuery_of_ne left output (hleft epoch).symm,
-    QueryCache.cacheQuery_of_ne right output (hright epoch).symm]
-  exact hrel epoch
+  rw [QueryCache.cacheQuery_of_ne left output (hleft leafIndex).symm,
+    QueryCache.cacheQuery_of_ne right output (hright leafIndex).symm]
+  exact hrel leafIndex
 
 theorem Concrete.CacheView.leafInput_eq_iff
     (parameter : PublicParameter)
-    (leftEpoch rightEpoch : Epoch)
+    (leftLeafIndex rightLeafIndex : LeafIndex)
     (leftEndpoints rightEndpoints : ChainIndex → Digest) :
-    Concrete.CacheView.leafInput parameter leftEpoch leftEndpoints =
-        Concrete.CacheView.leafInput parameter rightEpoch rightEndpoints ↔
-      leftEpoch = rightEpoch ∧ leftEndpoints = rightEndpoints := by
+    Concrete.CacheView.leafInput parameter leftLeafIndex leftEndpoints =
+        Concrete.CacheView.leafInput parameter rightLeafIndex rightEndpoints ↔
+      leftLeafIndex = rightLeafIndex ∧ leftEndpoints = rightEndpoints := by
   constructor
   · intro heq
-    have hepoch : leftEpoch = rightEpoch := by
+    have hleafIndex : leftLeafIndex = rightLeafIndex := by
       have hdomain := domain_eq_of_tweakableHashInput_eq parameter heq
       simpa using hdomain
-    subst rightEpoch
-    exact ⟨rfl, Concrete.CacheView.leafInput_injective parameter leftEpoch heq⟩
+    subst rightLeafIndex
+    exact ⟨rfl, Concrete.CacheView.leafInput_injective parameter leftLeafIndex heq⟩
   · rintro ⟨rfl, rfl⟩
     rfl
 
 theorem LeafCacheOutputsCorrespond.cacheQuery_pair
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (left right : QueryCache HashSpec)
     (hrel : LeafCacheOutputsCorrespond parameter leftEndpoints rightEndpoints
       left right)
-    (epoch : Epoch) (output : HashOutput) :
+    (leafIndex : LeafIndex) (output : HashOutput) :
     LeafCacheOutputsCorrespond parameter leftEndpoints rightEndpoints
       (left.cacheQuery
-        (Concrete.CacheView.leafInput parameter epoch (leftEndpoints epoch))
+        (Concrete.CacheView.leafInput parameter leafIndex (leftEndpoints leafIndex))
           output)
       (right.cacheQuery
-        (Concrete.CacheView.leafInput parameter epoch (rightEndpoints epoch))
+        (Concrete.CacheView.leafInput parameter leafIndex (rightEndpoints leafIndex))
           output) := by
   intro candidate
   unfold hashCacheLookup
-  by_cases hepoch : candidate = epoch
+  by_cases hleafIndex : candidate = leafIndex
   · subst candidate
     simp only [QueryCache.cacheQuery_self]
   · rw [QueryCache.cacheQuery_of_ne left output (by
         intro heq
-        exact hepoch ((Concrete.CacheView.leafInput_eq_iff parameter candidate
-          epoch (leftEndpoints candidate) (leftEndpoints epoch)).mp heq).1),
+        exact hleafIndex ((Concrete.CacheView.leafInput_eq_iff parameter candidate
+          leafIndex (leftEndpoints candidate) (leftEndpoints leafIndex)).mp heq).1),
       QueryCache.cacheQuery_of_ne right output (by
         intro heq
-        exact hepoch ((Concrete.CacheView.leafInput_eq_iff parameter candidate
-          epoch (rightEndpoints candidate) (rightEndpoints epoch)).mp heq).1)]
+        exact hleafIndex ((Concrete.CacheView.leafInput_eq_iff parameter candidate
+          leafIndex (rightEndpoints candidate) (rightEndpoints leafIndex)).mp heq).1)]
     exact hrel candidate
 
 def chainEndpointDigit : Digit :=

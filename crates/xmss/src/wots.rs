@@ -26,9 +26,9 @@ impl WotsSecretKey {
 
     /// Walk every chain to its tip. Only key generation needs this; signing
     /// stops each chain at its encoding digit.
-    pub fn public_key(&self, public_param: &PublicParam, epoch: Epoch) -> WotsPublicKey {
+    pub fn public_key(&self, public_param: &PublicParam, leaf_index: LeafIndex) -> WotsPublicKey {
         WotsPublicKey(std::array::from_fn(|i| {
-            iterate_hash(&self.pre_images[i], CHAIN_LENGTH - 1, public_param, epoch, i, 0)
+            iterate_hash(&self.pre_images[i], CHAIN_LENGTH - 1, public_param, leaf_index, i, 0)
         }))
     }
 
@@ -39,12 +39,19 @@ impl WotsSecretKey {
         &self,
         encoding: &[u8; V],
         randomness: Randomness,
-        epoch: Epoch,
+        leaf_index: LeafIndex,
         public_param: &PublicParam,
     ) -> WotsSignature {
         WotsSignature {
             chain_tips: std::array::from_fn(|i| {
-                iterate_hash(&self.pre_images[i], encoding[i] as usize, public_param, epoch, i, 0)
+                iterate_hash(
+                    &self.pre_images[i],
+                    encoding[i] as usize,
+                    public_param,
+                    leaf_index,
+                    i,
+                    0,
+                )
             }),
             randomness,
         }
@@ -55,16 +62,16 @@ impl WotsSignature {
     pub fn recover_public_key(
         &self,
         message: &Message,
-        epoch: Epoch,
+        leaf_index: LeafIndex,
         public_param: &PublicParam,
     ) -> Option<WotsPublicKey> {
-        let encoding = wots_encode(message, epoch, public_param, &self.randomness)?;
+        let encoding = wots_encode(message, leaf_index, public_param, &self.randomness)?;
         Some(WotsPublicKey(std::array::from_fn(|i| {
             iterate_hash(
                 &self.chain_tips[i],
                 CHAIN_LENGTH - 1 - encoding[i] as usize,
                 public_param,
-                epoch,
+                leaf_index,
                 i,
                 encoding[i] as usize,
             )
@@ -75,16 +82,22 @@ impl WotsSignature {
 impl WotsPublicKey {
     /// The Merkle leaf: the hash of the tweak, public parameter, and 42
     /// concatenated chain tips (704 bytes, 6 permutations).
-    pub fn hash(&self, public_param: &PublicParam, epoch: Epoch) -> Digest {
-        tweak_hash(public_param, TWEAK_TYPE_WOTS_PK, 0, epoch, self.0.as_flattened())
+    pub fn hash(&self, public_param: &PublicParam, leaf_index: LeafIndex) -> Digest {
+        tweak_hash(public_param, TWEAK_TYPE_WOTS_PK, 0, leaf_index, self.0.as_flattened())
     }
 }
 
 /// One chain step (1 permutation). The position `chain_index * CHAIN_LENGTH +
 /// step` identifies the edge from chain value `step` to `step + 1`.
-fn chain_step(public_param: &PublicParam, epoch: Epoch, chain_index: usize, step: usize, value: &Digest) -> Digest {
+fn chain_step(
+    public_param: &PublicParam,
+    leaf_index: LeafIndex,
+    chain_index: usize,
+    step: usize,
+    value: &Digest,
+) -> Digest {
     let position = (chain_index * CHAIN_LENGTH + step) as u32;
-    tweak_hash(public_param, TWEAK_TYPE_CHAIN, position, epoch, value)
+    tweak_hash(public_param, TWEAK_TYPE_CHAIN, position, leaf_index, value)
 }
 
 /// Walk chain `chain_index` for `n` steps starting at chain value `start_step`.
@@ -92,27 +105,27 @@ fn iterate_hash(
     start: &Digest,
     steps: usize,
     public_param: &PublicParam,
-    epoch: Epoch,
+    leaf_index: LeafIndex,
     chain_index: usize,
     start_step: usize,
 ) -> Digest {
     (0..steps).fold(*start, |value, offset| {
-        chain_step(public_param, epoch, chain_index, start_step + offset, &value)
+        chain_step(public_param, leaf_index, chain_index, start_step + offset, &value)
     })
 }
 
 pub fn find_randomness_for_wots_encoding(
     message: &Message,
-    epoch: Epoch,
+    leaf_index: LeafIndex,
     public_param: &PublicParam,
     seed: &[u8; 32],
 ) -> Option<(Randomness, [u8; V], u64)> {
     (0..MAX_RANDOMIZER_TRIALS).find_map(|trial| {
         let mut hasher = primitives::hash::Hasher::new();
-        hasher.update(&make_tweak(TWEAK_TYPE_RANDOMIZER, trial as u32, epoch));
+        hasher.update(&make_tweak(TWEAK_TYPE_RANDOMIZER, trial as u32, leaf_index));
         hasher.update(public_param).update(seed).update(message);
         let randomness = hasher.finalize()[..RANDOMNESS_LEN].try_into().unwrap();
-        wots_encode(message, epoch, public_param, &randomness).map(|encoding| (randomness, encoding, trial + 1))
+        wots_encode(message, leaf_index, public_param, &randomness).map(|encoding| (randomness, encoding, trial + 1))
     })
 }
 
@@ -130,14 +143,14 @@ pub fn find_randomness_for_wots_encoding(
 /// `8^i` monomial weights (see `verify_sig` in `rec_aggregation`'s `guests/lean_ethereum.py`).
 pub fn wots_encode(
     message: &Message,
-    epoch: Epoch,
+    leaf_index: LeafIndex,
     public_param: &PublicParam,
     randomness: &Randomness,
 ) -> Option<[u8; V]> {
     let mut data = [0u8; 2 * STATE_LEN];
     data[..MESSAGE_LEN].copy_from_slice(message);
     data[MESSAGE_LEN..][..RANDOMNESS_LEN].copy_from_slice(randomness);
-    let digest = tweak_hash(public_param, TWEAK_TYPE_ENCODING, 0, epoch, &data);
+    let digest = tweak_hash(public_param, TWEAK_TYPE_ENCODING, 0, leaf_index, &data);
 
     let mut encoding = [0u8; V];
     let mut sum = 0;

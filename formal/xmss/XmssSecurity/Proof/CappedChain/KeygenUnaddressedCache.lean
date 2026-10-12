@@ -22,9 +22,9 @@ theorem Concrete.tweakableHash_queryBound_zero_unaddressed
     KeygenAddressedHashInput]
 
 theorem Concrete.chainWalk_queryBound_zero_unaddressed
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position steps : Nat) (value : Digest) :
-    (Concrete.chainWalk parameter epoch chain position steps value :
+    (Concrete.chainWalk parameter leafIndex chain position steps value :
       OracleComp HashSpec Digest).IsQueryBoundP
         (fun input => ¬ KeygenAddressedHashInput parameter input) 0 := by
   induction steps with
@@ -38,32 +38,32 @@ theorem Concrete.chainWalk_queryBound_zero_unaddressed
       · simp
 
 theorem Concrete.oneTimePublicKey_queryBound_zero_unaddressed
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) :
-    (Concrete.oneTimePublicKey parameter secret epoch :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) :
+    (Concrete.oneTimePublicKey parameter secret leafIndex :
       OracleComp HashSpec (ChainIndex → Digest)).IsQueryBoundP
         (fun input => ¬ KeygenAddressedHashInput parameter input) 0 := by
   rw [Concrete.oneTimePublicKey]
   apply Concrete.sequenceFin_queryBound_zero
   intro chain
-  exact Concrete.chainWalk_queryBound_zero_unaddressed parameter epoch chain
-    0 (chainLength - 1) (secret epoch chain)
+  exact Concrete.chainWalk_queryBound_zero_unaddressed parameter leafIndex chain
+    0 (chainLength - 1) (secret leafIndex chain)
 
 theorem Concrete.leafAt_queryBound_zero_unaddressed
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) :
-    (Concrete.leafAt parameter secret epoch :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) :
+    (Concrete.leafAt parameter secret leafIndex :
       OracleComp HashSpec Digest).IsQueryBoundP
         (fun input => ¬ KeygenAddressedHashInput parameter input) 0 := by
   rw [Concrete.leafAt]
   refine OracleComp.isQueryBoundP_bind (m := 0)
     (Concrete.oneTimePublicKey_queryBound_zero_unaddressed parameter secret
-      epoch) ?_
+      leafIndex) ?_
   intro endpoints _
   exact Concrete.tweakableHash_queryBound_zero_unaddressed parameter _ _
 
 theorem Concrete.treeNode_queryBound_zero_unaddressed
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (levels : Nat) (node : MerkleNode) :
     (Concrete.treeNode parameter secret levels node :
       OracleComp HashSpec Digest).IsQueryBoundP
@@ -109,8 +109,8 @@ theorem Concrete.keygen_cache_none_at_encodingAddress
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (epoch : Epoch) (input : HashInput)
-    (hinput : AtHashAddress keyResult.1.2.parameter (.encoding epoch) input) :
+    (leafIndex : LeafIndex) (input : HashInput)
+    (hinput : AtHashAddress keyResult.1.2.parameter (.encoding leafIndex) input) :
     keyResult.2 input = none := by
   obtain ⟨parameter, secret, root, hkey, hroot⟩ :=
     Concrete.keygen_support_rootTree keyResult hmem
@@ -119,7 +119,7 @@ theorem Concrete.keygen_cache_none_at_encodingAddress
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest) input ∅ keyResult.2 root
   · apply (Concrete.treeNode_queryBound_zero_encodingAddress parameter secret
-      epoch treeHeight Concrete.rootNode).of_imp
+      leafIndex treeHeight Concrete.rootNode).of_imp
     intro candidate heq
     subst candidate
     exact hinput

@@ -335,7 +335,7 @@ noncomputable def sourceGlobalTracedDetailedExecution
       (Concrete.materializePrecomputation keyView.cache keyView.secretKey))
       (adversary.main keyView.publicKey)).run (keyView.cache, [])
   let verified ← (simulateQ sourceDirectTracedVerifierImpl
-    (Concrete.scheme.verify keyView.publicKey handled.1.epoch
+    (Concrete.scheme.verify keyView.publicKey handled.1.leafIndex
       handled.1.message handled.1.signature)).run handled.2
   pure ((handled.1, verified.1), verified.2)
 
@@ -350,7 +350,7 @@ noncomputable def globalHighMonitoredDetailedExecution
   let handled ← (simulateQ (globalHighMonitoredMappedAdversaryImpl right)
     (adversary.main right.1.1.publicKey)).run initial
   let verified ← (simulateQ (globalHighMonitoredVerifierImpl right)
-    (Concrete.scheme.verify right.1.1.publicKey handled.1.epoch
+    (Concrete.scheme.verify right.1.1.publicKey handled.1.leafIndex
       handled.1.message handled.1.signature)).run handled.2
   pure ((handled.1, verified.1), verified.2)
 
@@ -424,9 +424,9 @@ def GlobalCausalResultCovered
 
 def GlobalChainValueIndicesForwardClosed
     (covered : Set GlobalChainValueIndex) : Prop :=
-  ∀ chain epoch earlier later,
-    (chain, epoch, earlier) ∈ covered → earlier ≤ later →
-      (chain, epoch, later) ∈ covered
+  ∀ chain leafIndex earlier later,
+    (chain, leafIndex, earlier) ∈ covered → earlier ≤ later →
+      (chain, leafIndex, later) ∈ covered
 
 theorem GlobalCausalTraceRevealsCovered.append
     {covered : Set GlobalChainValueIndex}
@@ -498,9 +498,9 @@ theorem globalReturnedChainValueCovered_forwardClosed
     (log : QueryLog SigningSpec) :
     GlobalChainValueIndicesForwardClosed
       (GlobalReturnedChainValueCovered cache secretKey log) := by
-  intro chain epoch earlier later hmem hle
+  intro chain leafIndex earlier later hmem hle
   exact returnedChainValueCovered_forwardClosed cache secretKey log chain
-    epoch earlier later hmem hle
+    leafIndex earlier later hmem hle
 
 theorem globalReturnedChainValueCovered_contains_returned
     (cache : QueryCache HashSpec) (secretKey : SecretKey)
@@ -508,10 +508,10 @@ theorem globalReturnedChainValueCovered_contains_returned
     (signature : Signature) (encoding : Encoding)
     (hreturned : SigningTranscript.Returned log request signature)
     (hdecode : TargetSum.decodeDigest
-      (Concrete.CacheView.encodingHash cache secretKey.parameter request.epoch
+      (Concrete.CacheView.encodingHash cache secretKey.parameter request.leafIndex
         (request.message, signature.randomness)) = some encoding)
     (chain : ChainIndex) :
-    (chain, request.epoch, encoding chain) ∈
+    (chain, request.leafIndex, encoding chain) ∈
       GlobalReturnedChainValueCovered cache secretKey log := by
   exact returnedChainValueCovered_contains_returned cache secretKey log chain
     request signature encoding hreturned hdecode
@@ -536,18 +536,18 @@ theorem globalReturnedChainValueCovered_of_comparableCaches
   change index.2 ∈ ReturnedChainValueCovered leftCache leftSecret
     leftLog index.1
   rw [returnedChainValueCovered_iff] at hindex ⊢
-  obtain ⟨request, signature, encoding, hreturned, hdecode, hepoch,
+  obtain ⟨request, signature, encoding, hreturned, hdecode, hleafIndex,
     hdigit⟩ := hindex
   have hhash :
       Concrete.CacheView.encodingHash leftCache leftSecret.parameter
-          request.epoch (request.message, signature.randomness) =
+          request.leafIndex (request.message, signature.randomness) =
         Concrete.CacheView.encodingHash rightCache rightSecret.parameter
-          request.epoch (request.message, signature.randomness) := by
+          request.leafIndex (request.message, signature.randomness) := by
     rw [hleftParameter, hrightParameter]
     unfold Concrete.CacheView.encodingHash Concrete.CacheView.digestAt
-    rw [hcaches _ ⟨request.epoch, request.message, signature.randomness,
+    rw [hcaches _ ⟨request.leafIndex, request.message, signature.randomness,
       rfl⟩]
-  refine ⟨request, signature, encoding, ?_, ?_, hepoch, hdigit⟩
+  refine ⟨request, signature, encoding, ?_, ?_, hleafIndex, hdigit⟩
   · simpa [hlogs] using hreturned
   · rw [hhash]
     exact hdecode
@@ -632,11 +632,11 @@ theorem globalFilteredCausalAttackerHashPlan_reveal_mem_of_covered
     (hcovered : GlobalCausalRevealsCovered covered state)
     (hforward : GlobalChainValueIndicesForwardClosed covered) :
     index ∈ covered := by
-  obtain ⟨predecessor, value, hrevealed, hchain, hepoch, hnext⟩ :=
+  obtain ⟨predecessor, value, hrevealed, hchain, hleafIndex, hnext⟩ :=
     globalFilteredCausalAttackerHashPlan_reveal_has_predecessor secretKey input
       state index hplan
   apply hforward index.1 index.2.1 predecessor.2.2 index.2.2
-  · rw [← hchain, ← hepoch]
+  · rw [← hchain, ← hleafIndex]
     exact hcovered predecessor value hrevealed
   · change predecessor.2.2.val ≤ index.2.2.val
     omega
@@ -712,7 +712,7 @@ theorem globalSignatureRevealResult_covered
     (covered : Set GlobalChainValueIndex)
     (hcovered : GlobalCausalRevealsCovered covered state)
     (hindices : ∀ chain ∈ chains,
-      (chain, request.epoch, encoding chain) ∈ covered) :
+      (chain, request.leafIndex, encoding chain) ∈ covered) :
     GlobalCausalRevealsCovered covered
         (globalSignatureRevealResult table request encoding chains signature
           state).2 ∧
@@ -725,10 +725,10 @@ theorem globalSignatureRevealResult_covered
           GlobalCausalTraceRevealsCovered]⟩
   | cons chain chains ih =>
       let index : GlobalChainValueIndex :=
-        (chain, request.epoch, encoding chain)
+        (chain, request.leafIndex, encoding chain)
       have hindex : index ∈ covered := hindices chain (by simp)
       have htailIndices : ∀ candidate ∈ chains,
-          (candidate, request.epoch, encoding candidate) ∈ covered := by
+          (candidate, request.leafIndex, encoding candidate) ∈ covered := by
         intro candidate hcandidate
         exact hindices candidate (List.mem_cons_of_mem chain hcandidate)
       rw [globalSignatureRevealResult, globalSignatureRevealTrace]
@@ -760,9 +760,9 @@ theorem simulate_eagerTrace_globalFilteredCausalSigningAttempt_support_covered_o
       result.1.1 = some returnedSignature →
       TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash finalCache
-          keyView.secretKey.parameter request.epoch
+          keyView.secretKey.parameter request.leafIndex
           (request.message, returnedSignature.randomness)) = some encoding →
-      (chain, request.epoch, encoding chain) ∈ covered)
+      (chain, request.leafIndex, encoding chain) ∈ covered)
     (hresult : result ∈ support
       ((simulateQ (RevealProbeOracleSimulation.eagerTraceImpl table)
         (globalFilteredCausalSigningAttempt keyView request state)).run)) :
@@ -797,21 +797,21 @@ theorem simulate_eagerTrace_globalFilteredCausalSigningAttempt_support_covered_o
       simp only [pure_bind, simulateQ_pure, WriterT.run_pure] at hresult
       subst result
       let initialSignature := Concrete.CacheReplay.signWithEncoding
-        keyView.cache keyView.secretKey request.epoch randomness encoding
+        keyView.cache keyView.secretKey request.leafIndex randomness encoding
       let encodedState : GlobalCausalHashState := { state with cache := encoded.2 }
       let returned := globalSignatureRevealResult table request encoding
         allChains initialSignature encodedState
       have hstable : Concrete.CacheView.encodingHash finalCache
-          keyView.secretKey.parameter request.epoch
+          keyView.secretKey.parameter request.leafIndex
           (request.message, randomness) = encoded.1 := by
         apply Concrete.CacheReplay.encodingHash_eq_of_run_support_of_cache_le
           keyView.secretKey.parameter state.cache encoded.2 finalCache
-            request.epoch request.message randomness encoded.1 hencoded
+            request.leafIndex request.message randomness encoded.1 hencoded
         simpa [Prod.map, returned, encodedState,
           globalSignatureRevealResult_cache]
           using hcacheLe
       have hindices : ∀ chain ∈ allChains,
-          (chain, request.epoch, encoding chain) ∈ covered := by
+          (chain, request.leafIndex, encoding chain) ∈ covered := by
         intro chain _hchain
         apply hdirect returned.1 encoding chain
         · rfl
@@ -839,9 +839,9 @@ theorem simulate_eagerTrace_globalFilteredCausalSignBoundedAttempts_support_cove
       result.1.1 = some returnedSignature →
       TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash finalCache
-          keyView.secretKey.parameter request.epoch
+          keyView.secretKey.parameter request.leafIndex
           (request.message, returnedSignature.randomness)) = some encoding →
-      (chain, request.epoch, encoding chain) ∈ covered)
+      (chain, request.leafIndex, encoding chain) ∈ covered)
     (hresult : result ∈ support
       ((simulateQ (RevealProbeOracleSimulation.eagerTraceImpl table)
         (globalFilteredCausalSignBoundedAttempts attempts keyView request
@@ -903,9 +903,9 @@ theorem simulate_eagerTrace_globalFilteredCausalSigningQuery_support_covered_of_
       result.1.1 = some returnedSignature →
       TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash finalCache
-          keyView.secretKey.parameter request.epoch
+          keyView.secretKey.parameter request.leafIndex
           (request.message, returnedSignature.randomness)) = some encoding →
-      (chain, request.epoch, encoding chain) ∈ covered)
+      (chain, request.leafIndex, encoding chain) ∈ covered)
     (hresult : result ∈ support
       ((simulateQ (RevealProbeOracleSimulation.eagerTraceImpl table)
         (globalFilteredCausalSigningQuery keyView request state)).run)) :
@@ -1094,9 +1094,9 @@ theorem globalHighMonitoredBaseMappedAdversaryImpl_support_covered_of_final
         attackerActionFragment input result.1 →
       TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash finalCache
-          right.1.1.secretKey.parameter request.epoch
+          right.1.1.secretKey.parameter request.leafIndex
           (request.message, signature.randomness)) = some encoding →
-      (chain, request.epoch, encoding chain) ∈ covered)
+      (chain, request.leafIndex, encoding chain) ∈ covered)
     (hresult : result ∈ support
       ((globalHighMonitoredBaseMappedAdversaryImpl right input).run state)) :
     GlobalMonitoredCausalStateCovered covered result.2 := by
@@ -1180,9 +1180,9 @@ theorem globalHighMonitoredMappedAdversaryImpl_support_covered_of_final
       AttackerAction.sign request (some signature) ∈ result.2.2 →
       TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash finalCache
-          right.1.1.secretKey.parameter request.epoch
+          right.1.1.secretKey.parameter request.leafIndex
           (request.message, signature.randomness)) = some encoding →
-      (chain, request.epoch, encoding chain) ∈ covered)
+      (chain, request.leafIndex, encoding chain) ∈ covered)
     (hresult : result ∈ support
       ((globalHighMonitoredMappedAdversaryImpl right input).run state)) :
     GlobalMonitoredCausalStateCovered covered result.2.1 := by
@@ -1294,9 +1294,9 @@ theorem simulate_globalHighMonitoredMappedAdversary_support_covered_of_final
       AttackerAction.sign request (some signature) ∈ finalTrace →
       TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash finalCache
-          right.1.1.secretKey.parameter request.epoch
+          right.1.1.secretKey.parameter request.leafIndex
           (request.message, signature.randomness)) = some encoding →
-      (chain, request.epoch, encoding chain) ∈ covered)
+      (chain, request.leafIndex, encoding chain) ∈ covered)
     (result : α × GlobalMonitoredTracedState)
     (hresult : result ∈ support
       ((simulateQ (globalHighMonitoredMappedAdversaryImpl right)
@@ -1504,7 +1504,7 @@ theorem globalHighMonitoredDetailedExecution_support_returnedCovered
   have hhandledCacheLe : handled.2.1.causal.cache ≤
       verified.2.1.causal.cache :=
     simulate_globalHighMonitoredVerifier_support_cache_le right
-      (Concrete.scheme.verify right.1.1.publicKey handled.1.epoch
+      (Concrete.scheme.verify right.1.1.publicKey handled.1.leafIndex
         handled.1.message handled.1.signature) handled.2 verified hvertified
   have hhandledCovered : GlobalMonitoredCausalStateCovered covered
       handled.2.1 := by
@@ -1522,11 +1522,11 @@ theorem globalHighMonitoredDetailedExecution_support_returnedCovered
     · exact hhandledCacheLe
     · intro action haction
       rw [simulate_globalHighMonitoredVerifier_support_attacker_trace_eq right
-        (Concrete.scheme.verify right.1.1.publicKey handled.1.epoch
+        (Concrete.scheme.verify right.1.1.publicKey handled.1.leafIndex
           handled.1.message handled.1.signature) handled.2 verified hvertified]
       exact haction
   exact simulate_globalHighMonitoredVerifier_support_covered right
-    (Concrete.scheme.verify right.1.1.publicKey handled.1.epoch
+    (Concrete.scheme.verify right.1.1.publicKey handled.1.leafIndex
       handled.1.message handled.1.signature) handled.2 covered hhandledCovered
         hforward verified hvertified
 
@@ -1613,7 +1613,7 @@ noncomputable def globalForgeryPrimaryProbeTrace
   let encoding := actionTracedForgeryEncoding result
   List.ofFn fun chain : ChainIndex =>
     RevealProbeOracleSimulation.ObservedAction.probe
-      (chain, result.1.2.1.forgery.epoch, encoding chain)
+      (chain, result.1.2.1.forgery.leafIndex, encoding chain)
       (result.1.2.1.forgery.signature.chainValue chain)
 
 noncomputable def globalHighMonitoredPublicProjection
@@ -1630,7 +1630,7 @@ theorem globalForgeryPrimaryProbeTrace_mem
       (GameOutcome × QueryCache HashSpec)) × AttackerActionTrace))
     (chain : ChainIndex) :
     RevealProbeOracleSimulation.ObservedAction.probe
-        (chain, result.1.2.1.forgery.epoch,
+        (chain, result.1.2.1.forgery.leafIndex,
           actionTracedForgeryEncoding result chain)
         (result.1.2.1.forgery.signature.chainValue chain) ∈
       globalForgeryPrimaryProbeTrace result := by
@@ -1707,7 +1707,7 @@ theorem sourceGlobal_origin_implies_right_publicObservedHit
     have htrace : left.2.2.2 = right.2.2.2 := hgood.2.2
     have hdecodeLeft : TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash left.2.2.1
-          left.1.secretKey.parameter left.2.1.1.epoch
+          left.1.secretKey.parameter left.2.1.1.leafIndex
           (left.2.1.1.message, left.2.1.1.signature.randomness)) =
         some encoding := by
       simpa [sourceGlobalProgramResult, sourceGlobalExecutionResult,
@@ -1715,7 +1715,7 @@ theorem sourceGlobal_origin_implies_right_publicObservedHit
         Concrete.materializePrecomputation,
         Concrete.precomputedSecretKey] using hdecode
     have hsourceUnrevealed :
-        (chain, left.2.1.1.epoch, encoding chain) ∉
+        (chain, left.2.1.1.leafIndex, encoding chain) ∉
           GlobalReturnedChainValueCovered left.2.2.1 left.1.secretKey
             left.2.2.2.toSigningLog := by
       change (_, _) ∉ ReturnedChainValueCovered _ _ _ chain
@@ -1723,17 +1723,17 @@ theorem sourceGlobal_origin_implies_right_publicObservedHit
       exact hchainOrigin.1.forged_chain_coordinate_not_mem_returned encoding
         hdecodeLeft
     have hhash : Concrete.CacheView.encodingHash left.2.2.1
-          left.1.secretKey.parameter left.2.1.1.epoch
+          left.1.secretKey.parameter left.2.1.1.leafIndex
           (left.2.1.1.message, left.2.1.1.signature.randomness) =
         Concrete.CacheView.encodingHash right.2.2.1.causal.cache
-          left.1.secretKey.parameter left.2.1.1.epoch
+          left.1.secretKey.parameter left.2.1.1.leafIndex
           (left.2.1.1.message, left.2.1.1.signature.randomness) := by
       unfold Concrete.CacheView.encodingHash Concrete.CacheView.digestAt
-      rw [hcausal.1 _ ⟨left.2.1.1.epoch, left.2.1.1.message,
+      rw [hcausal.1 _ ⟨left.2.1.1.leafIndex, left.2.1.1.message,
         left.2.1.1.signature.randomness, rfl⟩]
     have hrightDecode : TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash right.2.2.1.causal.cache
-          right.1.1.1.secretKey.parameter right.2.1.1.epoch
+          right.1.1.1.secretKey.parameter right.2.1.1.leafIndex
           (right.2.1.1.message, right.2.1.1.signature.randomness)) =
         some encoding := by
       rw [← hparameter, ← hforgery, ← hhash]
@@ -1744,12 +1744,12 @@ theorem sourceGlobal_origin_implies_right_publicObservedHit
       rw [show Concrete.CacheView.encodingHash
           (globalHighMonitoredErasedResult right).1.2.2
           (globalHighMonitoredErasedResult right).1.1.1.2.parameter
-          (globalHighMonitoredErasedResult right).1.2.1.forgery.epoch
+          (globalHighMonitoredErasedResult right).1.2.1.forgery.leafIndex
           ((globalHighMonitoredErasedResult right).1.2.1.forgery.message,
             (globalHighMonitoredErasedResult
               right).1.2.1.forgery.signature.randomness) =
           Concrete.CacheView.encodingHash right.2.2.1.causal.cache
-            right.1.1.1.secretKey.parameter right.2.1.1.epoch
+            right.1.1.1.secretKey.parameter right.2.1.1.leafIndex
             (right.2.1.1.message, right.2.1.1.signature.randomness) by
         rfl]
       rw [hrightDecode]
@@ -1760,18 +1760,18 @@ theorem sourceGlobal_origin_implies_right_publicObservedHit
       hrel.1.1.toStable.1.1
     have hvalueLeft : left.2.1.1.signature.chainValue chain =
         globalKeygenChainValueTable left.1.cache left.1.secretKey
-          (chain, left.2.1.1.epoch, encoding chain) := by
+          (chain, left.2.1.1.leafIndex, encoding chain) := by
       simpa [sourceGlobalProgramResult, sourceGlobalExecutionResult,
         eraseGlobalChainKeygenView, actionTraceOutcome,
         globalKeygenChainValueTable, Concrete.materializePrecomputation,
         Concrete.precomputedSecretKey, keygenChainValueTable] using hvalue
     have hrightValue : right.1.1.2
-        (chain, right.2.1.1.epoch, encoding chain) =
+        (chain, right.2.1.1.leafIndex, encoding chain) =
           right.2.1.1.signature.chainValue chain := by
       rw [hforgery, hleftTable, htables] at hvalueLeft
       exact hvalueLeft.symm
     have hrightUnrevealed :
-        (chain, right.2.1.1.epoch, encoding chain) ∉
+        (chain, right.2.1.1.leafIndex, encoding chain) ∉
           GlobalReturnedChainValueCovered right.2.2.1.causal.cache
             right.1.1.1.secretKey right.2.2.2.toSigningLog := by
       intro hmem
@@ -1789,14 +1789,14 @@ theorem sourceGlobal_origin_implies_right_publicObservedHit
       globalHighMonitoredDetailedExecution_support_returnedCovered adversary
         right.1 right.2 hrightExecutionSupport
     let index : GlobalChainValueIndex :=
-      (chain, right.2.1.1.epoch, encoding chain)
+      (chain, right.2.1.1.leafIndex, encoding chain)
     let target := right.2.1.1.signature.chainValue chain
     have hprobe : RevealProbeOracleSimulation.ObservedAction.probe index target ∈
         right.2.2.1.trace ++ globalForgeryPrimaryProbeTrace
           (globalHighMonitoredErasedResult right) := by
       apply List.mem_append_right
       change RevealProbeOracleSimulation.ObservedAction.probe
-          (chain, right.2.1.1.epoch, encoding chain)
+          (chain, right.2.1.1.leafIndex, encoding chain)
           (right.2.1.1.signature.chainValue chain) ∈
         globalForgeryPrimaryProbeTrace
           (globalHighMonitoredErasedResult right)

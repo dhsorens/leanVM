@@ -13,36 +13,36 @@ namespace XmssSecurity
 
 /-! ## The security experiment -/
 
-/-- A signing request contains a 32-bit epoch and a 32-byte message. -/
+/-- A signing request contains a 32-bit leaf index and a 32-byte message. -/
 structure SignRequest where
-  epoch : Epoch
+  leafIndex : LeafIndex
   message : Message
 deriving DecidableEq
 
-/-- A claimed forgery: an epoch, a message, and a signature. -/
+/-- A claimed forgery: a leaf index, a message, and a signature. -/
 structure Forgery where
-  epoch : Epoch
+  leafIndex : LeafIndex
   message : Message
   signature : Signature
 deriving DecidableEq
 
 /-- The request a forgery claims to answer. -/
 def Forgery.request (forgery : Forgery) : SignRequest :=
-  ⟨forgery.epoch, forgery.message⟩
+  ⟨forgery.leafIndex, forgery.message⟩
 
 /-- The signing oracle answers a request with either a signature or `none` if the signer fails. -/
 abbrev SigningSpec := SignRequest →ₒ Option Signature
 
 namespace SigningTranscript
 
-/-- A signing transcript is valid exactly when no epoch occurs twice. Thus the adversary may make adaptive signing requests, but may not request two signatures at the same epoch. -/
+/-- A signing transcript is valid exactly when no leaf index occurs twice. Thus the adversary may make adaptive signing requests, but may not request two signatures at the same leaf index. -/
 def Valid (log : QueryLog SigningSpec) : Prop :=
-  (log.map fun entry => entry.1.epoch).Nodup
+  (log.map fun entry => entry.1.leafIndex).Nodup
 
 instance (log : QueryLog SigningSpec) : Decidable (Valid log) :=
-  inferInstanceAs (Decidable ((log.map fun entry => entry.1.epoch).Nodup))
+  inferInstanceAs (Decidable ((log.map fun entry => entry.1.leafIndex).Nodup))
 
-/-- The signer returned the claimed forgery exactly when the transcript contains the same epoch, message, and signature. A different signature for a signed message is therefore a valid strong forgery. -/
+/-- The signer returned the claimed forgery exactly when the transcript contains the same leaf index, message, and signature. A different signature for a signed message is therefore a valid strong forgery. -/
 def Contains (log : QueryLog SigningSpec) (forgery : Forgery) : Prop :=
   ∃ entry ∈ log, entry.1 = forgery.request ∧ entry.2 = some forgery.signature
 
@@ -61,7 +61,7 @@ structure Adversary where
 /-- Record each signing request and its answer. -/
 def signingOracle (sk : Seeded.SecretKey) :
     QueryImpl SigningSpec (WriterT (QueryLog SigningSpec) (OracleComp OracleWorld)) :=
-  QueryImpl.withLogging fun request => liftM (Seeded.sign sk request.epoch request.message : OracleComp HashSpec _)
+  QueryImpl.withLogging fun request => liftM (Seeded.sign sk request.leafIndex request.message : OracleComp HashSpec _)
 
 /-- Sample the master seed, then run all parties with one shared hash oracle. -/
 noncomputable def gameCore (adversary : Adversary) : OracleComp OracleWorld Bool := do
@@ -69,7 +69,7 @@ noncomputable def gameCore (adversary : Adversary) : OracleComp OracleWorld Bool
   let (pk, sk) ← liftM (Seeded.keygenFromSeed seed)
   let ((forgery, log) : Forgery × QueryLog SigningSpec) ←
     (simulateQ (QueryImpl.ofLift OracleWorld (WriterT (QueryLog SigningSpec) (OracleComp OracleWorld)) + signingOracle sk) (adversary.main pk)).run
-  let verified ← liftM (Concrete.verify pk forgery.epoch forgery.message forgery.signature : OracleComp HashSpec Bool)
+  let verified ← liftM (Concrete.verify pk forgery.leafIndex forgery.message forgery.signature : OracleComp HashSpec Bool)
   return decide (SigningTranscript.Valid log ∧ ¬SigningTranscript.Contains log forgery) && verified
 
 /-- Forward private sampling for free; answer hash queries consistently and count every call, including cache hits. -/

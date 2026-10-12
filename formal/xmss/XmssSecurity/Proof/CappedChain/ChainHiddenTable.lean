@@ -4,29 +4,29 @@ open OracleSpec
 
 namespace XmssSecurity.CappedChain
 
-abbrev ChainValueIndex := Epoch × Digit
+abbrev ChainValueIndex := LeafIndex × Digit
 
 def chainStepDigit (step : ChainStep) : Digit :=
   ⟨step.val, step.isLt.trans (by decide)⟩
 
 theorem Concrete.CacheView.chainInput_eq_iff
     (parameter : PublicParameter)
-    (leftEpoch rightEpoch : Epoch) (leftChain rightChain : ChainIndex)
+    (leftLeafIndex rightLeafIndex : LeafIndex) (leftChain rightChain : ChainIndex)
     (leftStep rightStep : ChainStep) (leftValue rightValue : Digest) :
-    Concrete.CacheView.chainInput parameter leftEpoch leftChain leftStep leftValue =
-        Concrete.CacheView.chainInput parameter rightEpoch rightChain rightStep rightValue ↔
-      leftEpoch = rightEpoch ∧ leftChain = rightChain ∧
+    Concrete.CacheView.chainInput parameter leftLeafIndex leftChain leftStep leftValue =
+        Concrete.CacheView.chainInput parameter rightLeafIndex rightChain rightStep rightValue ↔
+      leftLeafIndex = rightLeafIndex ∧ leftChain = rightChain ∧
         leftStep = rightStep ∧ leftValue = rightValue := by
   constructor
   · intro heq
     have hdomain := domain_eq_of_tweakableHashInput_eq parameter heq
     simp only [HashDomain.chain.injEq] at hdomain
-    obtain ⟨hepoch, hchain, hstep⟩ := hdomain
-    subst rightEpoch
+    obtain ⟨hleafIndex, hchain, hstep⟩ := hdomain
+    subst rightLeafIndex
     subst rightChain
     subst rightStep
     refine ⟨rfl, rfl, rfl, ?_⟩
-    exact Concrete.CacheView.chainInput_injective parameter leftEpoch leftChain
+    exact Concrete.CacheView.chainInput_injective parameter leftLeafIndex leftChain
       leftStep heq
   · rintro ⟨rfl, rfl, rfl, rfl⟩
     rfl
@@ -46,12 +46,12 @@ theorem outcomeChainValueHasKeygenOrigin_eq_table
     ∃ encoding,
       TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash finalCache secretKey.parameter
-          outcome.forgery.epoch
+          outcome.forgery.leafIndex
           (outcome.forgery.message, outcome.forgery.signature.randomness)) =
         some encoding ∧
       outcome.forgery.signature.chainValue chain =
         keygenChainValueTable keygenCache secretKey chain
-          (outcome.forgery.epoch, encoding chain) := by
+          (outcome.forgery.leafIndex, encoding chain) := by
   obtain ⟨_verified, encoding, hdecode, hzero | hpositive⟩ := horigin
   · obtain ⟨hdigit, hvalue⟩ := hzero
     refine ⟨encoding, hdecode, ?_⟩
@@ -74,12 +74,12 @@ theorem winningOutcomeChainValueHasKeygenOrigin_eq_table
     ∃ encoding,
       TargetSum.decodeDigest
         (Concrete.CacheView.encodingHash finalCache secretKey.parameter
-          outcome.forgery.epoch
+          outcome.forgery.leafIndex
           (outcome.forgery.message, outcome.forgery.signature.randomness)) =
         some encoding ∧
       outcome.forgery.signature.chainValue chain =
         keygenChainValueTable keygenCache secretKey chain
-          (outcome.forgery.epoch, encoding chain) :=
+          (outcome.forgery.leafIndex, encoding chain) :=
   outcomeChainValueHasKeygenOrigin_eq_table keygenCache finalCache secretKey
     outcome chain horigin.2
 
@@ -91,9 +91,9 @@ noncomputable def returnedChainValueIndices
   exact Finset.univ.filter fun index => ∃ request signature encoding,
     SigningTranscript.Returned log request signature ∧
       TargetSum.decodeDigest
-        (Concrete.CacheView.encodingHash cache secretKey.parameter request.epoch
+        (Concrete.CacheView.encodingHash cache secretKey.parameter request.leafIndex
           (request.message, signature.randomness)) = some encoding ∧
-      index.1 = request.epoch ∧ encoding chain ≤ index.2
+      index.1 = request.leafIndex ∧ encoding chain ≤ index.2
 
 @[simp]
 theorem mem_returnedChainValueIndices_iff
@@ -103,9 +103,9 @@ theorem mem_returnedChainValueIndices_iff
       ∃ request signature encoding,
         SigningTranscript.Returned log request signature ∧
           TargetSum.decodeDigest
-            (Concrete.CacheView.encodingHash cache secretKey.parameter request.epoch
+            (Concrete.CacheView.encodingHash cache secretKey.parameter request.leafIndex
               (request.message, signature.randomness)) = some encoding ∧
-          index.1 = request.epoch ∧ encoding chain ≤ index.2 := by
+          index.1 = request.leafIndex ∧ encoding chain ≤ index.2 := by
   classical
   simp only [returnedChainValueIndices, Finset.mem_filter, Finset.mem_univ, true_and]
 

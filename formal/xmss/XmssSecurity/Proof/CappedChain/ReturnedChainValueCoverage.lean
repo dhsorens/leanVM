@@ -6,9 +6,9 @@ namespace XmssSecurity.CappedChain
 
 def ChainValueIndicesForwardClosed
     (covered : Set ChainValueIndex) : Prop :=
-  ∀ epoch earlier later,
-    (epoch, earlier) ∈ covered → earlier ≤ later →
-      (epoch, later) ∈ covered
+  ∀ leafIndex earlier later,
+    (leafIndex, earlier) ∈ covered → earlier ≤ later →
+      (leafIndex, later) ∈ covered
 
 noncomputable def ReturnedChainValueCovered
     (cache : QueryCache HashSpec) (secretKey : SecretKey)
@@ -25,9 +25,9 @@ theorem returnedChainValueCovered_iff
         SigningTranscript.Returned log request signature ∧
           TargetSum.decodeDigest
             (Concrete.CacheView.encodingHash cache secretKey.parameter
-              request.epoch
+              request.leafIndex
               (request.message, signature.randomness)) = some encoding ∧
-          index.1 = request.epoch ∧ encoding chain ≤ index.2 := by
+          index.1 = request.leafIndex ∧ encoding chain ≤ index.2 := by
   exact mem_returnedChainValueIndexList_iff cache secretKey log chain index
 
 theorem returnedChainValueCovered_forwardClosed
@@ -35,12 +35,12 @@ theorem returnedChainValueCovered_forwardClosed
     (log : QueryLog SigningSpec) (chain : ChainIndex) :
     ChainValueIndicesForwardClosed
       (ReturnedChainValueCovered cache secretKey log chain) := by
-  intro epoch earlier later hmem hle
+  intro leafIndex earlier later hmem hle
   rw [returnedChainValueCovered_iff] at hmem ⊢
   obtain ⟨request, signature, encoding, hreturned, hdecode,
-    hepoch, hdigit⟩ := hmem
+    hleafIndex, hdigit⟩ := hmem
   exact ⟨request, signature, encoding, hreturned, hdecode,
-    hepoch, hdigit.trans hle⟩
+    hleafIndex, hdigit.trans hle⟩
 
 theorem returnedChainValueCovered_contains_returned
     (cache : QueryCache HashSpec) (secretKey : SecretKey)
@@ -48,9 +48,9 @@ theorem returnedChainValueCovered_contains_returned
     (request : SignRequest) (signature : Signature) (encoding : Encoding)
     (hreturned : SigningTranscript.Returned log request signature)
     (hdecode : TargetSum.decodeDigest
-      (Concrete.CacheView.encodingHash cache secretKey.parameter request.epoch
+      (Concrete.CacheView.encodingHash cache secretKey.parameter request.leafIndex
         (request.message, signature.randomness)) = some encoding) :
-    (request.epoch, encoding chain) ∈
+    (request.leafIndex, encoding chain) ∈
       ReturnedChainValueCovered cache secretKey log chain := by
   rw [returnedChainValueCovered_iff]
   exact ⟨request, signature, encoding, hreturned, hdecode, rfl, le_rfl⟩

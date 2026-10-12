@@ -53,5 +53,5 @@ def main():
     // the value to be materialized. The assertion under test is that `execute`
     // runs the lowered helpers without a write-once memory conflict.
     let program = compile(&parse(src).expect("parse transcript helpers"));
-    program.execute([F192::ZERO; 2]);
+    program.execute([F192::ZERO; 2]).unwrap();
 }

@@ -5,7 +5,7 @@
 //! not to where it happens.
 
 use lean_compiler::{compile, parse};
-use lean_vm::cpu::{prove, verify};
+use leanvm_core::cpu::{Fault, ProveError, prove, verify};
 use primitives::field::{F64, F192, g_pow};
 
 /// A returned value that repeats a constant computed earlier in the same
@@ -31,7 +31,7 @@ def main():
 ";
     let program = compile(&parse(src).expect("parse"));
     let want = [F192::from(g_pow(3)) * F192::from(F64(7)), F192::from(F64(7))];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("returned duplicate constant is preserved");
 }
 
@@ -56,7 +56,7 @@ def main():
     let program = compile(&parse(src).expect("parse"));
     // (k + k) + (k + k) == 0 in characteristic two.
     let want = [F192::ZERO, F192::ZERO];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("duplicated call arguments are preserved");
 }
 
@@ -88,11 +88,8 @@ def main():
 ";
     let run = |pi: [F192; 2]| -> bool {
         let program = compile(&parse(src).expect("parse"));
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let (proof, _) = prove(&program, pi, lean_vm::pcs::TEST_LOG_INV_RATE);
-            verify(&program, &pi, &proof).is_ok()
-        }))
-        .unwrap_or(false)
+        prove(&program, pi, leanvm_core::pcs::TEST_LOG_INV_RATE)
+            .is_ok_and(|(proof, _)| verify(&program, &pi, &proof).is_ok())
     };
     assert!(
         run([F192::from(g_pow(4)), F192::from(g_pow(3))]),
@@ -140,18 +137,20 @@ def main():
 fn assert_survives_a_duplicated_comparison() {
     let program = compile(&parse(&duplicated_comparison(9)).expect("parse"));
     let want = [F192::ZERO, F192::from(g_pow(9))];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("passing assert still verifies");
 }
 
-/// The same shape with the assert failing: it must still panic, which is what
+/// The same shape with the assert failing: it must still fail, which is what
 /// says the assertion is really there.
 #[test]
-#[should_panic(expected = "write-once conflict")]
 fn failing_assert_still_conflicts() {
     let program = compile(&parse(&duplicated_comparison(10)).expect("parse"));
     let want = [F192::ZERO, F192::from(g_pow(9))];
-    let _ = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let Err(ProveError::Execution(err)) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE) else {
+        panic!("a failing assert makes no proof")
+    };
+    assert!(matches!(err.fault, Fault::Conflict { .. }), "{err}");
 }
 
 /// A hint at the end of a runtime branch is attached to a no-op anchor by the
@@ -176,7 +175,7 @@ def main():
     let mut program = compile(&parse(src).expect("parse"));
     program.set_witness("flag", vec![vec![F192::ZERO]]);
     let want = [F192::ZERO, F192::ZERO];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("untaken branch must not consume its witness");
 }
 
@@ -219,7 +218,7 @@ def main():
 ";
     let program = compile(&parse(src).expect("parse"));
     let want = [F192::from(g_pow(11)), F192::from(g_pow(22))];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("each hash absorbs into its own state");
 }
 
@@ -243,14 +242,14 @@ def main():
     let mut program = compile(&parse(source).unwrap());
     program.set_witness("values", vec![vec![value, F192::ONE, value]]);
     for branch in [F192::ZERO, F192::ONE] {
-        assert!(program.execute([branch, value]).unconstrained_reads.is_empty());
-        assert!(std::panic::catch_unwind(|| program.execute([branch, value + F192::ONE])).is_err());
+        assert!(program.execute([branch, value]).unwrap().unconstrained_reads.is_empty());
+        assert!(program.execute([branch, value + F192::ONE]).is_err());
     }
 }
 
 #[test]
-fn cached_loads_resolve_deferred_equalities_before_use() {
-    lean_vm::init_prover_pool();
+fn cached_loads_see_linked_equalities_before_use() {
+    leanvm_core::init_prover();
     let source = r#"
 def fill(h):
     value = hint_witness("value")
@@ -276,17 +275,53 @@ def main():
             let source = source.replace("TOUCH", touch).replace("FILL", fill);
             let mut program = compile(&parse(&source).unwrap());
             program.set_witness("value", vec![vec![value]]);
-            assert!(program.execute(public).unconstrained_reads.is_empty());
-            let (proof, _) = prove(&program, public, lean_vm::pcs::TEST_LOG_INV_RATE);
+            assert!(program.execute(public).unwrap().unconstrained_reads.is_empty());
+            let (proof, _) = prove(&program, public, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
             verify(&program, &public, &proof).unwrap();
-            assert!(std::panic::catch_unwind(|| program.execute([public[0] + F192::ONE, value])).is_err());
+            assert!(program.execute([public[0] + F192::ONE, value]).is_err());
         }
     }
 }
 
+/// A load that runs before its store takes the stored value, as write-once memory
+/// says, even where the loaded name is used directly rather than loaded again.
 #[test]
-fn cached_copies_resolve_deferred_stores() {
-    lean_vm::init_prover_pool();
+fn a_load_before_its_store_sees_the_store() {
+    leanvm_core::init_prover();
+    let source = "\
+def main():
+    h = HeapBuf(1)
+    x = h[1]
+    h[1] = GEN ** 3
+    public = 1
+    assert public[1] == x * GEN
+    return
+";
+    let program = compile(&parse(source).unwrap());
+    let public = [F192::from(g_pow(4)), F192::ZERO];
+    let (proof, _) = prove(&program, public, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
+    verify(&program, &public, &proof).unwrap();
+}
+
+/// A heap cell nothing stores to is prover-chosen, so using a value loaded from it
+/// is an unconstrained read, exactly as for a stack cell.
+#[test]
+fn a_load_of_an_unwritten_heap_cell_is_an_unconstrained_read() {
+    let source = "\
+def main():
+    h = HeapBuf(2)
+    x = h[1]
+    public = 1
+    public[1] = x * GEN
+    return
+";
+    let exec = compile(&parse(source).unwrap()).execute([F192::ZERO; 2]).unwrap();
+    assert!(!exec.unconstrained_reads.is_empty());
+}
+
+#[test]
+fn cached_copies_see_later_stores() {
+    leanvm_core::init_prover();
     let source = r#"
 def square(h):
     return h[GEN] * h[GEN]
@@ -314,8 +349,8 @@ def main():
         let source = source.replace("FILL_DEST", fill).replace("DEST", dest);
         let mut program = compile(&parse(&source).unwrap());
         program.set_witness("value", vec![vec![value]]);
-        assert!(program.execute(public).unconstrained_reads.is_empty());
-        let (proof, _) = prove(&program, public, lean_vm::pcs::TEST_LOG_INV_RATE);
+        assert!(program.execute(public).unwrap().unconstrained_reads.is_empty());
+        let (proof, _) = prove(&program, public, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
         verify(&program, &public, &proof).unwrap();
     }
 }

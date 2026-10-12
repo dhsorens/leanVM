@@ -8,23 +8,23 @@ namespace XmssSecurity.Seeded
 
 set_option backward.isDefEq.respectTransparency false
 
-abbrev ChainOutputs := Epoch → ChainIndex → HashOutput
+abbrev ChainOutputs := LeafIndex → ChainIndex → HashOutput
 
-def chainInputs (parameter : PublicParameter) (seed : MasterSeed) (epoch : Epoch) (chain : ChainIndex) :
-    HashInput := keygenHashInput parameter (.chain epoch chain) seed
+def chainInputs (parameter : PublicParameter) (seed : MasterSeed) (leafIndex : LeafIndex) (chain : ChainIndex) :
+    HashInput := keygenHashInput parameter (.chain leafIndex chain) seed
 
 theorem chainInputs_injective (parameter : PublicParameter) (seed : MasterSeed)
-    (epoch epoch' : Epoch) (chain chain' : ChainIndex)
-    (h : chainInputs parameter seed epoch chain = chainInputs parameter seed epoch' chain') :
-    epoch = epoch' ∧ chain = chain' :=
+    (leafIndex leafIndex' : LeafIndex) (chain chain' : ChainIndex)
+    (h : chainInputs parameter seed leafIndex chain = chainInputs parameter seed leafIndex' chain') :
+    leafIndex = leafIndex' ∧ chain = chain' :=
   KeygenDomain.chain.inj (keygenHashInput_injective h).2.1
 
 def parameterCache (seed : MasterSeed) (output : HashOutput) : QueryCache HashSpec :=
   (∅ : QueryCache HashSpec).cacheQuery (keygenHashInput 0 .parameter seed) output
 
 theorem parameterCache_chain_fresh (seed : MasterSeed) (output : HashOutput)
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex) :
-    parameterCache seed output (chainInputs parameter seed epoch chain) = none := by
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex) :
+    parameterCache seed output (chainInputs parameter seed leafIndex chain) = none := by
   apply QueryCache.cacheQuery_of_ne
   intro h
   have hdomain := (keygenHashInput_injective h).2.1
@@ -43,24 +43,24 @@ theorem derivationCache_of_not_seedHit (seed : MasterSeed) (parameterOutput : Ha
   · apply QueryCache.cacheQuery_of_ne
     intro h
     exact hinput (h.symm ▸ derivationSeedHit_keygen 0 .parameter seed)
-  · intro epoch chain h
-    exact hinput (h.symm ▸ derivationSeedHit_keygen (truncateHash parameterOutput) (.chain epoch chain) seed)
+  · intro leafIndex chain h
+    exact hinput (h.symm ▸ derivationSeedHit_keygen (truncateHash parameterOutput) (.chain leafIndex chain) seed)
 
 def deriveChainSecrets (parameter : PublicParameter) (seed : MasterSeed) :
-    OracleComp HashSpec (Epoch → ChainIndex → Digest) :=
-  Concrete.sequenceFin fun epoch => Concrete.sequenceFin fun chain =>
-    deriveKey parameter (.chain epoch chain) seed
+    OracleComp HashSpec (LeafIndex → ChainIndex → Digest) :=
+  Concrete.sequenceFin fun leafIndex => Concrete.sequenceFin fun chain =>
+    deriveKey parameter (.chain leafIndex chain) seed
 
 noncomputable def drawChainOutputs : ProbComp ChainOutputs :=
-  Concrete.sequenceFin fun _ : Epoch => Concrete.sequenceFin fun _ : ChainIndex => $ᵗ HashOutput
+  Concrete.sequenceFin fun _ : LeafIndex => Concrete.sequenceFin fun _ : ChainIndex => $ᵗ HashOutput
 
-def outputSecrets (outputs : ChainOutputs) : Epoch → ChainIndex → Digest :=
-  fun epoch chain => truncateHash (outputs epoch chain)
+def outputSecrets (outputs : ChainOutputs) : LeafIndex → ChainIndex → Digest :=
+  fun leafIndex chain => truncateHash (outputs leafIndex chain)
 
 theorem deriveChainSecrets_eq_map (parameter : PublicParameter) (seed : MasterSeed) :
     deriveChainSecrets parameter seed =
-      outputSecrets <$> Concrete.sequenceFin (fun epoch => Concrete.sequenceFin fun chain =>
-        (liftM (HashSpec.query (chainInputs parameter seed epoch chain)) : OracleComp HashSpec HashOutput)) := by
+      outputSecrets <$> Concrete.sequenceFin (fun leafIndex => Concrete.sequenceFin fun chain =>
+        (liftM (HashSpec.query (chainInputs parameter seed leafIndex chain)) : OracleComp HashSpec HashOutput)) := by
   simp only [deriveChainSecrets, deriveKey, Concrete.oracleHash, bind_pure_comp,
     sequenceFin_map, chainInputs]
   rfl
@@ -73,13 +73,13 @@ theorem run_deriveChainSecrets (seed : MasterSeed) (parameterOutput : HashOutput
           drawChainOutputs := by
   rw [deriveChainSecrets_eq_map, simulateQ_map, StateT.run_map,
     run_sequenceFin_rows_fresh _
-      (fun epoch chain epoch' chain' => chainInputs_injective _ seed epoch epoch' chain chain')
+      (fun leafIndex chain leafIndex' chain' => chainInputs_injective _ seed leafIndex leafIndex' chain chain')
       _ (parameterCache_chain_fresh seed parameterOutput _)]
   simp only [bind_pure_comp, Functor.map_map, drawChainOutputs, derivationCache]
 
 theorem evalDist_drawChainOutputs : 𝒟[drawChainOutputs] = 𝒟[$ᵗ ChainOutputs] := by
   calc
-    _ = 𝒟[Concrete.sequenceFin fun _ : Epoch => ($ᵗ (ChainIndex → HashOutput))] :=
+    _ = 𝒟[Concrete.sequenceFin fun _ : LeafIndex => ($ᵗ (ChainIndex → HashOutput))] :=
       evalDist_sequenceFin_congr _ _ (fun _ => evalDist_sequenceFin_uniform _)
     _ = _ := evalDist_sequenceFin_uniform _
 
@@ -91,7 +91,7 @@ theorem evalDist_deriveChainSecrets (seed : MasterSeed) (parameterOutput : HashO
   rw [run_deriveChainSecrets, evalDist_map, evalDist_map, evalDist_drawChainOutputs]
 
 def deriveParametersAndSecrets (seed : MasterSeed) :
-    OracleComp HashSpec (PublicParameter × (Epoch → ChainIndex → Digest)) := do
+    OracleComp HashSpec (PublicParameter × (LeafIndex → ChainIndex → Digest)) := do
   let parameter ← deriveKey 0 .parameter seed
   let secrets ← deriveChainSecrets parameter seed
   return (parameter, secrets)

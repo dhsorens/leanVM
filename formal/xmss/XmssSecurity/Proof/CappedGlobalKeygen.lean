@@ -20,7 +20,7 @@ noncomputable def globalKeygenChainValueTable
 noncomputable def globalChainInputProbe?
     (parameter : PublicParameter) (input : HashInput) :
     Option (GlobalChainValueIndex × Digest) :=
-  if h : ∃ data : Epoch × ChainIndex × ChainStep × Digest,
+  if h : ∃ data : LeafIndex × ChainIndex × ChainStep × Digest,
       input = Concrete.CacheView.chainInput parameter data.1 data.2.1
         data.2.2.1 data.2.2.2 then
     let data := h.choose
@@ -30,24 +30,24 @@ noncomputable def globalChainInputProbe?
 
 @[simp]
 theorem globalChainInputProbe?_chainInput
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (value : Digest) :
     globalChainInputProbe? parameter
-      (Concrete.CacheView.chainInput parameter epoch chain step value) =
-      some ((chain, epoch, chainStepDigit step), value) := by
+      (Concrete.CacheView.chainInput parameter leafIndex chain step value) =
+      some ((chain, leafIndex, chainStepDigit step), value) := by
   unfold globalChainInputProbe?
   split
   · rename_i h
     let chosen := h.choose
     have hchosen := h.choose_spec
     have heq := (Concrete.CacheView.chainInput_eq_iff parameter
-      chosen.1 epoch chosen.2.1 chain chosen.2.2.1 step
+      chosen.1 leafIndex chosen.2.1 chain chosen.2.2.1 step
         chosen.2.2.2 value).mp hchosen.symm
-    obtain ⟨hepoch, hchain, hstep, hvalue⟩ := heq
+    obtain ⟨hleafIndex, hchain, hstep, hvalue⟩ := heq
     simp only
-    rw [hepoch, hchain, hstep, hvalue]
+    rw [hleafIndex, hchain, hstep, hvalue]
   · rename_i h
-    exact (h ⟨(epoch, chain, step, value), rfl⟩).elim
+    exact (h ⟨(leafIndex, chain, step, value), rfl⟩).elim
 
 
 abbrev GlobalChainEdgeIndex := ChainIndex × ChainEdgeIndex
@@ -57,8 +57,8 @@ noncomputable local instance globalPresamplingSampleableTable :
   SampleableType.ofFintype (GlobalChainValueIndex → Digest)
 
 noncomputable local instance globalPresamplingSampleableSeeds :
-    SampleableType (Epoch → ChainIndex → Digest) :=
-  SampleableType.ofFintype (Epoch → ChainIndex → Digest)
+    SampleableType (LeafIndex → ChainIndex → Digest) :=
+  SampleableType.ofFintype (LeafIndex → ChainIndex → Digest)
 
 noncomputable local instance globalPresamplingSampleableEdges :
     SampleableType (GlobalChainEdgeIndex → Digest) :=
@@ -83,9 +83,9 @@ def globalChainTableEdgeTarget
 
 def GlobalChainTableSeedsMatch
     (secretKey : SecretKey) (table : GlobalChainValueIndex → Digest) : Prop :=
-  ∀ epoch chain,
-    secretKey.chainStart epoch chain =
-      table (chain, epoch, ⟨0, by simp [chainLength]⟩)
+  ∀ leafIndex chain,
+    secretKey.chainStart leafIndex chain =
+      table (chain, leafIndex, ⟨0, by simp [chainLength]⟩)
 
 def GlobalChainTableEdgesMatch
     (cache : QueryCache HashSpec) (parameter : PublicParameter)
@@ -105,13 +105,13 @@ theorem GlobalChainTableEdgesMatch.mono
   exact ⟨output, hle hcached, htarget⟩
 
 def globalChainTableSeedTargets
-    (table : GlobalChainValueIndex → Digest) : Epoch → ChainIndex → Digest :=
-  fun epoch chain => table (chain, epoch, ⟨0, by simp [chainLength]⟩)
+    (table : GlobalChainValueIndex → Digest) : LeafIndex → ChainIndex → Digest :=
+  fun leafIndex chain => table (chain, leafIndex, ⟨0, by simp [chainLength]⟩)
 
 /-- A global chain table is equivalently all chain seeds and all positive edge coordinates. -/
 def globalChainTableMaterialEquiv :
     (GlobalChainValueIndex → Digest) ≃
-      ((Epoch → ChainIndex → Digest) × (GlobalChainEdgeIndex → Digest)) where
+      ((LeafIndex → ChainIndex → Digest) × (GlobalChainEdgeIndex → Digest)) where
   toFun table := (globalChainTableSeedTargets table, globalChainTableEdgeTarget table)
   invFun material index :=
     if hzero : index.2.2.val = 0 then
@@ -142,7 +142,7 @@ def globalChainTableMaterialEquiv :
       omega
   right_inv material := by
     apply Prod.ext
-    · funext epoch chain
+    · funext leafIndex chain
       simp [globalChainTableSeedTargets]
     · funext edge
       simp only [globalChainTableEdgeTarget]
@@ -158,9 +158,9 @@ def globalChainTableMaterialEquiv :
       simp [chainStepNextDigit]
 
 noncomputable def independentGlobalChainTableMaterial :
-    ProbComp ((Epoch → ChainIndex → Digest) ×
+    ProbComp ((LeafIndex → ChainIndex → Digest) ×
       (GlobalChainEdgeIndex → Digest)) :=
-  Prod.mk <$> ($ᵗ (Epoch → ChainIndex → Digest)) <*>
+  Prod.mk <$> ($ᵗ (LeafIndex → ChainIndex → Digest)) <*>
     ($ᵗ (GlobalChainEdgeIndex → Digest))
 
 theorem evalDist_split_uniformGlobalChainTable_eq_independent :
@@ -174,13 +174,13 @@ theorem evalDist_split_uniformGlobalChainTable_eq_independent :
     Pr[= target | independentGlobalChainTableMaterial]
   rw [probOutput_map_bijective_uniform_cross
     (α := GlobalChainValueIndex → Digest)
-    (β := (Epoch → ChainIndex → Digest) ×
+    (β := (LeafIndex → ChainIndex → Digest) ×
       (GlobalChainEdgeIndex → Digest))
     globalChainTableMaterialEquiv globalChainTableMaterialEquiv.bijective]
   calc
-    Pr[= target | $ᵗ ((Epoch → ChainIndex → Digest) ×
+    Pr[= target | $ᵗ ((LeafIndex → ChainIndex → Digest) ×
         (GlobalChainEdgeIndex → Digest))] =
-        Pr[= target.1 | $ᵗ (Epoch → ChainIndex → Digest)] *
+        Pr[= target.1 | $ᵗ (LeafIndex → ChainIndex → Digest)] *
           Pr[= target.2 | $ᵗ (GlobalChainEdgeIndex → Digest)] := by
       rw [probOutput_uniformSample, probOutput_uniformSample,
         probOutput_uniformSample, Fintype.card_prod, Nat.cast_mul,
@@ -346,21 +346,21 @@ theorem outputChainSteps_length :
   simp [outputChainSteps, ChainStep]
 
 noncomputable def globalOutputEdgeOrder : List GlobalChainEdgeIndex :=
-  allChains ×ˢ (allEpochs ×ˢ outputChainSteps)
+  allChains ×ˢ (allLeafIndices ×ˢ outputChainSteps)
 
 theorem globalOutputEdgeOrder_nodup : globalOutputEdgeOrder.Nodup :=
-  allChains_nodup.product (allEpochs_nodup.product outputChainSteps_nodup)
+  allChains_nodup.product (allLeafIndices_nodup.product outputChainSteps_nodup)
 
 theorem mem_globalOutputEdgeOrder (edge : GlobalChainEdgeIndex) :
     edge ∈ globalOutputEdgeOrder := by
-  rcases edge with ⟨chain, epoch, step⟩
+  rcases edge with ⟨chain, leafIndex, step⟩
   exact List.mem_product.mpr ⟨mem_allChains chain,
-    List.mem_product.mpr ⟨mem_allEpochs epoch,
+    List.mem_product.mpr ⟨mem_allLeafIndices leafIndex,
       mem_outputChainSteps step⟩⟩
 
 theorem globalOutputEdgeOrder_length :
     globalOutputEdgeOrder.length =
-      allChains.length * (allEpochs.length * (chainLength - 1)) := by
+      allChains.length * (allLeafIndices.length * (chainLength - 1)) := by
   rw [globalOutputEdgeOrder, List.length_product,
     List.length_product, outputChainSteps_length]
 
@@ -402,23 +402,23 @@ theorem trajectoryChainSteps_length :
   simp [trajectoryChainSteps, ChainStep]
 
 noncomputable def globalTrajectoryEdgeOrder : List GlobalChainEdgeIndex :=
-  allChains ×ˢ (allEpochs ×ˢ trajectoryChainSteps)
+  allChains ×ˢ (allLeafIndices ×ˢ trajectoryChainSteps)
 
 theorem globalTrajectoryEdgeOrder_nodup :
     globalTrajectoryEdgeOrder.Nodup := by
   exact allChains_nodup.product
-    (allEpochs_nodup.product trajectoryChainSteps_nodup)
+    (allLeafIndices_nodup.product trajectoryChainSteps_nodup)
 
 theorem mem_globalTrajectoryEdgeOrder (edge : GlobalChainEdgeIndex) :
     edge ∈ globalTrajectoryEdgeOrder := by
-  rcases edge with ⟨chain, epoch, step⟩
+  rcases edge with ⟨chain, leafIndex, step⟩
   exact List.mem_product.mpr ⟨mem_allChains chain,
-    List.mem_product.mpr ⟨mem_allEpochs epoch,
+    List.mem_product.mpr ⟨mem_allLeafIndices leafIndex,
       mem_trajectoryChainSteps step⟩⟩
 
 theorem globalTrajectoryEdgeOrder_length :
     globalTrajectoryEdgeOrder.length =
-      allChains.length * (allEpochs.length * (chainLength - 1)) := by
+      allChains.length * (allLeafIndices.length * (chainLength - 1)) := by
   rw [globalTrajectoryEdgeOrder, List.length_product,
     List.length_product, trajectoryChainSteps_length]
 
@@ -449,28 +449,28 @@ noncomputable local instance outputTableSampleable :
   SampleableType.ofFintype GlobalChainEdgeOutputTable
 
 noncomputable local instance secretTableSampleable :
-    SampleableType (Epoch → ChainIndex → Digest) :=
-  SampleableType.ofFintype (Epoch → ChainIndex → Digest)
+    SampleableType (LeafIndex → ChainIndex → Digest) :=
+  SampleableType.ofFintype (LeafIndex → ChainIndex → Digest)
 
 noncomputable local instance highTableSampleable :
     SampleableType (GlobalChainEdgeIndex → Digest) :=
   SampleableType.ofFintype (GlobalChainEdgeIndex → Digest)
 
 noncomputable def globalChainValueTableOfRandomness
-    (randomness : (Epoch → ChainIndex → Digest) ×
+    (randomness : (LeafIndex → ChainIndex → Digest) ×
       GlobalChainEdgeOutputTable) :
     GlobalChainValueIndex → Digest :=
   globalChainTableMaterialEquiv.symm
     (randomness.1, fun edge => truncateHash (randomness.2 edge))
 
 def globalChainHighTableOfRandomness
-    (randomness : (Epoch → ChainIndex → Digest) ×
+    (randomness : (LeafIndex → ChainIndex → Digest) ×
       GlobalChainEdgeOutputTable) :
     GlobalChainEdgeIndex → Digest :=
   fun edge => hashOutputHigh (randomness.2 edge)
 
 noncomputable def globalChainKeygenRandomnessView
-    (randomness : (Epoch → ChainIndex → Digest) ×
+    (randomness : (LeafIndex → ChainIndex → Digest) ×
       GlobalChainEdgeOutputTable) :
     (GlobalChainValueIndex → Digest) ×
       (GlobalChainEdgeIndex → Digest) :=
@@ -480,13 +480,13 @@ noncomputable def globalChainKeygenRandomnessView
 noncomputable def globalChainKeygenRandomnessOfView
     (view : (GlobalChainValueIndex → Digest) ×
       (GlobalChainEdgeIndex → Digest)) :
-    (Epoch → ChainIndex → Digest) × GlobalChainEdgeOutputTable :=
+    (LeafIndex → ChainIndex → Digest) × GlobalChainEdgeOutputTable :=
   let material := globalChainTableMaterialEquiv view.1
   (material.1, fun edge =>
     Rom.hashOutputEquivDigestPair.symm (view.2 edge, material.2 edge))
 
 theorem globalChainKeygenRandomnessOfView_view
-    (randomness : (Epoch → ChainIndex → Digest) ×
+    (randomness : (LeafIndex → ChainIndex → Digest) ×
       GlobalChainEdgeOutputTable) :
     globalChainKeygenRandomnessOfView
       (globalChainKeygenRandomnessView randomness) = randomness := by
@@ -572,29 +572,29 @@ noncomputable def independentGlobalChainTableHigh :
   pure (table, high)
 
 noncomputable def uniformGlobalChainKeygenRandomness :
-    ProbComp ((Epoch → ChainIndex → Digest) ×
+    ProbComp ((LeafIndex → ChainIndex → Digest) ×
       GlobalChainEdgeOutputTable) :=
   Prod.mk <$> Concrete.sampleSecret <*>
     ($ᵗ GlobalChainEdgeOutputTable)
 
 theorem Concrete.evalDist_sampleSecret_eq_uniformMeasure :
     evalDist Concrete.sampleSecret =
-    (liftM (PMF.uniformOfFintype (Epoch → ChainIndex → Digest)) :
-      SPMF (Epoch → ChainIndex → Digest)) := by
+    (liftM (PMF.uniformOfFintype (LeafIndex → ChainIndex → Digest)) :
+      SPMF (LeafIndex → ChainIndex → Digest)) := by
   calc
-    _ = evalDist ($ᵗ (Epoch → ChainIndex → Digest)) :=
+    _ = evalDist ($ᵗ (LeafIndex → ChainIndex → Digest)) :=
       congrArg evalDist Concrete.sampleSecret_eq
-    _ = _ := evalDist_uniformSample (Epoch → ChainIndex → Digest)
+    _ = _ := evalDist_uniformSample (LeafIndex → ChainIndex → Digest)
 
 set_option maxRecDepth 100000 in
 theorem evalDist_uniformGlobalChainKeygenRandomness_eq_uniform :
     evalDist uniformGlobalChainKeygenRandomness =
-      evalDist ($ᵗ ((Epoch → ChainIndex → Digest) ×
+      evalDist ($ᵗ ((LeafIndex → ChainIndex → Digest) ×
         GlobalChainEdgeOutputTable)) := by
   apply SPMF.ext
   intro target
   change Pr[= target | uniformGlobalChainKeygenRandomness] =
-    Pr[= target | $ᵗ ((Epoch → ChainIndex → Digest) ×
+    Pr[= target | $ᵗ ((LeafIndex → ChainIndex → Digest) ×
       GlobalChainEdgeOutputTable)]
   rw [uniformGlobalChainKeygenRandomness,
     probOutput_seq_map_prod_mk_eq_mul]
@@ -607,27 +607,27 @@ theorem evalDist_uniformGlobalChainKeygenRandomness_eq_uniform :
 theorem evalDist_uniformGlobalChainKeygenRandomness_eq_uniformMeasure :
     evalDist uniformGlobalChainKeygenRandomness =
     (liftM (PMF.uniformOfFintype
-      ((Epoch → ChainIndex → Digest) × GlobalChainEdgeOutputTable)) :
-      SPMF ((Epoch → ChainIndex → Digest) ×
+      ((LeafIndex → ChainIndex → Digest) × GlobalChainEdgeOutputTable)) :
+      SPMF ((LeafIndex → ChainIndex → Digest) ×
         GlobalChainEdgeOutputTable)) :=
   evalDist_uniformGlobalChainKeygenRandomness_eq_uniform.trans
     (evalDist_uniformSample
-      ((Epoch → ChainIndex → Digest) × GlobalChainEdgeOutputTable))
+      ((LeafIndex → ChainIndex → Digest) × GlobalChainEdgeOutputTable))
 
 set_option maxRecDepth 100000 in
 theorem evalDist_uniformGlobalChainKeygenRandomness_eq_independent :
     evalDist (globalChainKeygenRandomnessView <$>
-      ($ᵗ ((Epoch → ChainIndex → Digest) ×
+      ($ᵗ ((LeafIndex → ChainIndex → Digest) ×
         GlobalChainEdgeOutputTable))) =
     evalDist independentGlobalChainTableHigh := by
   apply SPMF.ext
   intro target
   change Pr[= target | globalChainKeygenRandomnessView <$>
-      ($ᵗ ((Epoch → ChainIndex → Digest) ×
+      ($ᵗ ((LeafIndex → ChainIndex → Digest) ×
         GlobalChainEdgeOutputTable))] =
     Pr[= target | independentGlobalChainTableHigh]
   rw [probOutput_map_bijective_uniform_cross
-    (α := (Epoch → ChainIndex → Digest) × GlobalChainEdgeOutputTable)
+    (α := (LeafIndex → ChainIndex → Digest) × GlobalChainEdgeOutputTable)
     (β := (GlobalChainValueIndex → Digest) ×
       (GlobalChainEdgeIndex → Digest))
     globalChainKeygenRandomnessView
@@ -651,7 +651,7 @@ theorem evalDist_globalChainKeygenRandomnessView_eq_independent :
     evalDist independentGlobalChainTableHigh := by
   calc
     _ = evalDist (globalChainKeygenRandomnessView <$>
-          ($ᵗ ((Epoch → ChainIndex → Digest) ×
+          ($ᵗ ((LeafIndex → ChainIndex → Digest) ×
             GlobalChainEdgeOutputTable))) := by
       rw [evalDist_map,
         evalDist_uniformGlobalChainKeygenRandomness_eq_uniform,
@@ -667,32 +667,32 @@ noncomputable def globalChainValueTableOfTrajectories
   chainValueTableOfList (trajectories index.1) index.2
 
 noncomputable def Concrete.allChainTrajectoriesFromCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     QueryCache HashSpec → List ChainIndex →
       ProbComp (AllChainTrajectories × QueryCache HashSpec)
   | cache, [] => pure (fun _ => [], cache)
   | cache, chain :: chains => do
       let first ← Concrete.fixedSeedChainTrajectoriesFromCache parameter secret
-        chain (chainLength - 1) cache allEpochs
+        chain (chainLength - 1) cache allLeafIndices
       let rest ← Concrete.allChainTrajectoriesFromCache parameter secret
         first.2 chains
       pure (Function.update rest.1 chain first.1, rest.2)
 
 @[simp]
 theorem Concrete.allChainTrajectoriesFromCache_nil
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec) :
     Concrete.allChainTrajectoriesFromCache parameter secret cache [] =
       pure (fun _ => [], cache) := rfl
 
 theorem Concrete.allChainTrajectoriesFromCache_cons
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec) (chain : ChainIndex)
     (chains : List ChainIndex) :
     Concrete.allChainTrajectoriesFromCache parameter secret cache
       (chain :: chains) = (do
         let first ← Concrete.fixedSeedChainTrajectoriesFromCache parameter secret
-          chain (chainLength - 1) cache allEpochs
+          chain (chainLength - 1) cache allLeafIndices
         let rest ← Concrete.allChainTrajectoriesFromCache parameter secret
           first.2 chains
         pure (Function.update rest.1 chain first.1, rest.2)) := rfl
@@ -700,7 +700,7 @@ theorem Concrete.allChainTrajectoriesFromCache_cons
 set_option maxRecDepth 100000 in
 set_option linter.constructorNameAsVariable false in
 theorem Concrete.allChainTrajectoriesFromCache_support_info
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     ∀ (chains : List ChainIndex) (cache : QueryCache HashSpec)
       (result : AllChainTrajectories × QueryCache HashSpec),
       chains.Nodup →
@@ -711,11 +711,11 @@ theorem Concrete.allChainTrajectoriesFromCache_support_info
           (result.1 chain).length = lifetime ∧
             ∀ largerCache : QueryCache HashSpec, result.2 ≤ largerCache →
             List.Forall₂
-              (fun epoch trajectory =>
+              (fun leafIndex trajectory =>
                 evalWithAnswerFn (Concrete.CacheReplay.answerFn largerCache)
-                  (Concrete.chainTrajectory parameter epoch chain 0
-                    (chainLength - 1) (secret epoch chain)) = trajectory)
-              allEpochs (result.1 chain) := by
+                  (Concrete.chainTrajectory parameter leafIndex chain 0
+                    (chainLength - 1) (secret leafIndex chain)) = trajectory)
+              allLeafIndices (result.1 chain) := by
   intro chains
   induction chains with
   | nil =>
@@ -736,7 +736,7 @@ theorem Concrete.allChainTrajectoriesFromCache_support_info
       subst result
       have hfirstInfo :=
         Concrete.fixedSeedChainTrajectoriesFromCache_support_info parameter
-          secret chain (chainLength - 1) allEpochs cache first hfirst
+          secret chain (chainLength - 1) allLeafIndices cache first hfirst
       have hrestInfo := ih first.2 rest htailNodup hrest
       constructor
       · exact hfirstInfo.1.trans hrestInfo.1
@@ -745,11 +745,11 @@ theorem Concrete.allChainTrajectoriesFromCache_support_info
         · subst selected
           simp only [Function.update_self]
           constructor
-          · simpa [allEpochs_length] using hfirstInfo.2.1
+          · simpa [allLeafIndices_length] using hfirstInfo.2.1
           · intro largerCache hlarger
             exact
               Concrete.fixedSeedChainTrajectoriesFromCache_replay_in_largerCache
-                parameter secret chain (chainLength - 1) allEpochs cache first
+                parameter secret chain (chainLength - 1) allLeafIndices cache first
                   largerCache hfirst (hrestInfo.1.trans hlarger)
         · have htail : selected ∈ chains := by
             simpa [heq] using hselected
@@ -757,30 +757,30 @@ theorem Concrete.allChainTrajectoriesFromCache_support_info
           exact hrestInfo.2 selected htail
 
 theorem chainValueTableOfList_eq_keygenChainValueTable_of_replay
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (cache : QueryCache HashSpec)
     (trajectories : List FullChainTrajectory)
     (hlength : trajectories.length = lifetime)
     (hreplay : List.Forall₂
-      (fun epoch trajectory =>
+      (fun leafIndex trajectory =>
         evalWithAnswerFn (Concrete.CacheReplay.answerFn cache)
-          (Concrete.chainTrajectory parameter epoch chain 0
-            (chainLength - 1) (secret epoch chain)) = trajectory)
-      allEpochs trajectories) :
+          (Concrete.chainTrajectory parameter leafIndex chain 0
+            (chainLength - 1) (secret leafIndex chain)) = trajectory)
+      allLeafIndices trajectories) :
     chainValueTableOfList trajectories =
       keygenChainValueTable cache (SecretKey.withoutPrecomputation parameter secret) chain := by
   funext index
   unfold chainValueTableOfList
   split
   · rename_i htableLength
-    let position := epochPosition index.1
+    let position := leafIndexPosition index.1
     have htrajectoryPosition : position.val < trajectories.length := by
       rw [← htableLength]
       exact position.isLt
     have hpair := hreplay.get position.isLt htrajectoryPosition
-    have hepoch : allEpochs.get position = index.1 :=
-      allEpochs_get_epochPosition index.1
-    rw [hepoch] at hpair
+    have hleafIndex : allLeafIndices.get position = index.1 :=
+      allLeafIndices_get_leafIndexPosition index.1
+    rw [hleafIndex] at hpair
     have hvalue := congrArg
       (fun trajectory : FullChainTrajectory =>
         trajectory[index.2.val]'(by
@@ -789,10 +789,10 @@ theorem chainValueTableOfList_eq_keygenChainValueTable_of_replay
     rw [Concrete.chainTrajectory_getElem] at hvalue
     exact hvalue.symm
   · rename_i htableLength
-    exact (htableLength (allEpochs_length.trans hlength.symm)).elim
+    exact (htableLength (allLeafIndices_length.trans hlength.symm)).elim
 
 theorem Concrete.allChainTrajectoriesFromCache_globalTable_eq
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (result : AllChainTrajectories × QueryCache HashSpec)
     (largerCache : QueryCache HashSpec)
     (hresult : result ∈ support
@@ -812,30 +812,30 @@ theorem Concrete.allChainTrajectoriesFromCache_globalTable_eq
 def AllChainAddressesAbsent
     (parameter : PublicParameter) (chains : List ChainIndex)
     (cache : QueryCache HashSpec) : Prop :=
-  ∀ chain ∈ chains, ∀ epoch step input,
-    AtHashAddress parameter (.chain epoch chain step) input →
+  ∀ chain ∈ chains, ∀ leafIndex step input,
+    AtHashAddress parameter (.chain leafIndex chain step) input →
       cache input = none
 
 set_option maxRecDepth 100000 in
 theorem Concrete.fixedSeedChainTrajectories_preserves_otherChain_none
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (selected other : ChainIndex) (hne : selected ≠ other)
-    (steps : Nat) (epochs : List Epoch) (cache : QueryCache HashSpec)
+    (steps : Nat) (leafIndices : List LeafIndex) (cache : QueryCache HashSpec)
     (result : List (Vector Digest (steps + 1)) × QueryCache HashSpec)
     (hresult : result ∈ support
       (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret selected
-        steps cache epochs))
-    (epoch : Epoch) (step : ChainStep) (input : HashInput)
-    (haddress : AtHashAddress parameter (.chain epoch other step) input)
+        steps cache leafIndices))
+    (leafIndex : LeafIndex) (step : ChainStep) (input : HashInput)
+    (haddress : AtHashAddress parameter (.chain leafIndex other step) input)
     (habsent : cache input = none) :
     result.2 input = none := by
-  induction epochs generalizing cache result with
+  induction leafIndices generalizing cache result with
   | nil =>
       simp only [Concrete.fixedSeedChainTrajectoriesFromCache_nil,
         support_pure, Set.mem_singleton_iff] at hresult
       subst result
       exact habsent
-  | cons firstEpoch epochs ih =>
+  | cons firstLeafIndex leafIndices ih =>
       rw [Concrete.fixedSeedChainTrajectoriesFromCache_cons,
         mem_support_bind_iff] at hresult
       obtain ⟨first, hfirst, hrest⟩ := hresult
@@ -845,10 +845,10 @@ theorem Concrete.fixedSeedChainTrajectories_preserves_otherChain_none
       subst result
       apply ih first.2 rest hrest
       apply Concrete.CacheReplay.cache_none_of_zero_query_bound
-        (Concrete.chainTrajectory parameter firstEpoch selected 0 steps
-          (secret firstEpoch selected)) input cache first.2 first.1
+        (Concrete.chainTrajectory parameter firstLeafIndex selected 0 steps
+          (secret firstLeafIndex selected)) input cache first.2 first.1
       · apply OracleComp.IsQueryBoundP.of_imp
-          (p' := AtHashAddress parameter (.chain epoch other step))
+          (p' := AtHashAddress parameter (.chain leafIndex other step))
         · intro candidate heq
           subst candidate
           exact haddress
@@ -860,32 +860,32 @@ theorem Concrete.fixedSeedChainTrajectories_preserves_otherChain_none
       · exact hfirst
 
 noncomputable def programmedAllChainTrajectoriesFromCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     QueryCache HashSpec → List ChainIndex →
       ProbComp (AllChainTrajectories × QueryCache HashSpec)
   | cache, [] => pure (fun _ => [], cache)
   | cache, chain :: chains => do
       let first ← programmedFixedSeedChainTrajectoriesFromCache parameter secret
-        chain (chainLength - 1) cache allEpochs
+        chain (chainLength - 1) cache allLeafIndices
       let rest ← programmedAllChainTrajectoriesFromCache parameter secret
         first.2 chains
       pure (Function.update rest.1 chain first.1, rest.2)
 
 @[simp]
 theorem programmedAllChainTrajectoriesFromCache_nil
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec) :
     programmedAllChainTrajectoriesFromCache parameter secret cache [] =
       pure (fun _ => [], cache) := rfl
 
 theorem programmedAllChainTrajectoriesFromCache_cons
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec) (chain : ChainIndex)
     (chains : List ChainIndex) :
     programmedAllChainTrajectoriesFromCache parameter secret cache
       (chain :: chains) = (do
         let first ← programmedFixedSeedChainTrajectoriesFromCache parameter
-          secret chain (chainLength - 1) cache allEpochs
+          secret chain (chainLength - 1) cache allLeafIndices
         let rest ← programmedAllChainTrajectoriesFromCache parameter secret
           first.2 chains
         pure (Function.update rest.1 chain first.1, rest.2)) := rfl
@@ -893,7 +893,7 @@ theorem programmedAllChainTrajectoriesFromCache_cons
 set_option maxHeartbeats 2400000 in
 set_option maxRecDepth 100000 in
 theorem evalDist_allChainTrajectories_eq_programmed
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     ∀ (chains : List ChainIndex) (cache : QueryCache HashSpec),
       chains.Nodup → AllChainAddressesAbsent parameter chains cache →
       evalDist (Concrete.allChainTrajectoriesFromCache parameter secret cache
@@ -911,14 +911,14 @@ theorem evalDist_allChainTrajectories_eq_programmed
       rw [Concrete.allChainTrajectoriesFromCache_cons,
         programmedAllChainTrajectoriesFromCache_cons]
       let actualFirst := Concrete.fixedSeedChainTrajectoriesFromCache parameter
-        secret chain (chainLength - 1) cache allEpochs
+        secret chain (chainLength - 1) cache allLeafIndices
       let programmedFirst := programmedFixedSeedChainTrajectoriesFromCache
-        parameter secret chain (chainLength - 1) cache allEpochs
+        parameter secret chain (chainLength - 1) cache allLeafIndices
       have hfirst : evalDist actualFirst = evalDist programmedFirst := by
         apply evalDist_fixedSeedChainTrajectories_eq_programmed parameter secret
-          chain (chainLength - 1) le_rfl allEpochs cache allEpochs_nodup
-        intro epoch _hepoch step input haddress
-        exact habsent chain (by simp) epoch step input haddress
+          chain (chainLength - 1) le_rfl allLeafIndices cache allLeafIndices_nodup
+        intro leafIndex _hleafIndex step input haddress
+        exact habsent chain (by simp) leafIndex step input haddress
       calc
         _ = evalDist (programmedFirst >>= fun first =>
               Concrete.allChainTrajectoriesFromCache parameter secret first.2
@@ -934,7 +934,7 @@ theorem evalDist_allChainTrajectories_eq_programmed
           have hfirstActual : first ∈ support actualFirst :=
             (mem_support_iff_of_evalDist_eq hfirst first).mpr hfirstProgrammed
           have htailAbsent : AllChainAddressesAbsent parameter chains first.2 := by
-            intro later hlater epoch step input haddress
+            intro later hlater leafIndex step input haddress
             apply Concrete.fixedSeedChainTrajectories_preserves_otherChain_none
               parameter secret chain later
             · intro heq
@@ -942,7 +942,7 @@ theorem evalDist_allChainTrajectories_eq_programmed
               exact hnotMem hlater
             · exact hfirstActual
             · exact haddress
-            · exact habsent later (by simp [hlater]) epoch step input haddress
+            · exact habsent later (by simp [hlater]) leafIndex step input haddress
           have hrest := ih first.2 htailNodup htailAbsent
           rw [evalDist_bind, hrest, ← evalDist_bind]
 
@@ -1098,11 +1098,11 @@ theorem evalDist_sampledHashOutputWithDigest_fst_eq_uniform :
     _ = evalDist ($ᵗ Digest) := Rom.evalDist_truncate_uniformHashOutput
 
 theorem evalDist_programmedChainExtension_fst
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (values : Vector Digest (n + 1))
     (cache : QueryCache HashSpec) :
     evalDist (Prod.fst <$>
-      programmedChainExtension parameter epoch chain step values cache) =
+      programmedChainExtension parameter leafIndex chain step values cache) =
       evalDist ((fun next : Digest => values.push next) <$> ($ᵗ Digest)) := by
   unfold programmedChainExtension
   simp only [bind_pure_comp]
@@ -1117,12 +1117,12 @@ theorem evalDist_programmedChainExtension_fst
 
 set_option maxRecDepth 100000 in
 theorem evalDist_programmedChainTrajectory_fst_eq_uniform
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position : Nat) : ∀ (steps : Nat) (seed : Digest)
       (cache : QueryCache HashSpec),
       position + steps ≤ chainLength - 1 →
       evalDist (Prod.fst <$>
-        programmedChainTrajectory parameter epoch chain position steps seed
+        programmedChainTrajectory parameter leafIndex chain position steps seed
           cache) =
       evalDist (uniformTrajectoryFromSeed steps seed) := by
   intro steps
@@ -1134,7 +1134,7 @@ theorem evalDist_programmedChainTrajectory_fst_eq_uniform
       intro seed cache hsteps
       have hvalid : position + steps < chainLength - 1 := by omega
       simp only [programmedChainTrajectory, hvalid, ↓reduceDIte, map_bind]
-      let prior := programmedChainTrajectory parameter epoch chain position
+      let prior := programmedChainTrajectory parameter leafIndex chain position
         steps seed cache
       calc
         _ = evalDist (prior >>= fun priorResult =>
@@ -1142,7 +1142,7 @@ theorem evalDist_programmedChainTrajectory_fst_eq_uniform
                 ($ᵗ Digest)) := by
           apply evalDist_bind_congr
           intro priorResult _hpriorResult
-          exact evalDist_programmedChainExtension_fst parameter epoch chain
+          exact evalDist_programmedChainExtension_fst parameter leafIndex chain
             ⟨position + steps, hvalid⟩ priorResult.1 priorResult.2
         _ = evalDist ((Prod.fst <$> prior) >>= fun priorValues =>
               (fun next : Digest => priorValues.push next) <$>
@@ -1157,27 +1157,27 @@ theorem evalDist_programmedChainTrajectory_fst_eq_uniform
           simp [uniformTrajectoryFromSeed_succ, map_eq_bind_pure_comp]
 
 noncomputable def uniformFixedChainTrajectories
-    (secret : Epoch → ChainIndex → Digest) (chain : ChainIndex)
-    (steps : Nat) : List Epoch →
+    (secret : LeafIndex → ChainIndex → Digest) (chain : ChainIndex)
+    (steps : Nat) : List LeafIndex →
       ProbComp (List (Vector Digest (steps + 1)))
   | [] => pure []
-  | epoch :: epochs => do
-      let first ← uniformTrajectoryFromSeed steps (secret epoch chain)
-      let rest ← uniformFixedChainTrajectories secret chain steps epochs
+  | leafIndex :: leafIndices => do
+      let first ← uniformTrajectoryFromSeed steps (secret leafIndex chain)
+      let rest ← uniformFixedChainTrajectories secret chain steps leafIndices
       pure (first :: rest)
 
 @[simp]
 theorem uniformFixedChainTrajectories_nil
-    (secret : Epoch → ChainIndex → Digest) (chain : ChainIndex)
+    (secret : LeafIndex → ChainIndex → Digest) (chain : ChainIndex)
     (steps : Nat) :
     uniformFixedChainTrajectories secret chain steps [] = pure [] := rfl
 
 theorem uniformFixedChainTrajectories_cons
-    (secret : Epoch → ChainIndex → Digest) (chain : ChainIndex)
-    (steps : Nat) (epoch : Epoch) (epochs : List Epoch) :
-    uniformFixedChainTrajectories secret chain steps (epoch :: epochs) = (do
-      let first ← uniformTrajectoryFromSeed steps (secret epoch chain)
-      let rest ← uniformFixedChainTrajectories secret chain steps epochs
+    (secret : LeafIndex → ChainIndex → Digest) (chain : ChainIndex)
+    (steps : Nat) (leafIndex : LeafIndex) (leafIndices : List LeafIndex) :
+    uniformFixedChainTrajectories secret chain steps (leafIndex :: leafIndices) = (do
+      let first ← uniformTrajectoryFromSeed steps (secret leafIndex chain)
+      let rest ← uniformFixedChainTrajectories secret chain steps leafIndices
       pure (first :: rest)) := rfl
 
 def fixedChainTrajectoryDrawTape {steps : Nat}
@@ -1185,75 +1185,75 @@ def fixedChainTrajectoryDrawTape {steps : Nat}
   trajectories.flatMap trajectoryDrawTape
 
 theorem evalDist_uniformFixedChainTrajectories_drawTape
-    (secret : Epoch → ChainIndex → Digest) (chain : ChainIndex)
-    (steps : Nat) : ∀ epochs : List Epoch,
+    (secret : LeafIndex → ChainIndex → Digest) (chain : ChainIndex)
+    (steps : Nat) : ∀ leafIndices : List LeafIndex,
     evalDist (fixedChainTrajectoryDrawTape <$>
-      uniformFixedChainTrajectories secret chain steps epochs) =
+      uniformFixedChainTrajectories secret chain steps leafIndices) =
       evalDist (OracleComp.drawList ($ᵗ Digest)
-        (epochs.length * steps)) := by
-  intro epochs
-  induction epochs with
+        (leafIndices.length * steps)) := by
+  intro leafIndices
+  induction leafIndices with
   | nil => simp [fixedChainTrajectoryDrawTape, OracleComp.drawList]
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       rw [uniformFixedChainTrajectories_cons]
       simp only [map_bind, bind_pure_comp]
       calc
         _ = evalDist (uniformTrajectoryFromSeed steps
-              (secret epoch chain) >>= fun first =>
-            uniformFixedChainTrajectories secret chain steps epochs >>=
+              (secret leafIndex chain) >>= fun first =>
+            uniformFixedChainTrajectories secret chain steps leafIndices >>=
               fun rest =>
             pure (trajectoryDrawTape first ++
               fixedChainTrajectoryDrawTape rest)) := by
           simp [fixedChainTrajectoryDrawTape]
         _ = evalDist ((trajectoryDrawTape <$>
-              uniformTrajectoryFromSeed steps (secret epoch chain)) >>=
+              uniformTrajectoryFromSeed steps (secret leafIndex chain)) >>=
             fun first =>
             (fixedChainTrajectoryDrawTape <$>
-              uniformFixedChainTrajectories secret chain steps epochs) >>=
+              uniformFixedChainTrajectories secret chain steps leafIndices) >>=
             fun rest => pure (first ++ rest)) := by
           simp [map_eq_bind_pure_comp, bind_assoc]
         _ = evalDist (OracleComp.drawList ($ᵗ Digest) steps >>= fun first =>
-            OracleComp.drawList ($ᵗ Digest) (epochs.length * steps) >>=
+            OracleComp.drawList ($ᵗ Digest) (leafIndices.length * steps) >>=
               fun rest => pure (first ++ rest)) := by
           rw [evalDist_bind,
             evalDist_uniformTrajectoryFromSeed_drawTape steps
-              (secret epoch chain), ← evalDist_bind]
+              (secret leafIndex chain), ← evalDist_bind]
           apply OracleComp.DeferredSampling.evalDist_bind_congr_left
           intro first
           rw [evalDist_bind, ih, ← evalDist_bind]
         _ = evalDist (OracleComp.drawList ($ᵗ Digest)
-              (steps + epochs.length * steps)) := by
+              (steps + leafIndices.length * steps)) := by
           rw [drawList_append]
         _ = evalDist (OracleComp.drawList ($ᵗ Digest)
-              ((epoch :: epochs).length * steps)) := by
+              ((leafIndex :: leafIndices).length * steps)) := by
           congr 3
           simp only [List.length_cons]
           simp [Nat.add_mul, Nat.add_comm]
 
 set_option maxRecDepth 100000 in
 theorem evalDist_programmedFixedChainTrajectories_fst_eq_uniform
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) (hsteps : steps ≤ chainLength - 1) :
-    ∀ (epochs : List Epoch) (cache : QueryCache HashSpec),
+    ∀ (leafIndices : List LeafIndex) (cache : QueryCache HashSpec),
       evalDist (Prod.fst <$>
         programmedFixedSeedChainTrajectoriesFromCache parameter secret chain
-          steps cache epochs) =
-      evalDist (uniformFixedChainTrajectories secret chain steps epochs) := by
-  intro epochs
-  induction epochs with
+          steps cache leafIndices) =
+      evalDist (uniformFixedChainTrajectories secret chain steps leafIndices) := by
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro cache
       rfl
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro cache
       rw [programmedFixedSeedChainTrajectoriesFromCache_cons,
         uniformFixedChainTrajectories_cons]
       simp only [map_bind, bind_pure_comp]
-      let firstProgram := programmedChainTrajectory parameter epoch chain 0
-        steps (secret epoch chain) cache
+      let firstProgram := programmedChainTrajectory parameter leafIndex chain 0
+        steps (secret leafIndex chain) cache
       calc
         _ = evalDist (firstProgram >>= fun first =>
-              uniformFixedChainTrajectories secret chain steps epochs >>=
+              uniformFixedChainTrajectories secret chain steps leafIndices >>=
                 fun rest =>
               pure (first.1 :: rest)) := by
           apply OracleComp.DeferredSampling.evalDist_bind_congr_left
@@ -1262,49 +1262,49 @@ theorem evalDist_programmedFixedChainTrajectories_fst_eq_uniform
             _ = evalDist ((fun rest => first.1 :: rest) <$>
                   (Prod.fst <$>
                     programmedFixedSeedChainTrajectoriesFromCache parameter
-                      secret chain steps first.2 epochs)) := by
+                      secret chain steps first.2 leafIndices)) := by
               simp [map_eq_bind_pure_comp, bind_assoc]
             _ = evalDist ((fun rest => first.1 :: rest) <$>
-                  uniformFixedChainTrajectories secret chain steps epochs) := by
+                  uniformFixedChainTrajectories secret chain steps leafIndices) := by
               rw [evalDist_map, ih first.2, ← evalDist_map]
             _ = _ := by
               simp [map_eq_bind_pure_comp]
         _ = evalDist ((Prod.fst <$> firstProgram) >>= fun first =>
-              uniformFixedChainTrajectories secret chain steps epochs >>=
+              uniformFixedChainTrajectories secret chain steps leafIndices >>=
                 fun rest =>
               pure (first :: rest)) := by
           simp [map_eq_bind_pure_comp, bind_assoc]
-        _ = evalDist (uniformTrajectoryFromSeed steps (secret epoch chain) >>=
+        _ = evalDist (uniformTrajectoryFromSeed steps (secret leafIndex chain) >>=
               fun first =>
-              uniformFixedChainTrajectories secret chain steps epochs >>=
+              uniformFixedChainTrajectories secret chain steps leafIndices >>=
                 fun rest =>
               pure (first :: rest)) := by
           rw [evalDist_bind,
-            evalDist_programmedChainTrajectory_fst_eq_uniform parameter epoch
-              chain 0 steps (secret epoch chain) cache (by simpa using hsteps),
+            evalDist_programmedChainTrajectory_fst_eq_uniform parameter leafIndex
+              chain 0 steps (secret leafIndex chain) cache (by simpa using hsteps),
             ← evalDist_bind]
 
 noncomputable def uniformAllChainTrajectories
-    (secret : Epoch → ChainIndex → Digest) :
+    (secret : LeafIndex → ChainIndex → Digest) :
     List ChainIndex → ProbComp AllChainTrajectories
   | [] => pure (fun _ => [])
   | chain :: chains => do
       let first ← uniformFixedChainTrajectories secret chain
-        (chainLength - 1) allEpochs
+        (chainLength - 1) allLeafIndices
       let rest ← uniformAllChainTrajectories secret chains
       pure (Function.update rest chain first)
 
 @[simp]
 theorem uniformAllChainTrajectories_nil
-    (secret : Epoch → ChainIndex → Digest) :
+    (secret : LeafIndex → ChainIndex → Digest) :
     uniformAllChainTrajectories secret [] = pure (fun _ => []) := rfl
 
 theorem uniformAllChainTrajectories_cons
-    (secret : Epoch → ChainIndex → Digest) (chain : ChainIndex)
+    (secret : LeafIndex → ChainIndex → Digest) (chain : ChainIndex)
     (chains : List ChainIndex) :
     uniformAllChainTrajectories secret (chain :: chains) = (do
       let first ← uniformFixedChainTrajectories secret chain
-        (chainLength - 1) allEpochs
+        (chainLength - 1) allLeafIndices
       let rest ← uniformAllChainTrajectories secret chains
       pure (Function.update rest chain first)) := rfl
 
@@ -1333,25 +1333,25 @@ theorem uniformTrajectoryFromSeed_support_first :
       exact ih seed prior hprior
 
 theorem uniformFixedChainTrajectories_support_info
-    (secret : Epoch → ChainIndex → Digest) (chain : ChainIndex)
-    (steps : Nat) : ∀ (epochs : List Epoch)
+    (secret : LeafIndex → ChainIndex → Digest) (chain : ChainIndex)
+    (steps : Nat) : ∀ (leafIndices : List LeafIndex)
       (trajectories : List (Vector Digest (steps + 1))),
       trajectories ∈ support
-        (uniformFixedChainTrajectories secret chain steps epochs) →
-      trajectories.length = epochs.length ∧
+        (uniformFixedChainTrajectories secret chain steps leafIndices) →
+      trajectories.length = leafIndices.length ∧
         List.Forall₂
-          (fun epoch trajectory =>
-            trajectory[0]'(by omega) = secret epoch chain)
-          epochs trajectories := by
-  intro epochs
-  induction epochs with
+          (fun leafIndex trajectory =>
+            trajectory[0]'(by omega) = secret leafIndex chain)
+          leafIndices trajectories := by
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro trajectories htrajectories
       simp only [uniformFixedChainTrajectories_nil, support_pure,
         Set.mem_singleton_iff] at htrajectories
       subst trajectories
       exact ⟨rfl, List.Forall₂.nil⟩
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro trajectories htrajectories
       rw [uniformFixedChainTrajectories_cons,
         mem_support_bind_iff] at htrajectories
@@ -1365,20 +1365,20 @@ theorem uniformFixedChainTrajectories_support_info
       · simp [hrestInfo.1]
       · exact List.Forall₂.cons
           (uniformTrajectoryFromSeed_support_first steps
-            (secret epoch chain) first hfirst)
+            (secret leafIndex chain) first hfirst)
           hrestInfo.2
 
 theorem uniformAllChainTrajectories_support_info
-    (secret : Epoch → ChainIndex → Digest) :
+    (secret : LeafIndex → ChainIndex → Digest) :
     ∀ (chains : List ChainIndex) (trajectories : AllChainTrajectories),
       chains.Nodup →
       trajectories ∈ support (uniformAllChainTrajectories secret chains) →
       ∀ chain ∈ chains,
         (trajectories chain).length = lifetime ∧
           List.Forall₂
-            (fun epoch trajectory =>
-              trajectory[0]'(by omega) = secret epoch chain)
-            allEpochs (trajectories chain) := by
+            (fun leafIndex trajectory =>
+              trajectory[0]'(by omega) = secret leafIndex chain)
+            allLeafIndices (trajectories chain) := by
   intro chains
   induction chains with
   | nil => simp
@@ -1393,13 +1393,13 @@ theorem uniformAllChainTrajectories_support_info
       simp only [support_pure, Set.mem_singleton_iff] at hpure
       subst trajectories
       have hfirstInfo := uniformFixedChainTrajectories_support_info secret
-        chain (chainLength - 1) allEpochs first hfirst
+        chain (chainLength - 1) allLeafIndices first hfirst
       have hrestInfo := ih rest htailNodup hrest
       intro selected hselected
       by_cases heq : selected = chain
       · subst selected
         simp only [Function.update_self]
-        exact ⟨by simpa [allEpochs_length] using hfirstInfo.1,
+        exact ⟨by simpa [allLeafIndices_length] using hfirstInfo.1,
           hfirstInfo.2⟩
       · have htail : selected ∈ chains := by
           simpa [heq] using hselected
@@ -1407,33 +1407,33 @@ theorem uniformAllChainTrajectories_support_info
         exact hrestInfo selected htail
 
 theorem chainValueTableOfList_zero_eq_of_forall₂
-    (secret : Epoch → ChainIndex → Digest) (chain : ChainIndex)
+    (secret : LeafIndex → ChainIndex → Digest) (chain : ChainIndex)
     (trajectories : List FullChainTrajectory)
     (hlength : trajectories.length = lifetime)
     (hseeds : List.Forall₂
-      (fun epoch trajectory =>
-        trajectory[0]'(by simp [chainLength]) = secret epoch chain)
-      allEpochs trajectories) (epoch : Epoch) :
+      (fun leafIndex trajectory =>
+        trajectory[0]'(by simp [chainLength]) = secret leafIndex chain)
+      allLeafIndices trajectories) (leafIndex : LeafIndex) :
     chainValueTableOfList trajectories
-        (epoch, ⟨0, by simp [chainLength]⟩) =
-      secret epoch chain := by
+        (leafIndex, ⟨0, by simp [chainLength]⟩) =
+      secret leafIndex chain := by
   unfold chainValueTableOfList
   split
   · rename_i htableLength
-    let position := epochPosition epoch
+    let position := leafIndexPosition leafIndex
     have htrajectoryPosition : position.val < trajectories.length := by
       rw [← htableLength]
       exact position.isLt
     have hpair := hseeds.get position.isLt htrajectoryPosition
-    have hepoch : allEpochs.get position = epoch :=
-      allEpochs_get_epochPosition epoch
-    rw [hepoch] at hpair
+    have hleafIndex : allLeafIndices.get position = leafIndex :=
+      allLeafIndices_get_leafIndexPosition leafIndex
+    rw [hleafIndex] at hpair
     simpa [FullChainTrajectory.toDigitTable] using hpair
   · rename_i htableLength
-    exact (htableLength (allEpochs_length.trans hlength.symm)).elim
+    exact (htableLength (allLeafIndices_length.trans hlength.symm)).elim
 
 theorem uniformAllChainTrajectories_support_seeds
-    (secret : Epoch → ChainIndex → Digest)
+    (secret : LeafIndex → ChainIndex → Digest)
     (trajectories : AllChainTrajectories)
     (htrajectories : trajectories ∈ support
       (uniformAllChainTrajectories secret allChains)) :
@@ -1441,10 +1441,10 @@ theorem uniformAllChainTrajectories_support_seeds
         (globalChainValueTableOfTrajectories trajectories) = secret := by
   have hinfo := uniformAllChainTrajectories_support_info secret allChains
     trajectories allChains_nodup htrajectories
-  funext epoch chain
+  funext leafIndex chain
   have hchain := hinfo chain (mem_allChains chain)
   exact chainValueTableOfList_zero_eq_of_forall₂ secret chain
-    (trajectories chain) hchain.1 hchain.2 epoch
+    (trajectories chain) hchain.1 hchain.2 leafIndex
 
 def allChainTrajectoryDrawTape
     (trajectories : AllChainTrajectories) :
@@ -1493,13 +1493,13 @@ theorem allChainTrajectoryDrawTape_update_cons
       chains hnotMem]
 
 theorem evalDist_uniformAllChainTrajectories_drawTape
-    (secret : Epoch → ChainIndex → Digest) :
+    (secret : LeafIndex → ChainIndex → Digest) :
     ∀ chains : List ChainIndex, chains.Nodup →
     evalDist ((fun trajectories =>
       allChainTrajectoryDrawTape trajectories chains) <$>
         uniformAllChainTrajectories secret chains) =
       evalDist (OracleComp.drawList ($ᵗ Digest)
-        (chains.length * (allEpochs.length * (chainLength - 1)))) := by
+        (chains.length * (allLeafIndices.length * (chainLength - 1)))) := by
   intro chains
   induction chains with
   | nil =>
@@ -1510,10 +1510,10 @@ theorem evalDist_uniformAllChainTrajectories_drawTape
       obtain ⟨hnotMem, htailNodup⟩ := List.nodup_cons.mp hnodup
       rw [uniformAllChainTrajectories_cons]
       simp only [map_bind, bind_pure_comp]
-      let blockSize := allEpochs.length * (chainLength - 1)
+      let blockSize := allLeafIndices.length * (chainLength - 1)
       calc
         _ = evalDist (uniformFixedChainTrajectories secret chain
-              (chainLength - 1) allEpochs >>= fun first =>
+              (chainLength - 1) allLeafIndices >>= fun first =>
             uniformAllChainTrajectories secret chains >>= fun rest =>
             pure (fixedChainTrajectoryDrawTape first ++
               allChainTrajectoryDrawTape rest chains)) := by
@@ -1535,7 +1535,7 @@ theorem evalDist_uniformAllChainTrajectories_drawTape
               simp [map_eq_bind_pure_comp]
         _ = evalDist ((fixedChainTrajectoryDrawTape <$>
               uniformFixedChainTrajectories secret chain
-                (chainLength - 1) allEpochs) >>= fun first =>
+                (chainLength - 1) allLeafIndices) >>= fun first =>
             ((fun rest => allChainTrajectoryDrawTape rest chains) <$>
               uniformAllChainTrajectories secret chains) >>= fun rest =>
             pure (first ++ rest)) := by
@@ -1547,7 +1547,7 @@ theorem evalDist_uniformAllChainTrajectories_drawTape
             pure (first ++ rest)) := by
           rw [evalDist_bind,
             evalDist_uniformFixedChainTrajectories_drawTape secret chain
-              (chainLength - 1) allEpochs, ← evalDist_bind]
+              (chainLength - 1) allLeafIndices, ← evalDist_bind]
           apply OracleComp.DeferredSampling.evalDist_bind_congr_left
           intro first
           rw [evalDist_bind, ih htailNodup, ← evalDist_bind]
@@ -1556,7 +1556,7 @@ theorem evalDist_uniformAllChainTrajectories_drawTape
           rw [drawList_append]
         _ = evalDist (OracleComp.drawList ($ᵗ Digest)
               ((chain :: chains).length *
-                (allEpochs.length * (chainLength - 1)))) := by
+                (allLeafIndices.length * (chainLength - 1)))) := by
           congr 3
           dsimp only [blockSize]
           simp [Nat.add_mul, Nat.add_comm]
@@ -1656,38 +1656,38 @@ theorem fixedChainTrajectoryDrawTape_eq_edgeMap
     (trajectories : List FullChainTrajectory)
     (hlength : trajectories.length = lifetime) :
     fixedChainTrajectoryDrawTape trajectories =
-      (allEpochs ×ˢ trajectoryChainSteps).map fun edge =>
+      (allLeafIndices ×ˢ trajectoryChainSteps).map fun edge =>
         chainValueTableOfList trajectories
           (edge.1, chainStepNextDigit edge.2) := by
   let table := chainValueTableOfList trajectories
   have hinverse : listOfChainValueTable table = trajectories :=
     listOfChainValueTable_chainValueTableOfList trajectories hlength
   conv_lhs => rw [← hinverse]
-  change List.flatMap trajectoryDrawTape (allEpochs.map fun epoch =>
-      FullChainTrajectory.ofDigitTable fun digit => table (epoch, digit)) =
-    (allEpochs ×ˢ trajectoryChainSteps).map fun edge =>
+  change List.flatMap trajectoryDrawTape (allLeafIndices.map fun leafIndex =>
+      FullChainTrajectory.ofDigitTable fun digit => table (leafIndex, digit)) =
+    (allLeafIndices ×ˢ trajectoryChainSteps).map fun edge =>
       table (edge.1, chainStepNextDigit edge.2)
-  have hgeneral : ∀ epochs : List Epoch,
-      List.flatMap trajectoryDrawTape (epochs.map fun epoch =>
-        FullChainTrajectory.ofDigitTable fun digit => table (epoch, digit)) =
-      (epochs ×ˢ trajectoryChainSteps).map fun edge =>
+  have hgeneral : ∀ leafIndices : List LeafIndex,
+      List.flatMap trajectoryDrawTape (leafIndices.map fun leafIndex =>
+        FullChainTrajectory.ofDigitTable fun digit => table (leafIndex, digit)) =
+      (leafIndices ×ˢ trajectoryChainSteps).map fun edge =>
         table (edge.1, chainStepNextDigit edge.2) := by
-    intro epochs
-    induction epochs with
+    intro leafIndices
+    induction leafIndices with
     | nil => simp
-    | cons epoch epochs ih =>
+    | cons leafIndex leafIndices ih =>
         rw [List.map_cons, List.flatMap_cons, List.product_cons,
           List.map_append, ih]
         rw [trajectoryDrawTape_ofDigitTable]
         simp
-  exact hgeneral allEpochs
+  exact hgeneral allLeafIndices
 
 theorem allChainTrajectoryDrawTape_eq_edgeMap
     (trajectories : AllChainTrajectories) :
     ∀ chains : List ChainIndex,
       (∀ chain ∈ chains, (trajectories chain).length = lifetime) →
       allChainTrajectoryDrawTape trajectories chains =
-        (chains ×ˢ (allEpochs ×ˢ trajectoryChainSteps)).map
+        (chains ×ˢ (allLeafIndices ×ˢ trajectoryChainSteps)).map
           (globalChainEdgeTableOfTrajectories trajectories) := by
   intro chains
   induction chains with
@@ -1716,7 +1716,7 @@ theorem globalTrajectoryEdgeTableOfTape_drawTape
 
 set_option maxRecDepth 100000 in
 theorem evalDist_uniformAllChainTrajectories_edgeTable_eq_uniform
-    (secret : Epoch → ChainIndex → Digest) :
+    (secret : LeafIndex → ChainIndex → Digest) :
     evalDist (globalChainEdgeTableOfTrajectories <$>
       uniformAllChainTrajectories secret allChains) =
       evalDist ($ᵗ (GlobalChainEdgeIndex → Digest)) := by
@@ -1737,7 +1737,7 @@ theorem evalDist_uniformAllChainTrajectories_edgeTable_eq_uniform
     _ = evalDist (globalTrajectoryEdgeTableOfTape <$>
           OracleComp.drawList ($ᵗ Digest)
             (allChains.length *
-              (allEpochs.length * (chainLength - 1)))) := by
+              (allLeafIndices.length * (chainLength - 1)))) := by
       rw [evalDist_map,
         evalDist_uniformAllChainTrajectories_drawTape secret allChains
           allChains_nodup,
@@ -1750,7 +1750,7 @@ theorem evalDist_uniformAllChainTrajectories_edgeTable_eq_uniform
       evalDist_globalTrajectoryEdgeTableOfTape_drawList_eq_uniform
 
 theorem globalChainTableMaterialEquiv_trajectories
-    (secret : Epoch → ChainIndex → Digest)
+    (secret : LeafIndex → ChainIndex → Digest)
     (trajectories : AllChainTrajectories)
     (htrajectories : trajectories ∈ support
       (uniformAllChainTrajectories secret allChains)) :
@@ -1769,7 +1769,7 @@ noncomputable def uniformGlobalChainTableFromTrajectories :
   pure (globalChainValueTableOfTrajectories trajectories)
 
 noncomputable def sampleSecretGlobalChainMaterial :
-    ProbComp ((Epoch → ChainIndex → Digest) ×
+    ProbComp ((LeafIndex → ChainIndex → Digest) ×
       (GlobalChainEdgeIndex → Digest)) :=
   Prod.mk <$> Concrete.sampleSecret <*>
     ($ᵗ (GlobalChainEdgeIndex → Digest))
@@ -1834,7 +1834,7 @@ theorem evalDist_uniformGlobalChainTableFromTrajectories_eq_uniform :
 
 set_option maxRecDepth 100000 in
 theorem evalDist_programmedAllChainTrajectories_fst_eq_uniform
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     ∀ (chains : List ChainIndex) (cache : QueryCache HashSpec),
       evalDist (Prod.fst <$>
         programmedAllChainTrajectoriesFromCache parameter secret cache chains) =
@@ -1850,7 +1850,7 @@ theorem evalDist_programmedAllChainTrajectories_fst_eq_uniform
         uniformAllChainTrajectories_cons]
       simp only [map_bind, bind_pure_comp]
       let firstProgram := programmedFixedSeedChainTrajectoriesFromCache
-        parameter secret chain (chainLength - 1) cache allEpochs
+        parameter secret chain (chainLength - 1) cache allLeafIndices
       calc
         _ = evalDist (firstProgram >>= fun first =>
               uniformAllChainTrajectories secret chains >>= fun rest =>
@@ -1873,16 +1873,16 @@ theorem evalDist_programmedAllChainTrajectories_fst_eq_uniform
               pure (Function.update rest chain first)) := by
           simp [map_eq_bind_pure_comp, bind_assoc]
         _ = evalDist (uniformFixedChainTrajectories secret chain
-              (chainLength - 1) allEpochs >>= fun first =>
+              (chainLength - 1) allLeafIndices >>= fun first =>
               uniformAllChainTrajectories secret chains >>= fun rest =>
               pure (Function.update rest chain first)) := by
           rw [evalDist_bind,
             evalDist_programmedFixedChainTrajectories_fst_eq_uniform parameter
-              secret chain (chainLength - 1) le_rfl allEpochs cache,
+              secret chain (chainLength - 1) le_rfl allLeafIndices cache,
             ← evalDist_bind]
 
 theorem evalDist_rootTree_run_eq_allChainTrajectories_then_rootTree
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chains : List ChainIndex) (initialCache : QueryCache HashSpec) :
     evalDist ((simulateQ randomOracle
       (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
@@ -1900,16 +1900,16 @@ theorem evalDist_rootTree_run_eq_allChainTrajectories_then_rootTree
             (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
               OracleComp HashSpec Digest)).run initialCache) =
           evalDist (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret
-            chain (chainLength - 1) initialCache allEpochs >>=
+            chain (chainLength - 1) initialCache allLeafIndices >>=
               fun first =>
             (simulateQ randomOracle
               (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
                 OracleComp HashSpec Digest)).run first.2) :=
           evalDist_rootTree_run_eq_fixedSeedTrajectories_then_rootTree
-            parameter secret chain (chainLength - 1) le_rfl allEpochs
+            parameter secret chain (chainLength - 1) le_rfl allLeafIndices
               initialCache
         _ = evalDist (Concrete.fixedSeedChainTrajectoriesFromCache parameter
-              secret chain (chainLength - 1) initialCache allEpochs >>=
+              secret chain (chainLength - 1) initialCache allLeafIndices >>=
             fun first =>
             Concrete.allChainTrajectoriesFromCache parameter secret first.2
               chains >>= fun rest =>
@@ -2032,26 +2032,26 @@ theorem evalDist_actualGlobalChainKeygen_eq_programmedAllChainTrajectories :
 
 
 theorem Concrete.fixedSeedChainTrajectoriesFromCache_avoids_leaf
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (chain : ChainIndex) (steps : Nat) (targetEpoch : Epoch)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (chain : ChainIndex) (steps : Nat) (targetLeafIndex : LeafIndex)
     (input : HashInput)
-    (hinput : AtHashAddress parameter (.leaf targetEpoch) input) :
-    ∀ (epochs : List Epoch) (cache : QueryCache HashSpec)
+    (hinput : AtHashAddress parameter (.leaf targetLeafIndex) input) :
+    ∀ (leafIndices : List LeafIndex) (cache : QueryCache HashSpec)
       (result : List (Vector Digest (steps + 1)) × QueryCache HashSpec),
       cache input = none →
       result ∈ support
         (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-          steps cache epochs) →
+          steps cache leafIndices) →
       result.2 input = none := by
-  intro epochs
-  induction epochs with
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro cache result hcache hresult
       simp only [Concrete.fixedSeedChainTrajectoriesFromCache_nil,
         support_pure, Set.mem_singleton_iff] at hresult
       subst result
       exact hcache
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro cache result hcache hresult
       rw [Concrete.fixedSeedChainTrajectoriesFromCache_cons,
         mem_support_bind_iff] at hresult
@@ -2062,10 +2062,10 @@ theorem Concrete.fixedSeedChainTrajectoriesFromCache_avoids_leaf
       subst result
       apply ih first.2 rest
       · apply Concrete.CacheReplay.cache_none_of_zero_query_bound
-          (Concrete.chainTrajectory parameter epoch chain 0 steps
-            (secret epoch chain)) input cache first.2 first.1
+          (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+            (secret leafIndex chain)) input cache first.2 first.1
         · apply OracleComp.IsQueryBoundP.of_imp
-            (p' := AtHashAddress parameter (.leaf targetEpoch))
+            (p' := AtHashAddress parameter (.leaf targetLeafIndex))
           · intro candidate heq
             subst candidate
             exact hinput
@@ -2077,26 +2077,26 @@ theorem Concrete.fixedSeedChainTrajectoriesFromCache_avoids_leaf
       · exact hrest
 
 theorem Concrete.fixedSeedChainTrajectoriesFromCache_avoids_merkle
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) (level : MerkleLevel)
     (node : MerkleNode) (input : HashInput)
     (hinput : AtHashAddress parameter (.merkle level node) input) :
-    ∀ (epochs : List Epoch) (cache : QueryCache HashSpec)
+    ∀ (leafIndices : List LeafIndex) (cache : QueryCache HashSpec)
       (result : List (Vector Digest (steps + 1)) × QueryCache HashSpec),
       cache input = none →
       result ∈ support
         (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-          steps cache epochs) →
+          steps cache leafIndices) →
       result.2 input = none := by
-  intro epochs
-  induction epochs with
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro cache result hcache hresult
       simp only [Concrete.fixedSeedChainTrajectoriesFromCache_nil,
         support_pure, Set.mem_singleton_iff] at hresult
       subst result
       exact hcache
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro cache result hcache hresult
       rw [Concrete.fixedSeedChainTrajectoriesFromCache_cons,
         mem_support_bind_iff] at hresult
@@ -2107,8 +2107,8 @@ theorem Concrete.fixedSeedChainTrajectoriesFromCache_avoids_merkle
       subst result
       apply ih first.2 rest
       · apply Concrete.CacheReplay.cache_none_of_zero_query_bound
-          (Concrete.chainTrajectory parameter epoch chain 0 steps
-            (secret epoch chain)) input cache first.2 first.1
+          (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+            (secret leafIndex chain)) input cache first.2 first.1
         · apply OracleComp.IsQueryBoundP.of_imp
             (p' := AtHashAddress parameter (.merkle level node))
           · intro candidate heq
@@ -2122,9 +2122,9 @@ theorem Concrete.fixedSeedChainTrajectoriesFromCache_avoids_merkle
       · exact hrest
 
 theorem Concrete.allChainTrajectoriesFromCache_avoids_leaf
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (targetEpoch : Epoch) (input : HashInput)
-    (hinput : AtHashAddress parameter (.leaf targetEpoch) input) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (targetLeafIndex : LeafIndex) (input : HashInput)
+    (hinput : AtHashAddress parameter (.leaf targetLeafIndex) input) :
     ∀ (chains : List ChainIndex) (cache : QueryCache HashSpec)
       (result : AllChainTrajectories × QueryCache HashSpec),
       cache input = none →
@@ -2150,12 +2150,12 @@ theorem Concrete.allChainTrajectoriesFromCache_avoids_leaf
       subst result
       apply ih first.2 rest
       · exact Concrete.fixedSeedChainTrajectoriesFromCache_avoids_leaf
-          parameter secret chain (chainLength - 1) targetEpoch input hinput
-            allEpochs cache first hcache hfirst
+          parameter secret chain (chainLength - 1) targetLeafIndex input hinput
+            allLeafIndices cache first hcache hfirst
       · exact hrest
 
 theorem Concrete.allChainTrajectoriesFromCache_avoids_merkle
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (level : MerkleLevel) (node : MerkleNode) (input : HashInput)
     (hinput : AtHashAddress parameter (.merkle level node) input) :
     ∀ (chains : List ChainIndex) (cache : QueryCache HashSpec)
@@ -2184,11 +2184,11 @@ theorem Concrete.allChainTrajectoriesFromCache_avoids_merkle
       apply ih first.2 rest
       · exact Concrete.fixedSeedChainTrajectoriesFromCache_avoids_merkle
           parameter secret chain (chainLength - 1) level node input hinput
-            allEpochs cache first hcache hfirst
+            allLeafIndices cache first hcache hfirst
       · exact hrest
 
 theorem programmedAllChainTrajectories_treeValuesFresh
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (result : AllChainTrajectories × QueryCache HashSpec)
     (hresult : result ∈ support
       (programmedAllChainTrajectoriesFromCache parameter secret ∅
@@ -2214,7 +2214,7 @@ theorem programmedAllChainTrajectories_treeValuesFresh
         result (by simp) hactual
 
 abbrev GlobalChainTrajectoryMaterial :=
-  (Epoch → ChainIndex → Digest) ×
+  (LeafIndex → ChainIndex → Digest) ×
     (AllChainTrajectories × QueryCache HashSpec)
 
 noncomputable def globalChainTrajectoryMaterialTable
@@ -2317,7 +2317,7 @@ theorem evalDist_programmedGlobalChainTrajectoryMaterial_table_eq_base
         _ = _ := by simp
 
 structure CoupledGlobalChainKeygenView where
-  secret : Epoch → ChainIndex → Digest
+  secret : LeafIndex → ChainIndex → Digest
   table : GlobalChainValueIndex → Digest
   values : List Digest
   cache : QueryCache HashSpec
@@ -2330,9 +2330,9 @@ def CoupledGlobalChainKeygenView.root
 
 def CoupledGlobalChainKeygenView.authenticationPath
     (parameter : PublicParameter) (view : CoupledGlobalChainKeygenView)
-    (epoch : Epoch) : MerkleLevel → Digest :=
+    (leafIndex : LeafIndex) : MerkleLevel → Digest :=
   Concrete.CacheReplay.authenticationPath view.cache
-    (SecretKey.withoutPrecomputation parameter view.secret) epoch
+    (SecretKey.withoutPrecomputation parameter view.secret) leafIndex
 
 noncomputable def coupledGlobalChainKeygenExperiment
     (parameter : PublicParameter) : ProbComp CoupledGlobalChainKeygenView := do
@@ -2353,9 +2353,9 @@ def CoupledGlobalChainKeygenRelation
       (GlobalChainValueIndex → Digest)) : Prop :=
   left.table = right.2 ∧
     left.root parameter = right.1.root parameter ∧
-    (∀ epoch,
-      left.authenticationPath parameter epoch =
-        right.1.authenticationPath parameter epoch) ∧
+    (∀ leafIndex,
+      left.authenticationPath parameter leafIndex =
+        right.1.authenticationPath parameter leafIndex) ∧
     left.values = right.1.values ∧
     TreeValuesReplay parameter left.secret left.cache
       allTreeValueIndices left.values ∧
@@ -2489,10 +2489,10 @@ def ProgrammedGlobalChainKeygenRelation
       (GlobalChainValueIndex → Digest)) : Prop :=
   left.table = right.2 ∧
     left.publicKey = right.1.publicKey ∧
-    (∀ epoch,
-      Concrete.CacheReplay.authenticationPath left.cache left.secretKey epoch =
+    (∀ leafIndex,
+      Concrete.CacheReplay.authenticationPath left.cache left.secretKey leafIndex =
         Concrete.CacheReplay.authenticationPath right.1.cache
-          right.1.secretKey epoch)
+          right.1.secretKey leafIndex)
 
 def ProgrammedGlobalChainKeygenFullRelation
     (left : ProgrammedGlobalChainKeygenView)

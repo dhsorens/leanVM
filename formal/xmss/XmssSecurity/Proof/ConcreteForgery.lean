@@ -44,17 +44,17 @@ theorem strong_components {signedMessage forgedMessage : Message}
     · exact Or.inr (Or.inl hvalues)
   · exact Or.inl hinput
 
-noncomputable def SameEpochBadEventOccurs
-    (cache : QueryCache HashSpec) (parameter : PublicParameter) (epoch : Epoch)
+noncomputable def SameLeafIndexBadEventOccurs
+    (cache : QueryCache HashSpec) (parameter : PublicParameter) (leafIndex : LeafIndex)
     (signedMessage forgedMessage : Message)
     (signedEncoding forgedEncoding : Encoding)
     (signedSignature forgedSignature : Signature)
     (hsignedValid : TargetSum.Valid signedEncoding) : BadEvent → Prop :=
-  XmssSecurity.SameEpochBadEventOccurs
-    (CacheView.encodingHash cache parameter epoch)
-    (fun chain => CacheView.chainStep cache parameter epoch chain)
-    (CacheView.leafHash cache parameter epoch)
-    (CacheView.nodeHash cache parameter epoch)
+  XmssSecurity.SameLeafIndexBadEventOccurs
+    (CacheView.encodingHash cache parameter leafIndex)
+    (fun chain => CacheView.chainStep cache parameter leafIndex chain)
+    (CacheView.leafHash cache parameter leafIndex)
+    (CacheView.nodeHash cache parameter leafIndex)
     (signedMessage, signedSignature.randomness)
     (forgedMessage, forgedSignature.randomness)
     signedEncoding forgedEncoding
@@ -62,40 +62,40 @@ noncomputable def SameEpochBadEventOccurs
     (signaturePath signedSignature) (signaturePath forgedSignature)
     hsignedValid
 
-/-- Concrete same-epoch strong forgeries select one of the 175 cache-level bad events. -/
-theorem sameEpoch_forgery_has_badEvent
-    (cache : QueryCache HashSpec) (parameter : PublicParameter) (epoch : Epoch)
+/-- Concrete same-leaf-index strong forgeries select one of the 175 cache-level bad events. -/
+theorem sameLeafIndex_forgery_has_badEvent
+    (cache : QueryCache HashSpec) (parameter : PublicParameter) (leafIndex : LeafIndex)
     (signedMessage forgedMessage : Message)
     (signedEncoding forgedEncoding : Encoding)
     (signedSignature forgedSignature : Signature)
     (hsignedEncoding : TargetSum.decodeDigest
-      (CacheView.encodingHash cache parameter epoch
+      (CacheView.encodingHash cache parameter leafIndex
         (signedMessage, signedSignature.randomness)) = some signedEncoding)
     (hforgedEncoding : TargetSum.decodeDigest
-      (CacheView.encodingHash cache parameter epoch
+      (CacheView.encodingHash cache parameter leafIndex
         (forgedMessage, forgedSignature.randomness)) = some forgedEncoding)
-    (hroot : Merkle.ascend (CacheView.nodeHash cache parameter epoch)
+    (hroot : Merkle.ascend (CacheView.nodeHash cache parameter leafIndex)
         (signaturePath forgedSignature) 0 treeHeight
-        (CacheView.leafHash cache parameter epoch
+        (CacheView.leafHash cache parameter leafIndex
           (recoveredEndpoints
-            (fun chain => CacheView.chainStep cache parameter epoch chain)
+            (fun chain => CacheView.chainStep cache parameter leafIndex chain)
             forgedEncoding forgedSignature.chainValue)) =
-      Merkle.ascend (CacheView.nodeHash cache parameter epoch)
+      Merkle.ascend (CacheView.nodeHash cache parameter leafIndex)
         (signaturePath signedSignature) 0 treeHeight
-        (CacheView.leafHash cache parameter epoch
+        (CacheView.leafHash cache parameter leafIndex
           (recoveredEndpoints
-            (fun chain => CacheView.chainStep cache parameter epoch chain)
+            (fun chain => CacheView.chainStep cache parameter leafIndex chain)
             signedEncoding signedSignature.chainValue)))
     (hstrong : signedMessage ≠ forgedMessage ∨ signedSignature ≠ forgedSignature) :
-    ∃ event, SameEpochBadEventOccurs cache parameter epoch
+    ∃ event, SameLeafIndexBadEventOccurs cache parameter leafIndex
       signedMessage forgedMessage signedEncoding forgedEncoding
       signedSignature forgedSignature
       (TargetSum.decodeDigest_eq_some_iff.mp hsignedEncoding).2 event := by
-  exact XmssSecurity.sameEpoch_forgery_has_badEvent
-    (CacheView.encodingHash cache parameter epoch)
-    (fun chain => CacheView.chainStep cache parameter epoch chain)
-    (CacheView.leafHash cache parameter epoch)
-    (CacheView.nodeHash cache parameter epoch)
+  exact XmssSecurity.sameLeafIndex_forgery_has_badEvent
+    (CacheView.encodingHash cache parameter leafIndex)
+    (fun chain => CacheView.chainStep cache parameter leafIndex chain)
+    (CacheView.leafHash cache parameter leafIndex)
+    (CacheView.nodeHash cache parameter leafIndex)
     (signedMessage, signedSignature.randomness)
     (forgedMessage, forgedSignature.randomness)
     signedEncoding forgedEncoding
@@ -103,41 +103,41 @@ theorem sameEpoch_forgery_has_badEvent
     (signaturePath signedSignature) (signaturePath forgedSignature)
     hsignedEncoding hforgedEncoding hroot (strong_components hstrong)
 
-noncomputable def FreshEpochBadEventOccurs
-    (cache : QueryCache HashSpec) (parameter : PublicParameter) (epoch : Epoch)
+noncomputable def FreshLeafIndexBadEventOccurs
+    (cache : QueryCache HashSpec) (parameter : PublicParameter) (leafIndex : LeafIndex)
     (forgedEncoding : Encoding) (forgedSignature : Signature)
     (secret : ChainIndex → Digest) (honestPath : Nat → Digest)
     (hforgedValid : TargetSum.Valid forgedEncoding) : BadEvent → Prop :=
-  XmssSecurity.FreshEpochBadEventOccurs
-    (fun chain => CacheView.chainStep cache parameter epoch chain)
-    (CacheView.leafHash cache parameter epoch)
-    (CacheView.nodeHash cache parameter epoch)
+  XmssSecurity.FreshLeafIndexBadEventOccurs
+    (fun chain => CacheView.chainStep cache parameter leafIndex chain)
+    (CacheView.leafHash cache parameter leafIndex)
+    (CacheView.nodeHash cache parameter leafIndex)
     forgedEncoding forgedSignature.chainValue secret
     (signaturePath forgedSignature) honestPath hforgedValid
 
-/-- Concrete fresh-epoch forgeries select one of the same 175 cache-level bad events. -/
-theorem freshEpoch_forgery_has_badEvent
-    (cache : QueryCache HashSpec) (parameter : PublicParameter) (epoch : Epoch)
+/-- Concrete fresh-leaf-index forgeries select one of the same 175 cache-level bad events. -/
+theorem freshLeafIndex_forgery_has_badEvent
+    (cache : QueryCache HashSpec) (parameter : PublicParameter) (leafIndex : LeafIndex)
     (forgedEncoding : Encoding) (forgedSignature : Signature)
     (secret : ChainIndex → Digest) (honestPath : Nat → Digest)
     (hforgedValid : TargetSum.Valid forgedEncoding)
-    (hroot : Merkle.ascend (CacheView.nodeHash cache parameter epoch)
+    (hroot : Merkle.ascend (CacheView.nodeHash cache parameter leafIndex)
         (signaturePath forgedSignature) 0 treeHeight
-        (CacheView.leafHash cache parameter epoch
+        (CacheView.leafHash cache parameter leafIndex
           (recoveredEndpoints
-            (fun chain => CacheView.chainStep cache parameter epoch chain)
+            (fun chain => CacheView.chainStep cache parameter leafIndex chain)
             forgedEncoding forgedSignature.chainValue)) =
-      Merkle.ascend (CacheView.nodeHash cache parameter epoch)
+      Merkle.ascend (CacheView.nodeHash cache parameter leafIndex)
         honestPath 0 treeHeight
-        (CacheView.leafHash cache parameter epoch
+        (CacheView.leafHash cache parameter leafIndex
           (fun chain => Wots.publicChain
-            (CacheView.chainStep cache parameter epoch chain) (secret chain)))) :
-    ∃ event, FreshEpochBadEventOccurs cache parameter epoch forgedEncoding
+            (CacheView.chainStep cache parameter leafIndex chain) (secret chain)))) :
+    ∃ event, FreshLeafIndexBadEventOccurs cache parameter leafIndex forgedEncoding
       forgedSignature secret honestPath hforgedValid event := by
-  exact XmssSecurity.freshEpoch_forgery_has_badEvent
-    (fun chain => CacheView.chainStep cache parameter epoch chain)
-    (CacheView.leafHash cache parameter epoch)
-    (CacheView.nodeHash cache parameter epoch)
+  exact XmssSecurity.freshLeafIndex_forgery_has_badEvent
+    (fun chain => CacheView.chainStep cache parameter leafIndex chain)
+    (CacheView.leafHash cache parameter leafIndex)
+    (CacheView.nodeHash cache parameter leafIndex)
     forgedEncoding forgedSignature.chainValue secret
     (signaturePath forgedSignature) honestPath hforgedValid hroot
 

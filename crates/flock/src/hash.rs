@@ -59,7 +59,6 @@ use pcs::pack::{LOG_PACKING, PACKING_WIDTH};
 use pcs::stack_open::{RingSwitchClaim, RingSwitchOpen, RingSwitchVerify, RingSwitchVerifyClaim};
 use primitives::field::F192;
 use primitives::hash::{END_BIT, END_LANE, PI, RC, RHO, ROUNDS, STATE_LANES};
-use zk_alloc::ArenaVec;
 
 // ---------------------------------------------------------------------------
 // Public constants
@@ -138,7 +137,7 @@ pub fn padding_instance() -> Instance {
     [0; STATE_LANES]
 }
 
-/// Domain separator for this circuit in the Fiat-Shamir seed (`lean_vm::cpu`):
+/// Domain separator for this circuit in the Fiat-Shamir seed (`leanvm_core::cpu`):
 /// the hash of [`R1CS_DIGEST_LABEL`], which names the relation and its layout.
 /// A deliberate circuit change bumps the label, and the digest is mirrored in
 /// `python-verifier/verifier.py` and in the recursion guest.
@@ -341,18 +340,6 @@ pub fn marginal_walk(alpha: F192, u: &[F192]) -> Vec<F192> {
     a
 }
 
-/// Does `z` satisfy the block-diagonal R1CS, `(A_0 z) ⊙ (B_0 z) = z` per block?
-/// `z` is the whole batch, `2^n_blocks_log` blocks of `K` bits.
-pub fn satisfies(z: &[bool], n_blocks_log: usize) -> bool {
-    assert_eq!(z.len(), K << n_blocks_log, "z must be one K-bit block per instance");
-    let bit = |b: bool| if b { F192::ONE } else { F192::ZERO };
-    (0..1usize << n_blocks_log).all(|t| {
-        let block: Vec<F192> = z[t * K..(t + 1) * K].iter().map(|&b| bit(b)).collect();
-        let (a, b) = row_values_walk(&block);
-        (0..K).all(|k| a[k] * b[k] == block[k])
-    })
-}
-
 /// Walk-capable [`crate::lincheck::LincheckCircuit`] over the Keccak R1CS: both
 /// directions are circuit walks, so neither side needs a matrix.
 pub struct WalkLincheckCircuit;
@@ -436,7 +423,7 @@ fn build_block_witness_ab_packed_into(input: &Instance, z: &mut [u64], a: &mut [
 pub fn generate_witness_with_ab_packed_and_lincheck(
     instances: &[Instance],
     n_blocks_log: usize,
-) -> (ArenaVec<u64>, ArenaVec<u64>, ArenaVec<u64>, ArenaVec<u8>) {
+) -> (Vec<u64>, Vec<u64>, Vec<u64>, Vec<u8>) {
     let padding = padding_instance();
     drive_witness_packed_and_lincheck(instances, Some(&padding), n_blocks_log, K_LOG, |input, z, a, b| {
         build_block_witness_ab_packed_into(input, z, a, b)
@@ -467,9 +454,6 @@ impl KeccakSetup {
     }
     pub fn n_blocks_log(&self) -> usize {
         self.n_blocks_log
-    }
-    pub fn n_block_slots(&self) -> usize {
-        1usize << self.n_blocks_log()
     }
 }
 
@@ -579,47 +563,21 @@ pub struct ZerocheckStage {
     x_ab: crate::lincheck::QuirkyPoint,
 }
 
-/// One `FLOCK_PROVE_TRACE` line. `label` carries its own colon so the stages
-/// line up.
-fn trace_stage(label: &str, t: std::time::Instant) {
-    if std::env::var_os("FLOCK_PROVE_TRACE").is_some() {
-        eprintln!("[flock prove] {label:<11}{:8.2} ms", t.elapsed().as_secs_f64() * 1e3);
-    }
-}
-
 impl KeccakSetup {
     /// **Flock reduction (prover).** Run the zerocheck and lincheck on the
-    /// shared transcript, reducing R1CS validity of `instances` to ONE evaluation
+    /// shared transcript, reducing R1CS validity of the instances to ONE evaluation
     /// claim on the committed packed witness `q_flock`. (The statement is already
     /// transcript-bound: the embedding protocol seeds with the R1CS digest and
-    /// announces the count.) Returns the regenerated packed witness and the
-    /// [`SliceClaim`] on `q_flock`.
+    /// announces the count.)
+    ///
+    /// The embedder has already generated the packed `z`, `A·z`, `B·z`, and
+    /// lincheck-stripe buffers (`generate_witness_with_ab_packed_and_lincheck`)
+    /// before committing the flattened witness. It is [`Self::prove_zerocheck`]
+    /// then [`Self::prove_lincheck`], and returns the [`SliceClaim`] on
+    /// `q_flock`, with its ring-switch weights.
     ///
     /// Does NOT open the PCS; the caller discharges the returned claim in the
-    /// one stacked opening (`lean_vm`'s `pcs::open`).
-    pub fn prove_reduction(
-        &self,
-        instances: &[Instance],
-        ps: &mut fiat_shamir::transcript::ProverState,
-    ) -> (ArenaVec<u64>, SliceClaim) {
-        assert!(
-            instances.len() <= self.n_block_slots(),
-            "{} steps exceed this setup's {} slots",
-            instances.len(),
-            self.n_block_slots()
-        );
-        let t_witness = std::time::Instant::now();
-        let (z_packed, a_packed_words, b_packed_words, z_packed_lincheck) =
-            generate_witness_with_ab_packed_and_lincheck(instances, self.n_blocks_log());
-        trace_stage("witness:", t_witness);
-        let reduced =
-            self.prove_reduction_precomputed(&z_packed, &a_packed_words, &b_packed_words, &z_packed_lincheck, ps);
-        (z_packed, reduced)
-    }
-
-    /// **Flock reduction from a prepared witness (prover)**: [`Self::prove_zerocheck`]
-    /// then [`Self::prove_lincheck`], for embedders that generated the packed `z`,
-    /// `A·z`, `B·z`, and lincheck-stripe buffers before committing.
+    /// one stacked opening (`leanvm_core`'s `pcs::open`).
     pub fn prove_reduction_precomputed(
         &self,
         z_packed: &[u64],
@@ -642,7 +600,7 @@ impl KeccakSetup {
         b_packed_words: &[u64],
         ps: &mut fiat_shamir::transcript::ProverState,
     ) -> ZerocheckStage {
-        let t_zerocheck = std::time::Instant::now();
+        let _span = tracing::info_span!("Zerocheck").entered();
         let packed_len = 1usize << (self.m() - 6);
         assert_eq!(z_packed.len(), packed_len, "wrong packed witness length");
         assert_eq!(a_packed_words.len(), packed_len, "wrong packed A·z length");
@@ -661,9 +619,9 @@ impl KeccakSetup {
             ps,
         );
 
-        let x_ab = x_ab_of(&zc_claim, K_LOG - K_SKIP);
-        trace_stage("zerocheck:", t_zerocheck);
-        ZerocheckStage { x_ab }
+        ZerocheckStage {
+            x_ab: x_ab_of(&zc_claim, K_LOG - K_SKIP),
+        }
     }
 
     /// **Flock reduction, second stage (prover): the lincheck.** Reduces the
@@ -675,7 +633,7 @@ impl KeccakSetup {
         z_packed_lincheck: &[u8],
         ps: &mut fiat_shamir::transcript::ProverState,
     ) -> SliceClaim {
-        let t_lincheck = std::time::Instant::now();
+        let _span = tracing::info_span!("Lincheck").entered();
         let packed_len = 1usize << (self.m() - 6);
         assert_eq!(z_packed_lincheck.len(), packed_len * 8, "wrong lincheck stripe length");
 
@@ -691,9 +649,7 @@ impl KeccakSetup {
             ps,
         );
 
-        let claim = reduction_claim(&lc_claim, &x_ab.x_outer);
-        trace_stage("lincheck:", t_lincheck);
-        claim
+        reduction_claim(&lc_claim, &x_ab.x_outer)
     }
 
     /// **Flock reduction (verifier).** Replay the zerocheck and lincheck straight
@@ -733,6 +689,21 @@ impl KeccakSetup {
 mod tests {
     use super::*;
     use primitives::test_rng::Rng;
+
+    /// Does `z` satisfy the block-diagonal R1CS, `(A_0 z) ⊙ (B_0 z) = z` per block?
+    ///
+    /// Checked through [`row_values_walk`], which returns exactly the two row values
+    /// `(⟨A_0(k,·), z⟩, ⟨B_0(k,·), z⟩)` that the relation compares, so no matrix is
+    /// needed. `z` is the whole batch, `2^n_blocks_log` blocks of `K` bits.
+    fn satisfies(z: &[bool], n_blocks_log: usize) -> bool {
+        assert_eq!(z.len(), K << n_blocks_log, "z must be one K-bit block per instance");
+        let bit = |b: bool| if b { F192::ONE } else { F192::ZERO };
+        (0..1usize << n_blocks_log).all(|t| {
+            let block: Vec<F192> = z[t * K..(t + 1) * K].iter().map(|&b| bit(b)).collect();
+            let (a, b) = row_values_walk(&block);
+            (0..K).all(|k| a[k] * b[k] == block[k])
+        })
+    }
 
     /// Unpack the first `n_bits` logical bits of a packed witness.
     fn unpack_bits(z: &[u64], n_bits: usize) -> Vec<bool> {

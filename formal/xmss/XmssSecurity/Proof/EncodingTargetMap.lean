@@ -5,49 +5,49 @@ open OracleSpec
 
 namespace XmssSecurity
 
-/-- Recover the epoch tag from a well-formed serialized encoding input. Inputs outside the encoding domain return `none`. -/
-noncomputable def encodingInputEpoch? (parameter : PublicParameter)
-    (candidate : HashInput) : Option Epoch :=
-  if h : ∃ epoch input,
-      Concrete.CacheView.encodingInput parameter epoch input = candidate then
+/-- Recover the leaf index tag from a well-formed serialized encoding input. Inputs outside the encoding domain return `none`. -/
+noncomputable def encodingInputLeafIndex? (parameter : PublicParameter)
+    (candidate : HashInput) : Option LeafIndex :=
+  if h : ∃ leafIndex input,
+      Concrete.CacheView.encodingInput parameter leafIndex input = candidate then
     some (Classical.choose h)
   else
     none
 
 @[simp]
-theorem encodingInputEpoch?_encodingInput (parameter : PublicParameter)
-    (epoch : Epoch) (input : Message × Randomness) :
-    encodingInputEpoch? parameter
-      (Concrete.CacheView.encodingInput parameter epoch input) = some epoch := by
-  unfold encodingInputEpoch?
+theorem encodingInputLeafIndex?_encodingInput (parameter : PublicParameter)
+    (leafIndex : LeafIndex) (input : Message × Randomness) :
+    encodingInputLeafIndex? parameter
+      (Concrete.CacheView.encodingInput parameter leafIndex input) = some leafIndex := by
+  unfold encodingInputLeafIndex?
   split <;> rename_i h
   · obtain ⟨chosenInput, hchosen⟩ := Classical.choose_spec h
-    have hepoch : Classical.choose h = epoch :=
-      Concrete.CacheView.epoch_eq_of_encodingInput_eq parameter hchosen
-    rw [hepoch]
+    have hleafIndex : Classical.choose h = leafIndex :=
+      Concrete.CacheView.leafIndex_eq_of_encodingInput_eq parameter hchosen
+    rw [hleafIndex]
   · exfalso
-    exact h ⟨epoch, input, rfl⟩
+    exact h ⟨leafIndex, input, rfl⟩
 
-theorem exists_encodingInput_of_encodingInputEpoch?_eq_some
-    (parameter : PublicParameter) (candidate : HashInput) (epoch : Epoch)
-    (hepoch : encodingInputEpoch? parameter candidate = some epoch) :
+theorem exists_encodingInput_of_encodingInputLeafIndex?_eq_some
+    (parameter : PublicParameter) (candidate : HashInput) (leafIndex : LeafIndex)
+    (hleafIndex : encodingInputLeafIndex? parameter candidate = some leafIndex) :
     ∃ input : Message × Randomness,
-      Concrete.CacheView.encodingInput parameter epoch input = candidate := by
-  unfold encodingInputEpoch? at hepoch
-  split at hepoch <;> rename_i h
+      Concrete.CacheView.encodingInput parameter leafIndex input = candidate := by
+  unfold encodingInputLeafIndex? at hleafIndex
+  split at hleafIndex <;> rename_i h
   · obtain ⟨input, hinput⟩ := Classical.choose_spec h
-    have heq : Classical.choose h = epoch := Option.some.inj hepoch
+    have heq : Classical.choose h = leafIndex := Option.some.inj hleafIndex
     rw [heq] at hinput
     exact ⟨input, hinput⟩
   · contradiction
 
-/-- `target` is the serialized input of the unique returned signature at the epoch encoded by `candidate`. -/
+/-- `target` is the serialized input of the unique returned signature at the leaf index encoded by `candidate`. -/
 def IsSignedEncodingTarget (parameter : PublicParameter)
     (log : QueryLog SigningSpec) (candidate target : HashInput) : Prop :=
   ∃ request signature,
     SigningTranscript.Returned log request signature ∧
-    encodingInputEpoch? parameter candidate = some request.epoch ∧
-    target = Concrete.CacheView.encodingInput parameter request.epoch
+    encodingInputLeafIndex? parameter candidate = some request.leafIndex ∧
+    target = Concrete.CacheView.encodingInput parameter request.leafIndex
       (request.message, signature.randomness)
 
 theorem IsSignedEncodingTarget.unique
@@ -56,17 +56,17 @@ theorem IsSignedEncodingTarget.unique
     (hleft : IsSignedEncodingTarget parameter log candidate left)
     (hright : IsSignedEncodingTarget parameter log candidate right) :
     left = right := by
-  obtain ⟨leftRequest, leftSignature, hleftReturned, hleftEpoch, rfl⟩ := hleft
-  obtain ⟨rightRequest, rightSignature, hrightReturned, hrightEpoch, rfl⟩ := hright
-  have hepoch : leftRequest.epoch = rightRequest.epoch :=
-    Option.some.inj (hleftEpoch.symm.trans hrightEpoch)
+  obtain ⟨leftRequest, leftSignature, hleftReturned, hleftLeafIndex, rfl⟩ := hleft
+  obtain ⟨rightRequest, rightSignature, hrightReturned, hrightLeafIndex, rfl⟩ := hright
+  have hleafIndex : leftRequest.leafIndex = rightRequest.leafIndex :=
+    Option.some.inj (hleftLeafIndex.symm.trans hrightLeafIndex)
   obtain ⟨hrequest, hsignature⟩ :=
-    SigningTranscript.returned_eq_of_same_epoch hvalid hleftReturned hrightReturned hepoch
+    SigningTranscript.returned_eq_of_same_leafIndex hvalid hleftReturned hrightReturned hleafIndex
   subst rightRequest
   subst rightSignature
   rfl
 
-/-- Select the returned signature input at the candidate input's epoch. If no signature was returned at that epoch, leave the candidate unchanged. -/
+/-- Select the returned signature input at the candidate input's leaf index. If no signature was returned at that leaf index, leave the candidate unchanged. -/
 noncomputable def signedEncodingTargetInput (parameter : PublicParameter)
     (log : QueryLog SigningSpec) (candidate : HashInput) : HashInput := by
   classical

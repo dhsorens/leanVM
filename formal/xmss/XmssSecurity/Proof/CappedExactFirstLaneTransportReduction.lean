@@ -124,7 +124,7 @@ noncomputable def globalHighDirectTracedDetailedExecution
       (adversary.main keyView.publicKey)).run initial
   let verified ← (simulateQ
     (globalHighDirectTracedVerifierImpl keyView edgeHigh)
-      (Concrete.scheme.verify keyView.publicKey handled.1.epoch
+      (Concrete.scheme.verify keyView.publicKey handled.1.leafIndex
         handled.1.message handled.1.signature)).run handled.2
   pure ((handled.1, verified.1), verified.2)
 
@@ -140,7 +140,7 @@ noncomputable def globalFirstLaneExactTracedDetailedExecution
         (adversary.main keyView.publicKey)).run initial
     let verified ← (simulateQ
       (globalFirstLaneExactTracedVerifierImpl keyView edgeHigh)
-        (Concrete.scheme.verify keyView.publicKey handled.1.epoch
+        (Concrete.scheme.verify keyView.publicKey handled.1.leafIndex
           handled.1.message handled.1.signature)).run handled.2
     pure ((handled.1, verified.1), verified.2)
 
@@ -279,7 +279,7 @@ theorem globalFirstLaneErase_exactTracedDetailedExecution
   intro handled
   apply (globalFirstLaneErases_simulateQ_run _ _
     (globalFirstLaneErase_exactTracedVerifierImpl keyView edgeHigh)
-    (Concrete.scheme.verify keyView.publicKey handled.1.epoch
+    (Concrete.scheme.verify keyView.publicKey handled.1.leafIndex
       handled.1.message handled.1.signature) handled.2).bind
   intro verified
   exact GlobalFirstLaneErases.pure _
@@ -291,23 +291,23 @@ noncomputable def firstLaneValidEncodingActions
 
 theorem globalFirstLaneEncodingHashQuery_validTrace
     (table : GlobalChainValueIndex → Digest)
-    (secretKey : SecretKey) (epoch : Epoch) (message : Message)
+    (secretKey : SecretKey) (leafIndex : LeafIndex) (message : Message)
     (randomness : Randomness) (state : GlobalCausalHashState)
     (result : (HashOutput × GlobalCausalHashState) ×
       FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
-        (globalFirstLaneEncodingHashQuery secretKey epoch message randomness
+        (globalFirstLaneEncodingHashQuery secretKey leafIndex message randomness
           state)).run)) :
     firstLaneValidEncodingActions result.2 =
       CappedEncodingMonitor.validActions
         (if state.cache (Concrete.CacheView.encodingInput secretKey.parameter
-            epoch (message, randomness)) = none then
-          [.sign epoch result.1.1]
+            leafIndex (message, randomness)) = none then
+          [.sign leafIndex result.1.1]
         else []) := by
   unfold globalFirstLaneEncodingHashQuery at hresult
   cases hcache : state.cache
-      (Concrete.CacheView.encodingInput secretKey.parameter epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter leafIndex
         (message, randomness)) with
   | some output =>
       simp [hcache, firstLaneValidEncodingActions] at hresult ⊢
@@ -328,24 +328,24 @@ theorem globalFirstLaneEncodingHashQuery_validTrace
 
 theorem globalFirstLaneEncodingHashQuery_cacheGrowth
     (table : GlobalChainValueIndex → Digest)
-    (secretKey : SecretKey) (epoch : Epoch) (message : Message)
+    (secretKey : SecretKey) (leafIndex : LeafIndex) (message : Message)
     (randomness : Randomness) (state : GlobalCausalHashState)
     (result : (HashOutput × GlobalCausalHashState) ×
       FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
-        (globalFirstLaneEncodingHashQuery secretKey epoch message randomness
+        (globalFirstLaneEncodingHashQuery secretKey leafIndex message randomness
           state)).run)) :
     CacheGrowthRepresented
       (fun payload => Concrete.CacheView.encodingInput secretKey.parameter
-        epoch payload)
-      (fun _ output => EncodingMonitor.ObservedAction.sign epoch output)
+        leafIndex payload)
+      (fun _ output => EncodingMonitor.ObservedAction.sign leafIndex output)
       state.cache result.1.2.cache result.2.encodingActions ∧
     result.1.2.cache
-      (Concrete.CacheView.encodingInput secretKey.parameter epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter leafIndex
         (message, randomness)) = some result.1.1 := by
   let sampledInput := Concrete.CacheView.encodingInput secretKey.parameter
-    epoch (message, randomness)
+    leafIndex (message, randomness)
   unfold globalFirstLaneEncodingHashQuery at hresult
   cases hcache : state.cache sampledInput with
   | some output =>
@@ -460,7 +460,7 @@ theorem globalFirstLaneSigningAttempt_support_decompose
     ∃ randomness encodedHead,
       encodedHead ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
-          (globalFirstLaneEncodingHashQuery keyView.secretKey request.epoch
+          (globalFirstLaneEncodingHashQuery keyView.secretKey request.leafIndex
             request.message randomness state)).run) ∧
       ((TargetSum.decodeDigest (truncateHash encodedHead.1.1) = none ∧
           result = ((none, encodedHead.1.2), encodedHead.2)) ∨
@@ -472,12 +472,12 @@ theorem globalFirstLaneSigningAttempt_support_decompose
                 (globalFirstLaneLiftRevealProbe
                   ((revealGlobalSignatureChains request encoding allChains
                     (Concrete.CacheReplay.signWithEncoding keyView.cache
-                      keyView.secretKey request.epoch randomness encoding)).run
+                      keyView.secretKey request.leafIndex randomness encoding)).run
                         encodedHead.1.2))).run) ∧
             revealedHead.1 =
               globalSignatureRevealResult table request encoding allChains
                 (Concrete.CacheReplay.signWithEncoding keyView.cache
-                  keyView.secretKey request.epoch randomness encoding)
+                  keyView.secretKey request.leafIndex randomness encoding)
                 encodedHead.1.2 ∧
             result = ((some revealedHead.1.1, revealedHead.1.2),
               encodedHead.2 ++ revealedHead.2)) := by
@@ -512,34 +512,34 @@ theorem globalFirstLaneSigningAttempt_support_decompose
       have hrevealedResult := globalFirstLaneSignatureReveal_result_eq table
         request encoding
           (Concrete.CacheReplay.signWithEncoding keyView.cache keyView.secretKey
-            request.epoch randomness encoding)
+            request.leafIndex randomness encoding)
           encodedHead.1.2 revealedHead hrevealed
       refine Or.inr
         ⟨encoding, revealedHead, rfl, hrevealed, hrevealedResult, ?_⟩
       simp [Prod.map]
 
-theorem globalFirstLaneAttackerHashQueryAtEpoch_trace
+theorem globalFirstLaneAttackerHashQueryAtLeafIndex_trace
     (table : GlobalChainValueIndex → Digest)
     (secretKey : SecretKey) (input : HashInput)
-    (state : GlobalCausalHashState) (epoch : Epoch)
+    (state : GlobalCausalHashState) (leafIndex : LeafIndex)
     (result : (HashOutput × GlobalCausalHashState) ×
       FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
-        (globalFirstLaneAttackerHashQueryAtEpoch secretKey input state epoch)
+        (globalFirstLaneAttackerHashQueryAtLeafIndex secretKey input state leafIndex)
         ).run)) :
     result.2.encodingActions =
-      if state.cache input = none then [.query epoch result.1.1] else [] := by
+      if state.cache input = none then [.query leafIndex result.1.1] else [] := by
   cases hcache : state.cache input with
   | some output =>
-      rw [globalFirstLaneAttackerHashQueryAtEpoch_eq_cached _ _ _ _ _ hcache]
+      rw [globalFirstLaneAttackerHashQueryAtLeafIndex_eq_cached _ _ _ _ _ hcache]
         at hresult
       simp only [simulateQ_pure, WriterT.run_pure', support_pure,
         Set.mem_singleton_iff] at hresult
       subst result
       simp [FirstLaneOracleSimulation.ActionTrace.encodingActions]
   | none =>
-      rw [globalFirstLaneAttackerHashQueryAtEpoch_eq_fresh _ _ _ _ hcache]
+      rw [globalFirstLaneAttackerHashQueryAtLeafIndex_eq_fresh _ _ _ _ hcache]
         at hresult
       unfold globalFirstLaneFreshEncodingQuery at hresult
       simp [FirstLaneOracleSimulation.encodingQuery,
@@ -550,24 +550,24 @@ theorem globalFirstLaneAttackerHashQueryAtEpoch_trace
       obtain ⟨output, _houtput, rfl⟩ := hresult
       simp [FirstLaneOracleSimulation.ActionTrace.encodingActions]
 
-theorem globalFirstLaneAttackerHashQueryAtEpoch_cacheGrowth
+theorem globalFirstLaneAttackerHashQueryAtLeafIndex_cacheGrowth
     (table : GlobalChainValueIndex → Digest)
     (secretKey : SecretKey) (input : HashInput)
-    (state : GlobalCausalHashState) (epoch : Epoch)
+    (state : GlobalCausalHashState) (leafIndex : LeafIndex)
     (result : (HashOutput × GlobalCausalHashState) ×
       FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
-        (globalFirstLaneAttackerHashQueryAtEpoch secretKey input state epoch)
+        (globalFirstLaneAttackerHashQueryAtLeafIndex secretKey input state leafIndex)
         ).run)) :
     CacheGrowthRepresented
       (fun _ : Unit => input)
-      (fun _ output => EncodingMonitor.ObservedAction.query epoch output)
+      (fun _ output => EncodingMonitor.ObservedAction.query leafIndex output)
       state.cache result.1.2.cache result.2.encodingActions ∧
     result.1.2.cache input = some result.1.1 := by
   cases hcache : state.cache input with
   | some output =>
-      rw [globalFirstLaneAttackerHashQueryAtEpoch_eq_cached _ _ _ _ _ hcache]
+      rw [globalFirstLaneAttackerHashQueryAtLeafIndex_eq_cached _ _ _ _ _ hcache]
         at hresult
       simp only [simulateQ_pure, WriterT.run_pure', support_pure,
         Set.mem_singleton_iff] at hresult
@@ -577,11 +577,11 @@ theorem globalFirstLaneAttackerHashQueryAtEpoch_cacheGrowth
           FirstLaneOracleSimulation.ActionTrace.encodingActions] using
           (CacheGrowthRepresented.refl
             (fun _ : Unit => input)
-            (fun _ output => EncodingMonitor.ObservedAction.query epoch output)
+            (fun _ output => EncodingMonitor.ObservedAction.query leafIndex output)
             state.cache)
       · simpa only [globalCausalRecordedState_cache] using hcache
   | none =>
-      rw [globalFirstLaneAttackerHashQueryAtEpoch_eq_fresh _ _ _ _ hcache]
+      rw [globalFirstLaneAttackerHashQueryAtLeafIndex_eq_fresh _ _ _ _ hcache]
         at hresult
       unfold globalFirstLaneFreshEncodingQuery at hresult
       simp [FirstLaneOracleSimulation.encodingQuery,
@@ -611,14 +611,14 @@ def GlobalFirstLaneSigningSummary
       FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex) : Prop :=
   CacheGrowthRepresented
       (fun payload => Concrete.CacheView.encodingInput
-        keyView.secretKey.parameter request.epoch payload)
+        keyView.secretKey.parameter request.leafIndex payload)
       (fun _ output => EncodingMonitor.ObservedAction.sign
-        request.epoch output)
+        request.leafIndex output)
       state.cache result.1.2.cache result.2.encodingActions ∧
-    List.Sublist (CappedEncodingMonitor.validObservedSignEpochs
-      result.2.encodingActions) [request.epoch] ∧
+    List.Sublist (CappedEncodingMonitor.validObservedSignLeafIndices
+      result.2.encodingActions) [request.leafIndex] ∧
     (result.1.1 = none →
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         result.2.encodingActions = [])
 
 theorem globalFirstLaneSigningAttempt_summary
@@ -635,18 +635,18 @@ theorem globalFirstLaneSigningAttempt_summary
     globalFirstLaneSigningAttempt_support_decompose table keyView request state
       result hresult
   have hgrowth := globalFirstLaneEncodingHashQuery_cacheGrowth table
-    keyView.secretKey request.epoch request.message randomness state
+    keyView.secretKey request.leafIndex request.message randomness state
       encodedHead hencoded
   have htrace := globalFirstLaneEncodingHashQuery_validTrace table
-    keyView.secretKey request.epoch request.message randomness state
+    keyView.secretKey request.leafIndex request.message randomness state
       encodedHead hencoded
   have htrace' : CappedEncodingMonitor.validActions
       encodedHead.2.encodingActions =
         CappedEncodingMonitor.validActions
           (if state.cache
               (Concrete.CacheView.encodingInput keyView.secretKey.parameter
-                request.epoch (request.message, randomness)) = none then
-            [.sign request.epoch encodedHead.1.1]
+                request.leafIndex (request.message, randomness)) = none then
+            [.sign request.leafIndex encodedHead.1.1]
           else []) := by
     simpa [firstLaneValidEncodingActions] using htrace
   rcases hcases with hreject | haccept
@@ -657,23 +657,23 @@ theorem globalFirstLaneSigningAttempt_summary
       intro ⟨encoding, hencoding⟩
       rw [hdecode] at hencoding
       contradiction
-    have hepochs : CappedEncodingMonitor.validObservedSignEpochs
+    have hleafIndices : CappedEncodingMonitor.validObservedSignLeafIndices
         encodedHead.2.encodingActions = [] := by
-      unfold CappedEncodingMonitor.validObservedSignEpochs
+      unfold CappedEncodingMonitor.validObservedSignLeafIndices
       rw [htrace']
       by_cases hcache : state.cache
           (Concrete.CacheView.encodingInput keyView.secretKey.parameter
-            request.epoch (request.message, randomness)) = none
+            request.leafIndex (request.message, randomness)) = none
       · simp [hcache, CappedEncodingMonitor.validActions,
           CappedEncodingMonitor.ActionValid, hinvalidDigest,
-          EncodingMonitor.observedSignEpochs]
+          EncodingMonitor.observedSignLeafIndices]
       · simp [hcache, CappedEncodingMonitor.validActions,
-          EncodingMonitor.observedSignEpochs]
+          EncodingMonitor.observedSignLeafIndices]
     refine ⟨hgrowth.1, ?_, ?_⟩
-    · rw [hepochs]
+    · rw [hleafIndices]
       simp
     · intro _hnone
-      exact hepochs
+      exact hleafIndices
   · obtain ⟨encoding, revealedHead, _hdecode, hrevealed,
       hrevealedResult, hresultEq⟩ := haccept
     subst result
@@ -691,20 +691,20 @@ theorem globalFirstLaneSigningAttempt_summary
         apply hgrowth.1.2 payload output hfresh
         rw [← hfinalCache]
         exact hfinal
-    · unfold CappedEncodingMonitor.validObservedSignEpochs
+    · unfold CappedEncodingMonitor.validObservedSignLeafIndices
       rw [FirstLaneOracleSimulation.ActionTrace.encodingActions_append,
         hrevealTrace, List.append_nil, htrace']
       by_cases hcache : state.cache
           (Concrete.CacheView.encodingInput keyView.secretKey.parameter
-            request.epoch (request.message, randomness)) = none
+            request.leafIndex (request.message, randomness)) = none
       · simp only [hcache, if_pos]
         change List.Sublist
-          (CappedEncodingMonitor.validObservedSignEpochs
-            [.sign request.epoch encodedHead.1.1]) [request.epoch]
-        rw [CappedEncodingMonitor.validObservedSignEpochs_singleton_sign]
+          (CappedEncodingMonitor.validObservedSignLeafIndices
+            [.sign request.leafIndex encodedHead.1.1]) [request.leafIndex]
+        rw [CappedEncodingMonitor.validObservedSignLeafIndices_singleton_sign]
         split <;> simp
       · simp [hcache, CappedEncodingMonitor.validActions,
-          EncodingMonitor.observedSignEpochs]
+          EncodingMonitor.observedSignLeafIndices]
     · intro hnone
       contradiction
 
@@ -725,10 +725,10 @@ theorem globalFirstLaneSignBoundedAttempts_summary
       simp [globalFirstLaneSignBoundedAttempts] at hresult
       subst result
       refine ⟨CacheGrowthRepresented.refl _ _ _, ?_, ?_⟩ <;>
-        simp [CappedEncodingMonitor.validObservedSignEpochs,
+        simp [CappedEncodingMonitor.validObservedSignLeafIndices,
           FirstLaneOracleSimulation.ActionTrace.encodingActions,
           CappedEncodingMonitor.validActions,
-          EncodingMonitor.observedSignEpochs]
+          EncodingMonitor.observedSignLeafIndices]
   | succ attempts ih =>
       rw [globalFirstLaneSignBoundedAttempts, simulateQ_bind,
         WriterT.run_bind', mem_support_bind_iff] at hresult
@@ -751,20 +751,20 @@ theorem globalFirstLaneSignBoundedAttempts_summary
           · simpa [FirstLaneOracleSimulation.ActionTrace.encodingActions_append]
               using hhead.1.trans htailSummary.1
           · change List.Sublist
-              (CappedEncodingMonitor.validObservedSignEpochs
+              (CappedEncodingMonitor.validObservedSignLeafIndices
                 (attemptHead.2 ++ tailResult.2).encodingActions)
-              [request.epoch]
+              [request.leafIndex]
             rw [FirstLaneOracleSimulation.ActionTrace.encodingActions_append,
-              CappedEncodingMonitor.validObservedSignEpochs_append,
+              CappedEncodingMonitor.validObservedSignLeafIndices_append,
               hhead.2.2 hoption]
             simpa using htailSummary.2.1
           · intro hfinal
             have htailNone : tailResult.1.1 = none := by
               simpa using hfinal
-            change CappedEncodingMonitor.validObservedSignEpochs
+            change CappedEncodingMonitor.validObservedSignLeafIndices
               (attemptHead.2 ++ tailResult.2).encodingActions = []
             rw [FirstLaneOracleSimulation.ActionTrace.encodingActions_append,
-              CappedEncodingMonitor.validObservedSignEpochs_append,
+              CappedEncodingMonitor.validObservedSignLeafIndices_append,
               hhead.2.2 hoption, htailSummary.2.2 htailNone]
             rfl
 
@@ -779,14 +779,14 @@ theorem globalFirstLaneSigningQuery_cacheGrowth
         (globalFirstLaneSigningQuery keyView request state)).run)) :
     CacheGrowthRepresented
       (fun payload => Concrete.CacheView.encodingInput
-        keyView.secretKey.parameter request.epoch payload)
+        keyView.secretKey.parameter request.leafIndex payload)
       (fun _ output => EncodingMonitor.ObservedAction.sign
-        request.epoch output)
+        request.leafIndex output)
       state.cache result.1.2.cache result.2.encodingActions :=
   (globalFirstLaneSignBoundedAttempts_summary signingAttemptLimit table
     keyView request state result hresult).1
 
-theorem globalFirstLaneSigningQuery_validSignEpochs_sublist_singleton
+theorem globalFirstLaneSigningQuery_validSignLeafIndices_sublist_singleton
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (request : SignRequest) (state : GlobalCausalHashState)
@@ -795,8 +795,8 @@ theorem globalFirstLaneSigningQuery_validSignEpochs_sublist_singleton
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         (globalFirstLaneSigningQuery keyView request state)).run)) :
-    List.Sublist (CappedEncodingMonitor.validObservedSignEpochs
-      result.2.encodingActions) [request.epoch] :=
+    List.Sublist (CappedEncodingMonitor.validObservedSignLeafIndices
+      result.2.encodingActions) [request.leafIndex] :=
   (globalFirstLaneSignBoundedAttempts_summary signingAttemptLimit table
     keyView request state result hresult).2.1
 
@@ -839,22 +839,22 @@ theorem globalFirstLaneHashQuery_observation_mem
       (.inl (.inr hashInput) : (OracleWorld + SigningSpec).Domain)
       (state.cache, []) result.1.1 (result.1.2.cache, []) = some observation) :
     observation ∈ result.2.encodingActions := by
-  cases hepoch : encodingInputEpoch? keyView.secretKey.parameter hashInput with
+  cases hleafIndex : encodingInputLeafIndex? keyView.secretKey.parameter hashInput with
   | none =>
       by_cases hfresh : state.cache hashInput = none
-      <;> simp [encodingObservation?, hfresh, hepoch] at hobservation
-  | some epoch =>
+      <;> simp [encodingObservation?, hfresh, hleafIndex] at hobservation
+  | some leafIndex =>
       by_cases hfresh : state.cache hashInput = none
-      · rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_some _ _ _ _ epoch
-          hepoch] at hresult
-        have htrace := globalFirstLaneAttackerHashQueryAtEpoch_trace table
-          keyView.secretKey hashInput state epoch result hresult
-        have haction : EncodingMonitor.ObservedAction.query epoch result.1.1 ∈
+      · rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_some _ _ _ _ leafIndex
+          hleafIndex] at hresult
+        have htrace := globalFirstLaneAttackerHashQueryAtLeafIndex_trace table
+          keyView.secretKey hashInput state leafIndex result hresult
+        have haction : EncodingMonitor.ObservedAction.query leafIndex result.1.1 ∈
             result.2.encodingActions := by
           simp [htrace, hfresh]
-        have hobservation' : EncodingMonitor.ObservedAction.query epoch
+        have hobservation' : EncodingMonitor.ObservedAction.query leafIndex
             result.1.1 = observation := by
-          exact Option.some.inj (by simpa [encodingObservation?, hfresh, hepoch]
+          exact Option.some.inj (by simpa [encodingObservation?, hfresh, hleafIndex]
             using hobservation)
         simpa [← hobservation'] using haction
       · simp [encodingObservation?, hfresh] at hobservation
@@ -877,7 +877,7 @@ theorem globalFirstLaneSigningQuery_observation_mem
   | none => simp [encodingObservation?, houtput] at hobservation
   | some signature =>
       let signedInput := Concrete.CacheView.encodingInput
-        keyView.secretKey.parameter request.epoch
+        keyView.secretKey.parameter request.leafIndex
           (request.message, signature.randomness)
       by_cases hfresh : state.cache signedInput = none
       · cases hfinal : result.1.2.cache signedInput with
@@ -892,7 +892,7 @@ theorem globalFirstLaneSigningQuery_observation_mem
               (by simpa [signedInput] using hfresh)
               (by simpa [signedInput] using hfinal)
             have hobservation' : EncodingMonitor.ObservedAction.sign
-                request.epoch hashOutput = observation := by
+                request.leafIndex hashOutput = observation := by
               exact Option.some.inj (by simpa [encodingObservation?, signedInput,
                 hfresh, hfinal, houtput] using hobservation)
             simpa [← hobservation'] using haction
@@ -1132,14 +1132,14 @@ theorem globalFirstLaneHashQuery_cache_le
           (globalChainValueHighTableOfEdges edgeHigh) keyView.secretKey
             hashInput state)).run)) :
     state.cache ≤ result.1.2.cache := by
-  cases hepoch : encodingInputEpoch? keyView.secretKey.parameter hashInput with
-  | some epoch =>
-      rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_some _ _ _ _ epoch
-        hepoch] at hresult
-      exact (globalFirstLaneAttackerHashQueryAtEpoch_cacheGrowth table
-        keyView.secretKey hashInput state epoch result hresult).1.1
+  cases hleafIndex : encodingInputLeafIndex? keyView.secretKey.parameter hashInput with
+  | some leafIndex =>
+      rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_some _ _ _ _ leafIndex
+        hleafIndex] at hresult
+      exact (globalFirstLaneAttackerHashQueryAtLeafIndex_cacheGrowth table
+        keyView.secretKey hashInput state leafIndex result hresult).1.1
   | none =>
-      rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_none _ _ _ _ hepoch]
+      rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_none _ _ _ _ hleafIndex]
         at hresult
       have hprojected := globalFirstLaneLiftRevealProbe_mem_eagerTrace_support
         table ((globalCausalAttackerHashQueryFromHigh
@@ -1229,24 +1229,24 @@ theorem globalFirstLaneVerifierHashExecution_simulateQ_cache_le
 
 @[irreducible]
 noncomputable def concreteVerificationAfterDigest
-    (publicKey : PublicKey) (epoch : Epoch) (signature : Signature)
+    (publicKey : PublicKey) (leafIndex : LeafIndex) (signature : Signature)
     (digest : Digest) : OracleComp HashSpec Bool :=
   match TargetSum.decodeDigest digest with
   | none => pure false
   | some encoding => do
-      let endpoints ← Concrete.recoverEndpoints publicKey.parameter epoch
+      let endpoints ← Concrete.recoverEndpoints publicKey.parameter leafIndex
         encoding signature
-      let leaf ← Concrete.leafHash publicKey.parameter epoch endpoints
-      Concrete.verifyAfterLeaf publicKey epoch signature leaf
+      let leaf ← Concrete.leafHash publicKey.parameter leafIndex endpoints
+      Concrete.verifyAfterLeaf publicKey leafIndex signature leaf
 
 theorem concreteVerify_eq_encodingHash_bind_afterDigest
-    (publicKey : PublicKey) (epoch : Epoch) (message : Message)
+    (publicKey : PublicKey) (leafIndex : LeafIndex) (message : Message)
     (signature : Signature) :
-    (Concrete.verify publicKey epoch message signature :
+    (Concrete.verify publicKey leafIndex message signature :
         OracleComp HashSpec Bool) = (do
-      let digest ← Concrete.encodingHash publicKey.parameter epoch message
+      let digest ← Concrete.encodingHash publicKey.parameter leafIndex message
         signature.randomness
-      concreteVerificationAfterDigest publicKey epoch signature digest) := by
+      concreteVerificationAfterDigest publicKey leafIndex signature digest) := by
   unfold Concrete.verify concreteVerificationAfterDigest
   apply bind_congr
   intro digest
@@ -1256,18 +1256,18 @@ theorem globalFirstLaneVerifier_eq_hashExecution
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest) (forgery : Forgery) :
     simulateQ (globalFirstLaneVerifierImpl keyView edgeHigh)
-        (Concrete.scheme.verify keyView.publicKey forgery.epoch
+        (Concrete.scheme.verify keyView.publicKey forgery.leafIndex
           forgery.message forgery.signature) =
       simulateQ (fun hashInput => StateT.mk
         (globalFirstLaneVerifierHashExecution keyView edgeHigh hashInput))
-        (Concrete.verify keyView.publicKey forgery.epoch forgery.message
+        (Concrete.verify keyView.publicKey forgery.leafIndex forgery.message
           forgery.signature : OracleComp HashSpec Bool) := by
   change simulateQ (globalFirstLaneVerifierImpl keyView edgeHigh)
-      (liftM (Concrete.verify keyView.publicKey forgery.epoch
+      (liftM (Concrete.verify keyView.publicKey forgery.leafIndex
         forgery.message forgery.signature : OracleComp HashSpec Bool)) = _
   rw [← OracleComp.liftComp_eq_liftM]
   trans simulateQ (globalFirstLaneHashImpl keyView edgeHigh)
-    (Concrete.verify keyView.publicKey forgery.epoch forgery.message
+    (Concrete.verify keyView.publicKey forgery.leafIndex forgery.message
       forgery.signature : OracleComp HashSpec Bool)
   · apply QueryImpl.simulateQ_liftComp_right_eq_of_apply
     intro hashInput
@@ -1278,12 +1278,12 @@ theorem globalFirstLaneVerifier_eq_hashExecution
     rfl
 
 theorem concreteEncodingHash_eq_query
-    (parameter : PublicParameter) (epoch : Epoch) (message : Message)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (message : Message)
     (randomness : Randomness) :
-    (Concrete.encodingHash parameter epoch message randomness :
+    (Concrete.encodingHash parameter leafIndex message randomness :
         OracleComp HashSpec Digest) = (do
       let output ← HasQuery.query (spec := HashSpec)
-        (tweakableHashInput parameter (.encoding epoch)
+        (tweakableHashInput parameter (.encoding leafIndex)
           (Concrete.encodingPayload message randomness))
       pure (truncateHash output)) := by
   unfold Concrete.encodingHash Concrete.tweakableHash Concrete.oracleHash
@@ -1328,7 +1328,7 @@ theorem globalFirstLaneEncodingHash_support_decompose
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest)
-    (epoch : Epoch) (message : Message) (randomness : Randomness)
+    (leafIndex : LeafIndex) (message : Message) (randomness : Randomness)
     (initialState : GlobalCausalHashState)
     (result : (Digest × GlobalCausalHashState) ×
       FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
@@ -1336,7 +1336,7 @@ theorem globalFirstLaneEncodingHash_support_decompose
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         ((simulateQ (fun hashInput => StateT.mk
           (globalFirstLaneVerifierHashExecution keyView edgeHigh hashInput))
-            (Concrete.encodingHash keyView.publicKey.parameter epoch message
+            (Concrete.encodingHash keyView.publicKey.parameter leafIndex message
               randomness : OracleComp HashSpec Digest)).run initialState)
                 ).run)) :
     ∃ queryHead : (HashOutput × GlobalCausalHashState) ×
@@ -1344,13 +1344,13 @@ theorem globalFirstLaneEncodingHash_support_decompose
       queryHead ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           (globalFirstLaneVerifierHashExecution keyView edgeHigh
-            (tweakableHashInput keyView.publicKey.parameter (.encoding epoch)
+            (tweakableHashInput keyView.publicKey.parameter (.encoding leafIndex)
               (Concrete.encodingPayload message randomness)) initialState)).run) ∧
       result = ((truncateHash queryHead.1.1, queryHead.1.2), queryHead.2) := by
   rw [concreteEncodingHash_eq_query] at hresult
   exact simulateQ_eagerTrace_query_pure_support_decompose table
     (globalFirstLaneVerifierHashExecution keyView edgeHigh)
-      (tweakableHashInput keyView.publicKey.parameter (.encoding epoch)
+      (tweakableHashInput keyView.publicKey.parameter (.encoding leafIndex)
         (Concrete.encodingPayload message randomness)) truncateHash
       initialState result hresult
 
@@ -1364,7 +1364,7 @@ theorem globalFirstLaneVerifier_support_decompose_raw
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         ((simulateQ (globalFirstLaneVerifierImpl keyView edgeHigh)
-          (Concrete.scheme.verify keyView.publicKey forgery.epoch
+          (Concrete.scheme.verify keyView.publicKey forgery.leafIndex
             forgery.message forgery.signature)).run initialState)).run)) :
     ∃ (queryHead : (HashOutput × GlobalCausalHashState) ×
           FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
@@ -1374,14 +1374,14 @@ theorem globalFirstLaneVerifier_support_decompose_raw
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           (globalFirstLaneVerifierHashExecution keyView edgeHigh
             (tweakableHashInput keyView.publicKey.parameter
-              (.encoding forgery.epoch)
+              (.encoding forgery.leafIndex)
               (Concrete.encodingPayload forgery.message
                 forgery.signature.randomness)) initialState)).run) ∧
       tail ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           ((simulateQ (fun hashInput => StateT.mk
             (globalFirstLaneVerifierHashExecution keyView edgeHigh hashInput))
-              (concreteVerificationAfterDigest keyView.publicKey forgery.epoch
+              (concreteVerificationAfterDigest keyView.publicKey forgery.leafIndex
                 forgery.signature (truncateHash queryHead.1.1))).run
                   queryHead.1.2)).run) ∧
       result = (tail.1, queryHead.2 ++ tail.2) := by
@@ -1395,7 +1395,7 @@ theorem globalFirstLaneVerifier_support_decompose_raw
   obtain ⟨tail, htail, rfl⟩ := htail
   obtain ⟨queryHead, hquery, rfl⟩ :=
     globalFirstLaneEncodingHash_support_decompose table keyView edgeHigh
-      forgery.epoch forgery.message forgery.signature.randomness initialState
+      forgery.leafIndex forgery.message forgery.signature.randomness initialState
         head hhead
   refine ⟨queryHead, tail, hquery, ?_, ?_⟩
   · simpa using htail
@@ -1413,7 +1413,7 @@ theorem globalFirstLaneVerifier_support_decompose
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         ((simulateQ (globalFirstLaneVerifierImpl keyView edgeHigh)
-          (Concrete.scheme.verify keyView.publicKey forgery.epoch
+          (Concrete.scheme.verify keyView.publicKey forgery.leafIndex
             forgery.message forgery.signature)).run initialState)).run)) :
     ∃ (queryHead : (HashOutput × GlobalCausalHashState) ×
           FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
@@ -1421,16 +1421,16 @@ theorem globalFirstLaneVerifier_support_decompose
           FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex),
       queryHead ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
-          (globalFirstLaneAttackerHashQueryAtEpoch keyView.secretKey
+          (globalFirstLaneAttackerHashQueryAtLeafIndex keyView.secretKey
             (Concrete.CacheView.encodingInput keyView.secretKey.parameter
-              forgery.epoch
+              forgery.leafIndex
                 (forgery.message, forgery.signature.randomness))
-            initialState forgery.epoch)).run) ∧
+            initialState forgery.leafIndex)).run) ∧
       tail ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           ((simulateQ (fun hashInput => StateT.mk
             (globalFirstLaneVerifierHashExecution keyView edgeHigh hashInput))
-              (concreteVerificationAfterDigest keyView.publicKey forgery.epoch
+              (concreteVerificationAfterDigest keyView.publicKey forgery.leafIndex
                 forgery.signature (truncateHash queryHead.1.1))).run
                   queryHead.1.2)).run) ∧
       result = (tail.1, queryHead.2 ++ tail.2) := by
@@ -1438,21 +1438,21 @@ theorem globalFirstLaneVerifier_support_decompose
     globalFirstLaneVerifier_support_decompose_raw table keyView edgeHigh
       forgery initialState result hresult
   let targetInput := Concrete.CacheView.encodingInput
-    keyView.secretKey.parameter forgery.epoch
+    keyView.secretKey.parameter forgery.leafIndex
       (forgery.message, forgery.signature.randomness)
   have hqueryInput :
       tweakableHashInput keyView.publicKey.parameter
-          (.encoding forgery.epoch)
+          (.encoding forgery.leafIndex)
           (Concrete.encodingPayload forgery.message
             forgery.signature.randomness) = targetInput := by
     simp [targetInput, Concrete.CacheView.encodingInput, hparameter]
   rw [hqueryInput] at hquery
   unfold globalFirstLaneVerifierHashExecution at hquery
-  have hepoch : encodingInputEpoch? keyView.secretKey.parameter targetInput =
-      some forgery.epoch := by
+  have hleafIndex : encodingInputLeafIndex? keyView.secretKey.parameter targetInput =
+      some forgery.leafIndex := by
     simp [targetInput]
   rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_some _ _ _ _
-    forgery.epoch hepoch] at hquery
+    forgery.leafIndex hleafIndex] at hquery
   refine ⟨queryHead, tail, ?_, htail, hresultEq⟩
   · simpa [targetInput] using hquery
 
@@ -1467,39 +1467,39 @@ theorem globalFirstLaneVerifier_freshEncoding_mem_trace
     (targetOutput : HashOutput)
     (hfresh : initialState.cache
       (Concrete.CacheView.encodingInput keyView.secretKey.parameter
-        forgery.epoch (forgery.message, forgery.signature.randomness)) = none)
+        forgery.leafIndex (forgery.message, forgery.signature.randomness)) = none)
     (hfinal : result.1.2.cache
       (Concrete.CacheView.encodingInput keyView.secretKey.parameter
-        forgery.epoch (forgery.message, forgery.signature.randomness)) =
+        forgery.leafIndex (forgery.message, forgery.signature.randomness)) =
           some targetOutput)
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         ((simulateQ (globalFirstLaneVerifierImpl keyView edgeHigh)
-          (Concrete.scheme.verify keyView.publicKey forgery.epoch
+          (Concrete.scheme.verify keyView.publicKey forgery.leafIndex
             forgery.message forgery.signature)).run initialState)).run)) :
-    .query forgery.epoch targetOutput ∈ result.2.encodingActions := by
+    .query forgery.leafIndex targetOutput ∈ result.2.encodingActions := by
   obtain ⟨queryHead, tail, hquery, htail, rfl⟩ :=
     globalFirstLaneVerifier_support_decompose table keyView edgeHigh forgery
       initialState hparameter result hresult
   let targetInput := Concrete.CacheView.encodingInput
-    keyView.secretKey.parameter forgery.epoch
+    keyView.secretKey.parameter forgery.leafIndex
       (forgery.message, forgery.signature.randomness)
-  have hhead := globalFirstLaneAttackerHashQueryAtEpoch_cacheGrowth table
-    keyView.secretKey targetInput initialState forgery.epoch queryHead hquery
+  have hhead := globalFirstLaneAttackerHashQueryAtLeafIndex_cacheGrowth table
+    keyView.secretKey targetInput initialState forgery.leafIndex queryHead hquery
   have htailLe := globalFirstLaneVerifierHashExecution_simulateQ_cache_le
     table keyView edgeHigh
-      (concreteVerificationAfterDigest keyView.publicKey forgery.epoch
+      (concreteVerificationAfterDigest keyView.publicKey forgery.leafIndex
         forgery.signature (truncateHash queryHead.1.1))
       queryHead.1.2 tail htail
   have htailGrowth : CacheGrowthRepresented
       (fun _ : Unit => targetInput)
-      (fun _ output => EncodingMonitor.ObservedAction.query forgery.epoch output)
+      (fun _ output => EncodingMonitor.ObservedAction.query forgery.leafIndex output)
       queryHead.1.2.cache tail.1.2.cache tail.2.encodingActions := by
     constructor
     · exact htailLe
     · intro _ output hfreshMiddle _hfinal
-      have hcached := (globalFirstLaneAttackerHashQueryAtEpoch_cacheGrowth
-        table keyView.secretKey targetInput initialState forgery.epoch
+      have hcached := (globalFirstLaneAttackerHashQueryAtLeafIndex_cacheGrowth
+        table keyView.secretKey targetInput initialState forgery.leafIndex
           queryHead hquery).2
       rw [hcached] at hfreshMiddle
       contradiction
@@ -1576,7 +1576,7 @@ theorem globalFirstLaneExactTracedVerifier_append_trace_sublist
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         ((simulateQ (globalFirstLaneExactTracedVerifierImpl keyView edgeHigh)
-          (Concrete.scheme.verify keyView.publicKey forgery.epoch
+          (Concrete.scheme.verify keyView.publicKey forgery.leafIndex
             forgery.message forgery.signature)).run state)).run)) :
     List.Sublist
       (appendVerificationEncodingObservation keyView.secretKey forgery
@@ -1586,12 +1586,12 @@ theorem globalFirstLaneExactTracedVerifier_append_trace_sublist
   obtain ⟨baseResult, hbase, heq⟩ :=
     globalFirstLaneExactTracedVerifier_eager_support_decompose table keyView
       edgeHigh
-      (Concrete.scheme.verify keyView.publicKey forgery.epoch
+      (Concrete.scheme.verify keyView.publicKey forgery.leafIndex
         forgery.message forgery.signature)
       state result hresult
   subst result
   let forgedInput := Concrete.CacheView.encodingInput
-    keyView.secretKey.parameter forgery.epoch
+    keyView.secretKey.parameter forgery.leafIndex
       (forgery.message, forgery.signature.randomness)
   by_cases hfresh : state.causalState.cache forgedInput = none
   · cases houtput : baseResult.1.2.cache forgedInput with
@@ -1616,7 +1616,7 @@ theorem globalFirstLaneUniformImpl_run
       pure (output, state)) := by
   rfl
 
-theorem globalFirstLaneUniformImpl_validSignEpochs_eq_nil
+theorem globalFirstLaneUniformImpl_validSignLeafIndices_eq_nil
     (table : GlobalChainValueIndex → Digest) (n : Nat)
     (state : GlobalCausalHashState)
     (result : (Fin (n + 1) × GlobalCausalHashState) ×
@@ -1624,7 +1624,7 @@ theorem globalFirstLaneUniformImpl_validSignEpochs_eq_nil
     (hresult : result ∈ support
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         ((globalFirstLaneUniformImpl n).run state)).run)) :
-    CappedEncodingMonitor.validObservedSignEpochs
+    CappedEncodingMonitor.validObservedSignLeafIndices
       result.2.encodingActions = [] := by
   rw [globalFirstLaneUniformImpl_run] at hresult
   rw [simulateQ_bind, WriterT.run_bind', mem_support_bind_iff] at hresult
@@ -1638,12 +1638,12 @@ theorem globalFirstLaneUniformImpl_validSignEpochs_eq_nil
   simp only [simulateQ_pure, WriterT.run_pure', map_pure, support_pure,
     Set.mem_singleton_iff, Prod.map_apply, id_eq] at htail
   subst result
-  simp [CappedEncodingMonitor.validObservedSignEpochs,
+  simp [CappedEncodingMonitor.validObservedSignLeafIndices,
     FirstLaneOracleSimulation.ActionTrace.encodingActions,
     CappedEncodingMonitor.validActions,
-    EncodingMonitor.observedSignEpochs]
+    EncodingMonitor.observedSignLeafIndices]
 
-theorem globalFirstLaneHashRun_validSignEpochs_eq_nil
+theorem globalFirstLaneHashRun_validSignLeafIndices_eq_nil
     (table : GlobalChainValueIndex → Digest)
     (high : GlobalChainValueIndex → Digest) (secretKey : SecretKey)
     (input : HashInput) (state : GlobalCausalHashState)
@@ -1653,28 +1653,28 @@ theorem globalFirstLaneHashRun_validSignEpochs_eq_nil
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         (globalFirstLaneAttackerHashQueryFromHighRun high secretKey input state)
         ).run)) :
-    CappedEncodingMonitor.validObservedSignEpochs
+    CappedEncodingMonitor.validObservedSignLeafIndices
       result.2.encodingActions = [] := by
-  cases hepoch : encodingInputEpoch? secretKey.parameter input with
+  cases hleafIndex : encodingInputLeafIndex? secretKey.parameter input with
   | none =>
       rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_none high secretKey
-        input state hepoch] at hresult
+        input state hleafIndex] at hresult
       have htrace := globalFirstLaneLiftRevealProbe_encodingActions_eq_nil table
         ((globalCausalAttackerHashQueryFromHigh high secretKey input).run state)
           result hresult
       rw [htrace]
-      simp [CappedEncodingMonitor.validObservedSignEpochs,
+      simp [CappedEncodingMonitor.validObservedSignLeafIndices,
         CappedEncodingMonitor.validActions,
-        EncodingMonitor.observedSignEpochs]
-  | some epoch =>
+        EncodingMonitor.observedSignLeafIndices]
+  | some leafIndex =>
       rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_some high secretKey
-        input state epoch hepoch] at hresult
-      have htrace := globalFirstLaneAttackerHashQueryAtEpoch_trace table
-        secretKey input state epoch result hresult
+        input state leafIndex hleafIndex] at hresult
+      have htrace := globalFirstLaneAttackerHashQueryAtLeafIndex_trace table
+        secretKey input state leafIndex result hresult
       rw [htrace]
       split
-      · exact CappedEncodingMonitor.validObservedSignEpochs_singleton_query
-          epoch result.1.1
+      · exact CappedEncodingMonitor.validObservedSignLeafIndices_singleton_query
+          leafIndex result.1.1
       · rfl
 
 theorem globalExactTracedLift_eager_support_decompose
@@ -1715,7 +1715,7 @@ theorem globalFirstLaneExactTracedMappedAdversaryImpl_hash_eq_run
             input)) := by
   rfl
 
-theorem globalExactTracedHash_validSignEpochs_eq_nil
+theorem globalExactTracedHash_validSignLeafIndices_eq_nil
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (input : HashInput)
@@ -1732,19 +1732,19 @@ theorem globalExactTracedHash_validSignEpochs_eq_nil
       baseResult ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           (base.run state.causalState)).run) →
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         baseResult.2.encodingActions = []) :
-    CappedEncodingMonitor.validObservedSignEpochs
+    CappedEncodingMonitor.validObservedSignLeafIndices
       result.2.encodingActions = [] := by
   obtain ⟨baseResult, hbase, hresultEq⟩ :=
     globalExactTracedLift_eager_support_decompose table keyView
       (.inl (.inr input)) base state result hresult
   have htraceEq := congrArg (fun candidate =>
-    CappedEncodingMonitor.validObservedSignEpochs
+    CappedEncodingMonitor.validObservedSignLeafIndices
       candidate.2.encodingActions) hresultEq
   exact htraceEq.trans (hnil baseResult hbase)
 
-theorem globalExactTracedHash_validSignEpochs_step
+theorem globalExactTracedHash_validSignLeafIndices_step
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (input : HashInput)
@@ -1761,17 +1761,17 @@ theorem globalExactTracedHash_validSignEpochs_step
       baseResult ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           (base.run state.causalState)).run) →
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         baseResult.2.encodingActions = []) :
     List.Sublist
       ((state.attackerTrace.toSigningLog.map
-          fun entry => entry.1.epoch) ++
-        CappedEncodingMonitor.validObservedSignEpochs
+          fun entry => entry.1.leafIndex) ++
+        CappedEncodingMonitor.validObservedSignLeafIndices
           result.2.encodingActions)
       (result.1.2.attackerTrace.toSigningLog.map
-        fun entry => entry.1.epoch) := by
+        fun entry => entry.1.leafIndex) := by
   have htrace :=
-    globalExactTracedHash_validSignEpochs_eq_nil table keyView
+    globalExactTracedHash_validSignLeafIndices_eq_nil table keyView
       input base state result hresult hnil
   obtain ⟨_baseResult, _hbase, hresultEq⟩ :=
     globalExactTracedLift_eager_support_decompose table keyView
@@ -1782,13 +1782,13 @@ theorem globalExactTracedHash_validSignEpochs_step
       candidate.1.2.attackerTrace) hresultEq
     simpa [globalExactTracedNextState, attackerActionFragment] using hstateEq'
   have hstate : result.1.2.attackerTrace.toSigningLog.map
-      (fun entry => entry.1.epoch) =
-      state.attackerTrace.toSigningLog.map (fun entry => entry.1.epoch) := by
+      (fun entry => entry.1.leafIndex) =
+      state.attackerTrace.toSigningLog.map (fun entry => entry.1.leafIndex) := by
     rw [hstateEq, AttackerActionTrace.toSigningLog_append, List.map_append]
     simp [AttackerActionTrace.toSigningLog, AttackerAction.signingEntry?]
   rw [htrace, List.append_nil, hstate]
 
-theorem globalExactTracedLift_oracle_validSignEpochs_step
+theorem globalExactTracedLift_oracle_validSignLeafIndices_step
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (worldInput : OracleWorld.Domain)
@@ -1806,15 +1806,15 @@ theorem globalExactTracedLift_oracle_validSignEpochs_step
       baseResult ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           (base.run initialState.causalState)).run) →
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         baseResult.2.encodingActions = []) :
     List.Sublist
       ((initialState.attackerTrace.toSigningLog.map
-          fun entry => entry.1.epoch) ++
-        CappedEncodingMonitor.validObservedSignEpochs
+          fun entry => entry.1.leafIndex) ++
+        CappedEncodingMonitor.validObservedSignLeafIndices
           result.2.encodingActions)
       (result.1.2.attackerTrace.toSigningLog.map
-        fun entry => entry.1.epoch) := by
+        fun entry => entry.1.leafIndex) := by
   obtain ⟨baseResult, hbase, hresultEq⟩ :=
     globalExactTracedLift_eager_support_decompose table keyView
       (.inl worldInput) base initialState result hresult
@@ -1826,10 +1826,10 @@ theorem globalExactTracedLift_oracle_validSignEpochs_step
     have hstateEq := congrArg (fun candidate =>
       candidate.1.2.attackerTrace) hresultEq
     simpa [globalExactTracedNextState, houtputEq] using hstateEq
-  have htrace : CappedEncodingMonitor.validObservedSignEpochs
+  have htrace : CappedEncodingMonitor.validObservedSignLeafIndices
       result.2.encodingActions = [] := by
     have htraceEq := congrArg (fun candidate =>
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         candidate.2.encodingActions) hresultEq
     rw [htraceEq]
     exact hnil baseResult hbase
@@ -1838,7 +1838,7 @@ theorem globalExactTracedLift_oracle_validSignEpochs_step
   simp [attackerActionFragment, AttackerActionTrace.toSigningLog,
     AttackerAction.signingEntry?]
 
-theorem globalExactTracedLift_signing_validSignEpochs_step
+theorem globalExactTracedLift_signing_validSignLeafIndices_step
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (request : SignRequest)
@@ -1855,15 +1855,15 @@ theorem globalExactTracedLift_signing_validSignEpochs_step
       baseResult ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           (base.run initialState.causalState)).run) →
-      List.Sublist (CappedEncodingMonitor.validObservedSignEpochs
-        baseResult.2.encodingActions) [request.epoch]) :
+      List.Sublist (CappedEncodingMonitor.validObservedSignLeafIndices
+        baseResult.2.encodingActions) [request.leafIndex]) :
     List.Sublist
       ((initialState.attackerTrace.toSigningLog.map
-          fun entry => entry.1.epoch) ++
-        CappedEncodingMonitor.validObservedSignEpochs
+          fun entry => entry.1.leafIndex) ++
+        CappedEncodingMonitor.validObservedSignLeafIndices
           result.2.encodingActions)
       (result.1.2.attackerTrace.toSigningLog.map
-        fun entry => entry.1.epoch) := by
+        fun entry => entry.1.leafIndex) := by
   obtain ⟨baseResult, hbase, hresultEq⟩ :=
     globalExactTracedLift_eager_support_decompose table keyView
       (.inr request) base initialState result hresult
@@ -1876,22 +1876,22 @@ theorem globalExactTracedLift_signing_validSignEpochs_step
       candidate.1.2.attackerTrace) hresultEq
     simpa [globalExactTracedNextState, houtputEq] using hstateEq
   have htraceSub : List.Sublist
-      (CappedEncodingMonitor.validObservedSignEpochs
-        result.2.encodingActions) [request.epoch] := by
+      (CappedEncodingMonitor.validObservedSignLeafIndices
+        result.2.encodingActions) [request.leafIndex] := by
     have htraceEq := congrArg (fun candidate =>
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         candidate.2.encodingActions) hresultEq
     rw [htraceEq]
     exact hsub baseResult hbase
   have happended := (List.Sublist.refl
     (initialState.attackerTrace.toSigningLog.map
-      fun entry => entry.1.epoch)).append htraceSub
+      fun entry => entry.1.leafIndex)).append htraceSub
   rw [hstate]
   simpa [AttackerActionTrace.toSigningLog_append,
     attackerActionFragment, AttackerActionTrace.toSigningLog,
     AttackerAction.signingEntry?] using happended
 
-theorem globalFirstLaneExactTracedMappedAdversaryImpl_uniform_validSignEpochs_step
+theorem globalFirstLaneExactTracedMappedAdversaryImpl_uniform_validSignLeafIndices_step
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest)
@@ -1906,23 +1906,23 @@ theorem globalFirstLaneExactTracedMappedAdversaryImpl_uniform_validSignEpochs_st
           (.inl (.inl n))).run initialState)).run)) :
     List.Sublist
       ((initialState.attackerTrace.toSigningLog.map
-          fun entry => entry.1.epoch) ++
-        CappedEncodingMonitor.validObservedSignEpochs
+          fun entry => entry.1.leafIndex) ++
+        CappedEncodingMonitor.validObservedSignLeafIndices
           result.2.encodingActions)
       (result.1.2.attackerTrace.toSigningLog.map
-        fun entry => entry.1.epoch) := by
+        fun entry => entry.1.leafIndex) := by
   unfold globalFirstLaneExactTracedMappedAdversaryImpl
     globalFirstLaneExactTracedOracleImpl at hresult
-  apply globalExactTracedLift_oracle_validSignEpochs_step table
+  apply globalExactTracedLift_oracle_validSignLeafIndices_step table
     keyView (.inl n)
     (StateT.mk fun causalState =>
       globalFirstLaneOracleExecution keyView edgeHigh (.inl n) causalState)
     initialState result hresult
   intro baseResult hbase
-  exact globalFirstLaneUniformImpl_validSignEpochs_eq_nil table n
+  exact globalFirstLaneUniformImpl_validSignLeafIndices_eq_nil table n
     initialState.causalState baseResult hbase
 
-theorem globalFirstLaneExactTracedMappedAdversaryImpl_signing_validSignEpochs_step
+theorem globalFirstLaneExactTracedMappedAdversaryImpl_signing_validSignLeafIndices_step
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest)
@@ -1937,21 +1937,21 @@ theorem globalFirstLaneExactTracedMappedAdversaryImpl_signing_validSignEpochs_st
           (.inr request)).run initialState)).run)) :
     List.Sublist
       ((initialState.attackerTrace.toSigningLog.map
-          fun entry => entry.1.epoch) ++
-        CappedEncodingMonitor.validObservedSignEpochs
+          fun entry => entry.1.leafIndex) ++
+        CappedEncodingMonitor.validObservedSignLeafIndices
           result.2.encodingActions)
       (result.1.2.attackerTrace.toSigningLog.map
-        fun entry => entry.1.epoch) := by
+        fun entry => entry.1.leafIndex) := by
   unfold globalFirstLaneExactTracedMappedAdversaryImpl
     globalFirstLaneExactTracedSigningImpl at hresult
-  apply globalExactTracedLift_signing_validSignEpochs_step table
+  apply globalExactTracedLift_signing_validSignLeafIndices_step table
     keyView request (globalFirstLaneSigningImpl keyView request)
       initialState result hresult
   intro baseResult hbase
-  exact globalFirstLaneSigningQuery_validSignEpochs_sublist_singleton table
+  exact globalFirstLaneSigningQuery_validSignLeafIndices_sublist_singleton table
     keyView request initialState.causalState baseResult hbase
 
-theorem globalFirstLaneExactTracedMappedAdversary_validSignEpochs_sublist_of_hashRun
+theorem globalFirstLaneExactTracedMappedAdversary_validSignLeafIndices_sublist_of_hashRun
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest)
@@ -1966,7 +1966,7 @@ theorem globalFirstLaneExactTracedMappedAdversary_validSignEpochs_sublist_of_has
       result ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           (hashRun input state)).run) →
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         result.2.encodingActions = [])
     (computation : OracleComp (OracleWorld + SigningSpec) α)
     (initialState : GlobalHighDirectTracedState)
@@ -1979,27 +1979,27 @@ theorem globalFirstLaneExactTracedMappedAdversary_validSignEpochs_sublist_of_has
             computation).run initialState)).run)) :
     List.Sublist
       ((initialState.attackerTrace.toSigningLog.map
-          fun entry => entry.1.epoch) ++
-        CappedEncodingMonitor.validObservedSignEpochs
+          fun entry => entry.1.leafIndex) ++
+        CappedEncodingMonitor.validObservedSignLeafIndices
           result.2.encodingActions)
       (result.1.2.attackerTrace.toSigningLog.map
-        fun entry => entry.1.epoch) := by
+        fun entry => entry.1.leafIndex) := by
   apply simulateQ_eagerTrace_support_invariant table
     (globalFirstLaneExactTracedMappedAdversaryImpl keyView edgeHigh)
     (fun initial trace final => List.Sublist
-      ((initial.attackerTrace.toSigningLog.map fun entry => entry.1.epoch) ++
-        CappedEncodingMonitor.validObservedSignEpochs trace.encodingActions)
-      (final.attackerTrace.toSigningLog.map fun entry => entry.1.epoch))
+      ((initial.attackerTrace.toSigningLog.map fun entry => entry.1.leafIndex) ++
+        CappedEncodingMonitor.validObservedSignLeafIndices trace.encodingActions)
+      (final.attackerTrace.toSigningLog.map fun entry => entry.1.leafIndex))
   · intro state
-    simp [CappedEncodingMonitor.validObservedSignEpochs,
+    simp [CappedEncodingMonitor.validObservedSignLeafIndices,
       FirstLaneOracleSimulation.ActionTrace.encodingActions,
-      CappedEncodingMonitor.validActions, EncodingMonitor.observedSignEpochs]
+      CappedEncodingMonitor.validActions, EncodingMonitor.observedSignLeafIndices]
   · intro initial middle final headTrace tailTrace hhead htail
     rw [FirstLaneOracleSimulation.ActionTrace.encodingActions_append,
-      CappedEncodingMonitor.validObservedSignEpochs_append]
+      CappedEncodingMonitor.validObservedSignLeafIndices_append]
     simpa [List.append_assoc] using
       (hhead.append (List.Sublist.refl
-        (CappedEncodingMonitor.validObservedSignEpochs
+        (CappedEncodingMonitor.validObservedSignLeafIndices
           tailTrace.encodingActions))).trans htail
   · intro input state stepResult hstep
     cases input with
@@ -2007,21 +2007,21 @@ theorem globalFirstLaneExactTracedMappedAdversary_validSignEpochs_sublist_of_has
         cases worldInput with
         | inl n =>
             exact
-              globalFirstLaneExactTracedMappedAdversaryImpl_uniform_validSignEpochs_step
+              globalFirstLaneExactTracedMappedAdversaryImpl_uniform_validSignLeafIndices_step
                 table keyView edgeHigh n state stepResult hstep
         | inr hashInput =>
             rw [hhashEq] at hstep
-            apply globalExactTracedHash_validSignEpochs_step table keyView
+            apply globalExactTracedHash_validSignLeafIndices_step table keyView
               hashInput (StateT.mk (hashRun hashInput)) state stepResult hstep
             intro baseResult hbase
             exact hhashNil hashInput state.causalState baseResult hbase
     | inr request =>
         exact
-          globalFirstLaneExactTracedMappedAdversaryImpl_signing_validSignEpochs_step
+          globalFirstLaneExactTracedMappedAdversaryImpl_signing_validSignLeafIndices_step
             table keyView edgeHigh request state stepResult hstep
   · exact hresult
 
-theorem globalFirstLaneExactTracedMappedAdversary_validSignEpochs_sublist
+theorem globalFirstLaneExactTracedMappedAdversary_validSignLeafIndices_sublist
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest)
@@ -2036,19 +2036,19 @@ theorem globalFirstLaneExactTracedMappedAdversary_validSignEpochs_sublist
             computation).run initialState)).run)) :
     List.Sublist
       ((initialState.attackerTrace.toSigningLog.map
-          fun entry => entry.1.epoch) ++
-        CappedEncodingMonitor.validObservedSignEpochs
+          fun entry => entry.1.leafIndex) ++
+        CappedEncodingMonitor.validObservedSignLeafIndices
           result.2.encodingActions)
       (result.1.2.attackerTrace.toSigningLog.map
-        fun entry => entry.1.epoch) := by
+        fun entry => entry.1.leafIndex) := by
   exact
-    globalFirstLaneExactTracedMappedAdversary_validSignEpochs_sublist_of_hashRun
+    globalFirstLaneExactTracedMappedAdversary_validSignLeafIndices_sublist_of_hashRun
       table keyView edgeHigh
         (globalFirstLaneAttackerHashQueryFromHighRun
           (globalChainValueHighTableOfEdges edgeHigh) keyView.secretKey)
         (globalFirstLaneExactTracedMappedAdversaryImpl_hash_eq_run keyView
           edgeHigh)
-        (globalFirstLaneHashRun_validSignEpochs_eq_nil table
+        (globalFirstLaneHashRun_validSignLeafIndices_eq_nil table
           (globalChainValueHighTableOfEdges edgeHigh) keyView.secretKey)
         computation initialState result hresult
 
@@ -2060,7 +2060,7 @@ theorem globalFirstLaneVerifierImpl_hash_eq_run
         (globalChainValueHighTableOfEdges edgeHigh) keyView.secretKey input) := by
   rfl
 
-theorem globalFirstLaneVerifier_validSignEpochs_eq_nil_of_hashRun
+theorem globalFirstLaneVerifier_validSignLeafIndices_eq_nil_of_hashRun
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest)
@@ -2073,7 +2073,7 @@ theorem globalFirstLaneVerifier_validSignEpochs_eq_nil_of_hashRun
       result ∈ support
         ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
           (hashRun input state)).run) →
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         result.2.encodingActions = [])
     (computation : OracleComp OracleWorld α)
     (state : GlobalCausalHashState)
@@ -2083,33 +2083,33 @@ theorem globalFirstLaneVerifier_validSignEpochs_eq_nil_of_hashRun
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         ((simulateQ (globalFirstLaneVerifierImpl keyView edgeHigh)
           computation).run state)).run)) :
-    CappedEncodingMonitor.validObservedSignEpochs
+    CappedEncodingMonitor.validObservedSignLeafIndices
       result.2.encodingActions = [] := by
   apply simulateQ_eagerTrace_support_invariant table
     (globalFirstLaneVerifierImpl keyView edgeHigh)
     (fun _initial trace _final =>
-      CappedEncodingMonitor.validObservedSignEpochs
+      CappedEncodingMonitor.validObservedSignLeafIndices
         trace.encodingActions = [])
   · intro state
-    simp [CappedEncodingMonitor.validObservedSignEpochs,
+    simp [CappedEncodingMonitor.validObservedSignLeafIndices,
       FirstLaneOracleSimulation.ActionTrace.encodingActions,
-      CappedEncodingMonitor.validActions, EncodingMonitor.observedSignEpochs]
+      CappedEncodingMonitor.validActions, EncodingMonitor.observedSignLeafIndices]
   · intro initial middle final headTrace tailTrace hhead htail
     simp [FirstLaneOracleSimulation.ActionTrace.encodingActions_append,
-      CappedEncodingMonitor.validObservedSignEpochs_append, hhead, htail]
+      CappedEncodingMonitor.validObservedSignLeafIndices_append, hhead, htail]
   · intro input state stepResult hstep
     cases input with
     | inl n =>
         unfold globalFirstLaneVerifierImpl globalFirstLaneOracleImpl
           globalFirstLaneOracleExecution at hstep
-        exact globalFirstLaneUniformImpl_validSignEpochs_eq_nil table n state
+        exact globalFirstLaneUniformImpl_validSignLeafIndices_eq_nil table n state
           stepResult hstep
     | inr input =>
         rw [hhashEq] at hstep
         exact hhashNil input state stepResult hstep
   · exact hresult
 
-theorem globalFirstLaneVerifier_validSignEpochs_eq_nil
+theorem globalFirstLaneVerifier_validSignLeafIndices_eq_nil
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest)
@@ -2121,18 +2121,18 @@ theorem globalFirstLaneVerifier_validSignEpochs_eq_nil
       ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
         ((simulateQ (globalFirstLaneVerifierImpl keyView edgeHigh)
           computation).run state)).run)) :
-    CappedEncodingMonitor.validObservedSignEpochs
+    CappedEncodingMonitor.validObservedSignLeafIndices
       result.2.encodingActions = [] := by
-  exact globalFirstLaneVerifier_validSignEpochs_eq_nil_of_hashRun table
+  exact globalFirstLaneVerifier_validSignLeafIndices_eq_nil_of_hashRun table
     keyView edgeHigh
       (globalFirstLaneAttackerHashQueryFromHighRun
         (globalChainValueHighTableOfEdges edgeHigh) keyView.secretKey)
       (globalFirstLaneVerifierImpl_hash_eq_run keyView edgeHigh)
-      (globalFirstLaneHashRun_validSignEpochs_eq_nil table
+      (globalFirstLaneHashRun_validSignLeafIndices_eq_nil table
         (globalChainValueHighTableOfEdges edgeHigh) keyView.secretKey)
       computation state result hresult
 
-theorem globalFirstLaneExactTracedVerifier_validSignEpochs_eq_nil
+theorem globalFirstLaneExactTracedVerifier_validSignLeafIndices_eq_nil
     (table : GlobalChainValueIndex → Digest)
     (keyView : ProgrammedGlobalChainKeygenView)
     (edgeHigh : GlobalChainEdgeIndex → Digest)
@@ -2145,16 +2145,16 @@ theorem globalFirstLaneExactTracedVerifier_validSignEpochs_eq_nil
         ((simulateQ
           (globalFirstLaneExactTracedVerifierImpl keyView edgeHigh)
             computation).run state)).run)) :
-    CappedEncodingMonitor.validObservedSignEpochs
+    CappedEncodingMonitor.validObservedSignLeafIndices
       result.2.encodingActions = [] := by
   obtain ⟨baseResult, hbase, hresultEq⟩ :=
     globalFirstLaneExactTracedVerifier_eager_support_decompose table keyView
       edgeHigh computation state result hresult
   have htraceEq := congrArg (fun candidate =>
-    CappedEncodingMonitor.validObservedSignEpochs
+    CappedEncodingMonitor.validObservedSignLeafIndices
       candidate.2.encodingActions) hresultEq
   exact htraceEq.trans
-    (globalFirstLaneVerifier_validSignEpochs_eq_nil table keyView edgeHigh
+    (globalFirstLaneVerifier_validSignLeafIndices_eq_nil table keyView edgeHigh
       computation state.causalState baseResult hbase)
 
 
@@ -2400,13 +2400,13 @@ theorem map_globalHighMonitoredDetailedExecution_full_projection
       (((head.1.1, result.1.1), result.1.2), head.2 ++ result.2)) <$>
       (simulateQ (RevealProbeOracleSimulation.eagerTraceImpl base)
         ((simulateQ (globalHighDirectTracedVerifierImpl keyView edgeHigh)
-          (Concrete.scheme.verify keyView.publicKey head.1.1.epoch
+          (Concrete.scheme.verify keyView.publicKey head.1.1.leafIndex
             head.1.1.message head.1.1.signature)).run head.1.2)).run
   have htail (handled : Forgery × GlobalMonitoredTracedState) :
       (do
         let verified ← (simulateQ (globalHighMonitoredVerifierImpl
           ((keyView, base), edgeHigh))
-          (Concrete.scheme.verify keyView.publicKey handled.1.epoch
+          (Concrete.scheme.verify keyView.publicKey handled.1.leafIndex
             handled.1.message handled.1.signature)).run handled.2
         pure (((handled.1, verified.1),
           GlobalHighDirectTracedState.mk verified.2.1.causal verified.2.2),
@@ -2414,7 +2414,7 @@ theorem map_globalHighMonitoredDetailedExecution_full_projection
     have hvertifier :=
       map_simulate_globalHighMonitored_verifier_exact keyView
         base edgeHigh
-        (Concrete.scheme.verify keyView.publicKey handled.1.epoch
+        (Concrete.scheme.verify keyView.publicKey handled.1.leafIndex
           handled.1.message handled.1.signature) handled.2
     simpa [tail, project, Functor.map_map] using
       congrArg
@@ -2515,17 +2515,17 @@ theorem globalHighExactEncodingEvent_implies_combinedHit
     (trace : FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
     (hencodingSub : List.Sublist encodingTrace trace.encodingActions)
     (hvalidSub : List.Sublist
-      (CappedEncodingMonitor.validObservedSignEpochs
+      (CappedEncodingMonitor.validObservedSignLeafIndices
         trace.encodingActions)
       (attackerTrace.toSigningLog.map
-        fun entry => entry.1.epoch))
+        fun entry => entry.1.leafIndex))
     (hvalid : SigningTranscript.Valid attackerTrace.toSigningLog)
     (hhit : CappedEncodingMonitor.runObserved EncodingMonitor.State.empty
       encodingTrace = true) :
     FirstLaneOracleSimulation.CombinedHit table trace := by
   apply Or.inl
   have hnodup :
-      (CappedEncodingMonitor.validObservedSignEpochs
+      (CappedEncodingMonitor.validObservedSignLeafIndices
         trace.encodingActions).Nodup := by
     exact hvalidSub.nodup hvalid
   exact CappedEncodingMonitor.runObserved_empty_eq_true_mono_sublist

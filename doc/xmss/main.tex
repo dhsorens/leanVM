@@ -31,7 +31,7 @@
 \newcommand{\LE}{\mathsf{LE}}
 \newcommand{\Truncate}{\mathsf{Truncate}}
 \newcommand{\concat}{\mathbin\Vert}
-\newcommand{\ep}{\mathit{ep}}
+\newcommand{\idx}{\mathit{idx}}
 \newcommand{\sk}{\mathit{sk}}
 \newcommand{\pk}{\mathit{pk}}
 \newcommand{\rootnode}{\mathit{root}}
@@ -70,13 +70,13 @@ The key difference with \cite{DKKW25} is the use of short hash digests, of 16 by
 A synchronized signature scheme with lifetime $L$ is a tuple $\SIG=(\Gen,\Sig,\Ver)$, where $\Gen$ is randomized and $\Sig$ and $\Ver$ are deterministic:
 \[
   \Gen\longrightarrow(\pk,\sk),\qquad
-  \Sig(\sk,\ep,m)\longrightarrow\sigma\in\Sigma\cup\{\bot\},\qquad
-  \Ver(\pk,\ep,m,\sigma)\longrightarrow\{0,1\},
+  \Sig(\sk,\idx,m)\longrightarrow\sigma\in\Sigma\cup\{\bot\},\qquad
+  \Ver(\pk,\idx,m,\sigma)\longrightarrow\{0,1\},
 \]
-where $\Sigma$ is the signature space, $m\in\bits{\lmsg}$, and $\ep\in\{0,\ldots,L-1\}$. Whenever $(\pk,\sk)$ is output by $\Gen$ and $\Sig(\sk,\ep,m)$ returns $\sigma\neq\bot$, correctness requires $\Ver(\pk,\ep,m,\sigma)=1$. For each key pair, an epoch must not sign two different messages. Repeating the same input returns the same signature or failure.
+where $\Sigma$ is the signature space, $m\in\bits{\lmsg}$, and $\idx\in\{0,\ldots,L-1\}$. Whenever $(\pk,\sk)$ is output by $\Gen$ and $\Sig(\sk,\idx,m)$ returns $\sigma\neq\bot$, correctness requires $\Ver(\pk,\idx,m,\sigma)=1$. For each key pair, a leaf index must not sign two different messages. Repeating the same input returns the same signature or failure.
 \end{definition}
 
-XMSS is a synchronized signature scheme in which epoch $\ep$ selects a Winternitz one-time key authenticated by leaf $\ep$ of a Merkle tree~\cite{RFC8391}. This specification sets $\lmsg=256$ and $L=2^h=2^{32}$.
+XMSS is a synchronized signature scheme in which the leaf index $\idx$ selects the Winternitz one-time key authenticated by leaf $\idx$ of a Merkle tree~\cite{RFC8391}. This specification sets $\lmsg=256$ and $L=2^h=2^{32}$.
 
 Byte strings are concatenated with $\concat$. Bits and integer encodings are little endian. $\LE_r(a)$ is the unsigned $r$-bit encoding of $a$. All indices are zero based.
 
@@ -118,11 +118,11 @@ Let $\mathsf{protocol\_domain\_sep}=0$. For a one-byte type $t$ and unsigned 32-
 Define
 \[
 \begin{aligned}
-  \mathsf{tweak}_{\mathrm{chain}}(\ep,i,k) &= \mathsf{enc}(1,2^wi+k-1,\ep), &&0\leq i<v,\ 1\leq k\leq2^w-1,\\
-  \mathsf{tweak}_{\mathrm{leaf}}(\ep) &= \mathsf{enc}(2,0,\ep),\\
+  \mathsf{tweak}_{\mathrm{chain}}(\idx,i,k) &= \mathsf{enc}(1,2^wi+k-1,\idx), &&0\leq i<v,\ 1\leq k\leq2^w-1,\\
+  \mathsf{tweak}_{\mathrm{leaf}}(\idx) &= \mathsf{enc}(2,0,\idx),\\
   \mathsf{tweak}_{\mathrm{merkle}}(\ell,j) &= \mathsf{enc}(3,\ell,j), &&1\leq\ell\leq h,\ 0\leq j<2^{h-\ell},\\
-  \mathsf{tweak}_{\mathrm{enc}}(\ep) &= \mathsf{enc}(4,0,\ep),\\
-  \mathsf{tweak}_{\mathrm{rnd}}(\ep,a) &= \mathsf{enc}(12,a,\ep), &&0\leq a<\amax.
+  \mathsf{tweak}_{\mathrm{enc}}(\idx) &= \mathsf{enc}(4,0,\idx),\\
+  \mathsf{tweak}_{\mathrm{rnd}}(\idx,a) &= \mathsf{enc}(7,a,\idx), &&0\leq a<\amax.
 \end{aligned}
 \]
 
@@ -130,9 +130,9 @@ The target-sum code is~\cite{DKKW25}
 \[
   \mathcal C=\left\{(x_0,\ldots,x_{v-1})\in\{0,\ldots,2^w - 1\}^{v}:\sum_{i=0}^{v-1}x_i=T\right\}.
 \]
-Define $\IncEnc(P,m,\rho,\ep)$ by computing
+Define $\IncEnc(P,m,\rho,\idx)$ by computing
 \[
-  D=\Th\!\left(P,\mathsf{tweak}_{\mathrm{enc}}(\ep),m\concat\rho\concat 0^{64}\right).
+  D=\Th\!\left(P,\mathsf{tweak}_{\mathrm{enc}}(\idx),m\concat\rho\concat 0^{64}\right).
 \]
 Write $D=D_0\concat D_1$, where $D_0$ and $D_1$ are $n/2$-bit strings. For $q\in\{0,1\}$, let $d_q\in\{0,\ldots,2^{n/2}-1\}$ be the integer whose $n/2$-bit little-endian encoding is $D_q$. For $0\leq r<v/2$, set
 \[
@@ -141,13 +141,13 @@ Write $D=D_0\concat D_1$, where $D_0$ and $D_1$ are $n/2$-bit strings. For $q\in
 Return $x=(x_0,\ldots,x_{v-1})$ if bit $wv/2=63$ of both $d_0$ and $d_1$ is zero and $x\in\mathcal C$; otherwise return $\bot$.
 
 \begin{definition}[Hash chain]
-For a chain index $i$, epoch $\ep$, start index $k$, number of steps $s$, and value $x\in\mathcal H$, define $\Chain_{\Th,i,\ep}(P,k,s,x)$ recursively by
+For a chain index $i$, leaf index $\idx$, start index $k$, number of steps $s$, and value $x\in\mathcal H$, define $\Chain_{\Th,i,\idx}(P,k,s,x)$ recursively by
 \[
-  \Chain_{\Th,i,\ep}(P,k,0,x)=x
+  \Chain_{\Th,i,\idx}(P,k,0,x)=x
 \]
 and, for $s\geq1$,
 \[
-  \Chain_{\Th,i,\ep}(P,k,s,x)=\Th\!\left(P,\mathsf{tweak}_{\mathrm{chain}}(\ep,i,k+s),\Chain_{\Th,i,\ep}(P,k,s-1,x)\right).
+  \Chain_{\Th,i,\idx}(P,k,s,x)=\Th\!\left(P,\mathsf{tweak}_{\mathrm{chain}}(\idx,i,k+s),\Chain_{\Th,i,\idx}(P,k,s-1,x)\right).
 \]
 The valid range is $0\leq k\leq2^w-1$ and $0\leq s\leq2^w-1-k$.
 \end{definition}
@@ -155,8 +155,8 @@ The valid range is $0\leq k\leq2^w-1$ and $0\leq s\leq2^w-1-k$.
 The one-time public key and its Merkle leaf are
 \[
 \begin{aligned}
-  \mathit{pk}_{\ep,i} &= \Chain_{\Th,i,\ep}(P,0,2^w-1,\mathit{sk}_{\ep,i}), &&0\leq i<v,\\
-  X_{0,\ep} &= \Th\!\left(P,\mathsf{tweak}_{\mathrm{leaf}}(\ep),\mathit{pk}_{\ep,0}\concat\cdots\concat\mathit{pk}_{\ep,v-1}\right).
+  \mathit{pk}_{\idx,i} &= \Chain_{\Th,i,\idx}(P,0,2^w-1,\mathit{sk}_{\idx,i}), &&0\leq i<v,\\
+  X_{0,\idx} &= \Th\!\left(P,\mathsf{tweak}_{\mathrm{leaf}}(\idx),\mathit{pk}_{\idx,0}\concat\cdots\concat\mathit{pk}_{\idx,v-1}\right).
 \end{aligned}
 \]
 
@@ -164,17 +164,17 @@ The one-time public key and its Merkle leaf are
 
 The algorithm $\Gen$ samples a master secret $S\getsr\bits{256}$ and derives
 \[
-  P=\Th\!\left(0^{\lpar},\mathsf{enc}(10,0,0),S\right),
+  P=\Th\!\left(0^{\lpar},\mathsf{enc}(5,0,0),S\right),
   \qquad
-  \mathit{sk}_{\ep,i}=\Th\!\left(P,\mathsf{enc}(0,i,\ep),S\right),
-  \qquad 0\leq\ep<L,\quad 0\leq i<v.
+  \mathit{sk}_{\idx,i}=\Th\!\left(P,\mathsf{enc}(0,i,\idx),S\right),
+  \qquad 0\leq\idx<L,\quad 0\leq i<v.
 \]
 It computes and stores every chain value
 \[
-  C_{\ep,i,k}=\Chain_{\Th,i,\ep}(P,0,k,\mathit{sk}_{\ep,i}),
+  C_{\idx,i,k}=\Chain_{\Th,i,\idx}(P,0,k,\mathit{sk}_{\idx,i}),
   \qquad 0\leq k<2^w.
 \]
-Thus $C_{\ep,i,0}=\mathit{sk}_{\ep,i}$ and $C_{\ep,i,2^w-1}=\mathit{pk}_{\ep,i}$. For $1\leq\ell\leq h$, define
+Thus $C_{\idx,i,0}=\mathit{sk}_{\idx,i}$ and $C_{\idx,i,2^w-1}=\mathit{pk}_{\idx,i}$. For $1\leq\ell\leq h$, define
 \[
   X_{\ell,j}=\Th\!\left(P,\mathsf{tweak}_{\mathrm{merkle}}(\ell,j),X_{\ell-1,2j}\concat X_{\ell-1,2j+1}\right),
   \qquad 0\leq j<2^{h-\ell}.
@@ -183,32 +183,32 @@ Set $\rootnode=X_{h,0}$ and return
 \[
   \pk=(\rootnode,P),
   \qquad
-  \sk=\left(S,P,(C_{\ep,i,k})_{\substack{0\leq\ep<L,\,0\leq i<v,\\0\leq k<2^w}},(X_{\ell,j})_{\substack{0\leq\ell\leq h,\\0\leq j<2^{h-\ell}}}\right).
+  \sk=\left(S,P,(C_{\idx,i,k})_{\substack{0\leq\idx<L,\,0\leq i<v,\\0\leq k<2^w}},(X_{\ell,j})_{\substack{0\leq\ell\leq h,\\0\leq j<2^{h-\ell}}}\right).
 \]
 
 The public key is serialized as $\rootnode\concat P$.
 
 \section{Signing}
 
-$\Sig(\sk,\ep,m)$ is deterministic. The caller must ensure that an epoch signs only one message. The signer makes at most $\amax=2^{32}$ randomizer trials. For $a=0,\ldots,\amax-1$, it derives
+$\Sig(\sk,\idx,m)$ is deterministic. The caller must ensure that a leaf index signs only one message. The signer makes at most $\amax=2^{32}$ randomizer trials. For $a=0,\ldots,\amax-1$, it derives
 \[
-  \rho_a=\Truncate_{\lrnd\text{ bits}}\!\left(\hash(\mathsf{tweak}_{\mathrm{rnd}}(\ep,a)\concat P\concat S\concat m)\right)
+  \rho_a=\Truncate_{\lrnd\text{ bits}}\!\left(\hash(\mathsf{tweak}_{\mathrm{rnd}}(\idx,a)\concat P\concat S\concat m)\right)
 \]
-and computes $x=\IncEnc(P,m,\rho_a,\ep)$. If $x\neq\bot$, it sets $\rho=\rho_a$ and computes
+and computes $x=\IncEnc(P,m,\rho_a,\idx)$. If $x\neq\bot$, it sets $\rho=\rho_a$ and computes
 \[
-  \sigma_{\mathrm{OTS},i}=C_{\ep,i,x_i},
+  \sigma_{\mathrm{OTS},i}=C_{\idx,i,x_i},
   \qquad 0\leq i<v,
 \]
 and the authentication path
 \[
-  A_\ell=X_{\ell,\,\left\lfloor\ep/2^\ell\right\rfloor\mathbin{\mathsf{xor}}1},
+  A_\ell=X_{\ell,\,\left\lfloor\idx/2^\ell\right\rfloor\mathbin{\mathsf{xor}}1},
   \qquad 0\leq\ell<h.
 \]
 and returns
 \[
-  \sigma=(\rho,\sigma_{\mathrm{OTS}},\mathit{path}_{\ep}),
+  \sigma=(\rho,\sigma_{\mathrm{OTS}},\mathit{path}_{\idx}),
   \qquad
-  \mathit{path}_{\ep}=(A_0,\ldots,A_{h-1}),
+  \mathit{path}_{\idx}=(A_0,\ldots,A_{h-1}),
 \]
 serialized as $\sigma_{\mathrm{OTS},0}\concat\cdots\concat\sigma_{\mathrm{OTS},v-1}\concat\rho\concat A_0\concat\cdots\concat A_{h-1}$. If all $\amax$ attempts produce $x=\bot$, it returns $\bot$.
 
@@ -216,12 +216,12 @@ Each trial makes two hash queries: one to derive $\rho_a$ and one to evaluate $\
 
 \section{Verification}
 
-$\Ver(\pk,\ep,m,\bot)=0$. For $\sigma\neq\bot$, $\Ver(\pk,\ep,m,\sigma)$ parses $\pk=(\rootnode,P)$ and $\sigma=(\rho,(y_i)_i,(A_\ell)_\ell)$, then:
+$\Ver(\pk,\idx,m,\bot)=0$. For $\sigma\neq\bot$, $\Ver(\pk,\idx,m,\sigma)$ parses $\pk=(\rootnode,P)$ and $\sigma=(\rho,(y_i)_i,(A_\ell)_\ell)$, then:
 \begin{enumerate}[leftmargin=2em]
-\item Compute $x=\IncEnc(P,m,\rho,\ep)$ and reject if $x=\bot$.
-\item For every $0\leq i<v$, compute $\mathit{pk}'_{\ep,i}=\Chain_{\Th,i,\ep}(P,x_i,2^w-1-x_i,y_i)$.
-\item Set $Z_0=\Th(P,\mathsf{tweak}_{\mathrm{leaf}}(\ep),\mathit{pk}'_{\ep,0}\concat\cdots\concat\mathit{pk}'_{\ep,v-1})$.
-\item For $0\leq\ell<h$, let $j=\lfloor\ep/2^{\ell+1}\rfloor$. If bit $\ell$ of $\ep$ is zero, set $Z_{\ell+1}=\Th(P,\mathsf{tweak}_{\mathrm{merkle}}(\ell+1,j),Z_\ell\concat A_\ell)$; otherwise set $Z_{\ell+1}=\Th(P,\mathsf{tweak}_{\mathrm{merkle}}(\ell+1,j),A_\ell\concat Z_\ell)$.
+\item Compute $x=\IncEnc(P,m,\rho,\idx)$ and reject if $x=\bot$.
+\item For every $0\leq i<v$, compute $\mathit{pk}'_{\idx,i}=\Chain_{\Th,i,\idx}(P,x_i,2^w-1-x_i,y_i)$.
+\item Set $Z_0=\Th(P,\mathsf{tweak}_{\mathrm{leaf}}(\idx),\mathit{pk}'_{\idx,0}\concat\cdots\concat\mathit{pk}'_{\idx,v-1})$.
+\item For $0\leq\ell<h$, let $j=\lfloor\idx/2^{\ell+1}\rfloor$. If bit $\ell$ of $\idx$ is zero, set $Z_{\ell+1}=\Th(P,\mathsf{tweak}_{\mathrm{merkle}}(\ell+1,j),Z_\ell\concat A_\ell)$; otherwise set $Z_{\ell+1}=\Th(P,\mathsf{tweak}_{\mathrm{merkle}}(\ell+1,j),A_\ell\concat Z_\ell)$.
 \item Accept if and only if $Z_h=\rootnode$.
 \end{enumerate}
 
@@ -234,12 +234,12 @@ $\Ver(\pk,\ep,m,\bot)=0$. For $\sigma\neq\bot$, $\Ver(\pk,\ep,m,\sigma)$ parses 
 Let $\SIG=(\Gen,\Sig,\Ver)$ be a synchronized signature scheme whose algorithms use a hash function $\hash:\bits{*}\to\bits{256}$. Consider the following game between a signer and an adversary $\mathcal A$ (a probabilistic algorithm with unbounded running time and memory), with $\hash$ sampled as a random oracle, that both signer and adversary can query. The signer first runs $(\pk,\sk)\gets\Gen$ and gives $\pk$ to $\mathcal A$. The adversary may then adaptively take any of the following actions:
 \begin{enumerate}[leftmargin=2em]
   \item Query the random oracle on any input and receive its 256-bit output.
-  \item Submit a message $m\in\bits{256}$ and an epoch $\ep\in\{0,\ldots,L-1\}$ that it has not used in an earlier signing query, and receive $\sigma\gets\Sig(\sk,\ep,m)$ from the signer.
-  \item Terminate with a claimed forgery $(m^*,\ep^*,\sigma^*)$.
+  \item Submit a message $m\in\bits{256}$ and a leaf index $\idx\in\{0,\ldots,L-1\}$ that it has not used in an earlier signing query, and receive $\sigma\gets\Sig(\sk,\idx,m)$ from the signer.
+  \item Terminate with a claimed forgery $(m^*,\idx^*,\sigma^*)$.
 \end{enumerate}
-The adversary wins if $\Ver(\pk,\ep^*,m^*,\sigma^*)=1$ and the signer did not return $\sigma^*$ in response to a signing query for $(m^*,\ep^*)$, meaning:
+The adversary wins if $\Ver(\pk,\idx^*,m^*,\sigma^*)=1$ and the signer did not return $\sigma^*$ in response to a signing query for $(m^*,\idx^*)$, meaning:
 \begin{itemize}[leftmargin=2em]
-  \item if the adversary never queried a signature for $(m^*,\ep^*)$;
+  \item if the adversary never queried a signature for $(m^*,\idx^*)$;
   \item or it did, but the signer's answer was not $\sigma^*$.
 \end{itemize}
 
@@ -264,7 +264,7 @@ TODO
 The following classical attack demonstrates that security $\leq 127,3$ bits. The same idea also applies to SLH-DSA.
 \begin{enumerate}[leftmargin=2em]
   \item \textbf{Get a signature.} Ask for a signature and read its encoding $x$.
-  \item \textbf{Find a nearby encoding.} For a new message at the same epoch, try $2^{121}$ distinct randomness values. Seek an encoding that decreases one digit $x_i$ by one and increases another digit $x_j$ by one, leaving the rest unchanged. The sum stays 195. At least 28 digits are nonzero, and at least 15 are below 7, so there are at least $28\cdot14=392$ choices of $(i,j)$ with $i\neq j$. Each choice specifies one 128-bit digest. A trial therefore succeeds with probability at least $392/2^{128}$, and independent trials give
+  \item \textbf{Find a nearby encoding.} For a new message at the same leaf index, try $2^{121}$ distinct randomness values. Seek an encoding that decreases one digit $x_i$ by one and increases another digit $x_j$ by one, leaving the rest unchanged. The sum stays 195. At least 28 digits are nonzero, and at least 15 are below 7, so there are at least $28\cdot14=392$ choices of $(i,j)$ with $i\neq j$. Each choice specifies one 128-bit digest. A trial therefore succeeds with probability at least $392/2^{128}$, and independent trials give
   \[
     \begin{aligned}
       \Pr[\text{encoding found}] &\geq 1-\left(1-\frac{392}{2^{128}}\right)^{2^{121}} \geq 1-\exp\!\left(-\frac{392\cdot2^{121}}{2^{128}}\right)
@@ -293,19 +293,19 @@ Only the classical bound of Section~\ref{sec:security} is proved. We expect $\ap
 \begin{definition}[Completeness]
 With $\hash$ modeled as a random oracle, the completeness error of $\SIG$ is the worst-case probability that the signer fails,
 \[
-  \varepsilon_{\SIG}=\max_{\ep,\,m}\ \Pr\!\left[\sigma=\bot\ \middle|\ (\pk,\sk)\gets\Gen,\ \sigma\gets\Sig(\sk,\ep,m)\right],
+  \varepsilon_{\SIG}=\max_{\idx,\,m}\ \Pr\!\left[\sigma=\bot\ \middle|\ (\pk,\sk)\gets\Gen,\ \sigma\gets\Sig(\sk,\idx,m)\right],
 \]
 over the oracle and the master seed sampled by $\Gen$. The scheme is $\varepsilon$-complete if $\varepsilon_{\SIG}\leq\varepsilon$.
 \end{definition}
 
 \begin{theorem}[XMSS completeness]
-With probability at least $1-2^{-256}$ over the master seed and random oracle, one key can sign every 256-bit message at every epoch successfully. In particular, XMSS is $2^{-256}$-complete.
+With probability at least $1-2^{-256}$ over the master seed and random oracle, one key can sign every 256-bit message at every leaf index successfully. In particular, XMSS is $2^{-256}$-complete.
 \end{theorem}
 
 \begin{proof}
-Fix $\ep$ and $m$. As $\ep$ is unused, $\Sig(\sk,\ep,m)$ returns $\bot$ only by exhausting its $\amax$ attempts. Each trial derives a randomizer and then makes the encoding query
+Fix $\idx$ and $m$. As $\idx$ is unused, $\Sig(\sk,\idx,m)$ returns $\bot$ only by exhausting its $\amax$ attempts. Each trial derives a randomizer and then makes the encoding query
 \[
-  I(\rho)=\mathsf{tweak}_{\mathrm{enc}}(\ep)\concat P\concat m\concat\rho\concat0^{64},
+  I(\rho)=\mathsf{tweak}_{\mathrm{enc}}(\idx)\concat P\concat m\concat\rho\concat0^{64},
   \qquad D=\Truncate_{n\text{ bits}}\!\left(\hash(I(\rho))\right),
 \]
 and succeeds or not according to $D$ alone: it succeeds exactly when $D\in\mathcal D$, where
@@ -323,15 +323,15 @@ At $w=3$, $v=42$ and $T=195$,
   |\mathcal D|=11539185377238682781344003244544752,\qquad \alpha=2^{-14.8479\ldots}\geq2^{-15}+2^{-128}.
 \]
 
-\emph{One attempt.} The map $I$ is injective, and no query of $\Gen$ reaches its image, $\Gen$ using tweak types $0$, $1$, $2$, $3$ and $10$, not $4$. So a $\rho$ not drawn before is a fresh oracle point, making $D$ uniform on $\bits n$ and independent of the history, and the attempt succeeds with probability exactly $\alpha$.
+\emph{One attempt.} The map $I$ is injective, and no query of $\Gen$ reaches its image, $\Gen$ using tweak types $0$, $1$, $2$, $3$ and $5$, not $4$. So a $\rho$ not drawn before is a fresh oracle point, making $D$ uniform on $\bits n$ and independent of the history, and the attempt succeeds with probability exactly $\alpha$.
 
-\emph{Exhausting the attempts.} Let $\mathcal F_a$ be the event that the first $a$ attempts all fail. The next derivation uses a fresh type-12 input, so its truncated output $\rho_a$ is uniform and independent of the earlier attempts. This $\rho_a$ equals one of the $a$ earlier randomizers with probability at most $a2^{-\lrnd}$, and otherwise the attempt fails with probability $1-\alpha$, so $\Pr[\mathcal F_{a+1}\mid\mathcal F_a]\leq1-\alpha+a2^{-\lrnd}$. Multiplying over $0\leq a<\amax$, and since $\amax2^{-\lrnd}=2^{-160}\leq2^{-128}$,
+\emph{Exhausting the attempts.} Let $\mathcal F_a$ be the event that the first $a$ attempts all fail. The next derivation uses a fresh type-7 input, so its truncated output $\rho_a$ is uniform and independent of the earlier attempts. This $\rho_a$ equals one of the $a$ earlier randomizers with probability at most $a2^{-\lrnd}$, and otherwise the attempt fails with probability $1-\alpha$, so $\Pr[\mathcal F_{a+1}\mid\mathcal F_a]\leq1-\alpha+a2^{-\lrnd}$. Multiplying over $0\leq a<\amax$, and since $\amax2^{-\lrnd}=2^{-160}\leq2^{-128}$,
 \[
   \Pr[\sigma=\bot]=\Pr[\mathcal F_{\amax}]\leq\left(1-\alpha+\amax2^{-\lrnd}\right)^{\amax}\leq\left(1-2^{-15}\right)^{\amax}.
 \]
-As $\left(1-2^{-15}\right)^{2^{15}}\leq2^{-1}$ and $\amax=2^{15}\cdot2^{17}$, each fixed pair $(\ep,m)$ fails with probability at most $2^{-2^{17}}$. There are $L\cdot2^{256}=2^{288}$ epoch-message pairs. A union bound therefore gives
+As $\left(1-2^{-15}\right)^{2^{15}}\leq2^{-1}$ and $\amax=2^{15}\cdot2^{17}$, each fixed pair $(\idx,m)$ fails with probability at most $2^{-2^{17}}$. There are $L\cdot2^{256}=2^{288}$ (leaf index, message) pairs. A union bound therefore gives
 \[
-  \Pr[\exists\,\ep,m:\Sig(\sk,\ep,m)=\bot]
+  \Pr[\exists\,\idx,m:\Sig(\sk,\idx,m)=\bot]
   \leq2^{288}\cdot2^{-2^{17}}
   =2^{-130784}<2^{-256}.
 \]

@@ -6,7 +6,7 @@ open OracleComp OracleSpec
 namespace XmssSecurity
 
 theorem treeValues_append
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     ∀ (left right : List TreeValueIndex) (cache : QueryCache HashSpec),
       treeValues parameter secret (left ++ right) cache = (do
         let leftResult ← treeValues parameter secret left cache
@@ -23,7 +23,7 @@ theorem treeValues_append
       simp [ih, bind_assoc]
 
 theorem treeValues_append_support
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (left right : List TreeValueIndex) (cache : QueryCache HashSpec)
     (leftResult rightResult : List Digest × QueryCache HashSpec)
     (hleft : leftResult ∈ support
@@ -38,7 +38,7 @@ theorem treeValues_append_support
   exact ⟨rightResult, hright, by simp⟩
 
 theorem treeValues_singleton_support
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (index : TreeValueIndex) (cache : QueryCache HashSpec)
     (result : Digest × QueryCache HashSpec)
     (hresult : result ∈ support
@@ -107,7 +107,7 @@ theorem childTreeValueIndex_mem_below
   simp [child, TreeValueIndex.child]
 
 theorem treeValues_preserves_fresh_after
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     ∀ (processed future : List TreeValueIndex),
       (∀ current ∈ processed, ∀ target ∈ future,
         current.Precedes target) →

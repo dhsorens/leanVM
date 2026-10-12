@@ -41,22 +41,22 @@ theorem eval_tweakableHash (cache : QueryCache HashSpec)
 
 @[simp]
 theorem eval_encodingHash (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (epoch : Epoch) (message : Message)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (message : Message)
     (randomness : Randomness) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.encodingHash parameter epoch message randomness : OracleComp HashSpec Digest) =
-      CacheView.encodingHash cache parameter epoch (message, randomness) := by
+      (Concrete.encodingHash parameter leafIndex message randomness : OracleComp HashSpec Digest) =
+      CacheView.encodingHash cache parameter leafIndex (message, randomness) := by
   simp [Concrete.encodingHash, CacheView.encodingHash, CacheView.encodingInput,
     CacheView.tweakableHash]
 
 @[simp]
 theorem eval_chainWalk (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position steps : Nat) (value : Digest) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.chainWalk parameter epoch chain position steps value :
+      (Concrete.chainWalk parameter leafIndex chain position steps value :
         OracleComp HashSpec Digest) =
-      Wots.walk (CacheView.chainStep cache parameter epoch chain) position steps value := by
+      Wots.walk (CacheView.chainStep cache parameter leafIndex chain) position steps value := by
   induction steps with
   | zero => simp [Concrete.chainWalk, Wots.walk]
   | succ steps ih =>
@@ -68,11 +68,11 @@ theorem eval_chainWalk (cache : QueryCache HashSpec)
 
 @[simp]
 theorem eval_recoverChain (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (digit : Digit) (value : Digest) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.recoverChain parameter epoch chain digit value : OracleComp HashSpec Digest) =
-      Wots.recoverChain (CacheView.chainStep cache parameter epoch chain) digit value := by
+      (Concrete.recoverChain parameter leafIndex chain digit value : OracleComp HashSpec Digest) =
+      Wots.recoverChain (CacheView.chainStep cache parameter leafIndex chain) digit value := by
   simp [Concrete.recoverChain, Wots.recoverChain]
 
 @[simp]
@@ -91,24 +91,24 @@ theorem eval_sequenceFin (cache : QueryCache HashSpec) {n : Nat}
 
 @[simp]
 theorem eval_recoverEndpoints (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (epoch : Epoch) (encoding : Encoding)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (encoding : Encoding)
     (signature : Signature) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.recoverEndpoints parameter epoch encoding signature :
+      (Concrete.recoverEndpoints parameter leafIndex encoding signature :
         OracleComp HashSpec (ChainIndex → Digest)) =
       XmssSecurity.recoveredEndpoints
-        (fun chain => CacheView.chainStep cache parameter epoch chain)
+        (fun chain => CacheView.chainStep cache parameter leafIndex chain)
         encoding signature.chainValue := by
   funext chain
   simp [Concrete.recoverEndpoints, XmssSecurity.recoveredEndpoints]
 
 @[simp]
 theorem eval_leafHash (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (epoch : Epoch)
+    (parameter : PublicParameter) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.leafHash parameter epoch endpoints : OracleComp HashSpec Digest) =
-      CacheView.leafHash cache parameter epoch endpoints := by
+      (Concrete.leafHash parameter leafIndex endpoints : OracleComp HashSpec Digest) =
+      CacheView.leafHash cache parameter leafIndex endpoints := by
   simp [Concrete.leafHash, CacheView.leafHash, CacheView.leafInput,
     CacheView.tweakableHash]
 
@@ -124,27 +124,27 @@ theorem eval_nodeHash (cache : QueryCache HashSpec)
 
 @[simp]
 theorem eval_oneTimePublicKey (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.oneTimePublicKey parameter secret epoch :
+      (Concrete.oneTimePublicKey parameter secret leafIndex :
         OracleComp HashSpec (ChainIndex → Digest)) =
-      oneTimePublicKey cache parameter secret epoch := by
+      oneTimePublicKey cache parameter secret leafIndex := by
   funext chain
   simp [Concrete.oneTimePublicKey, oneTimePublicKey]
 
 @[simp]
 theorem eval_leafAt (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.leafAt parameter secret epoch : OracleComp HashSpec Digest) =
-      leafAt cache parameter secret epoch := by
+      (Concrete.leafAt parameter secret leafIndex : OracleComp HashSpec Digest) =
+      leafAt cache parameter secret leafIndex := by
   simp [Concrete.leafAt, leafAt]
 
 @[simp]
 theorem eval_treeNode (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (levels : Nat) (node : MerkleNode) :
     evalWithAnswerFn (answerFn cache)
       (Concrete.treeNode parameter secret levels node : OracleComp HashSpec Digest) =
@@ -163,18 +163,18 @@ theorem answerFn_eq_replayHash (cache : QueryCache HashSpec) :
 
 @[simp]
 theorem eval_replayHash_chainWalk (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position steps : Nat) (value : Digest) :
     evalWithAnswerFn (Concrete.replayHash cache)
-      (Concrete.chainWalk parameter epoch chain position steps value :
+      (Concrete.chainWalk parameter leafIndex chain position steps value :
         OracleComp HashSpec Digest) =
-      Wots.walk (CacheView.chainStep cache parameter epoch chain) position steps value := by
+      Wots.walk (CacheView.chainStep cache parameter leafIndex chain) position steps value := by
   rw [← answerFn_eq_replayHash]
-  exact eval_chainWalk cache parameter epoch chain position steps value
+  exact eval_chainWalk cache parameter leafIndex chain position steps value
 
 @[simp]
 theorem eval_replayHash_treeNode (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (levels : Nat) (node : MerkleNode) :
     evalWithAnswerFn (Concrete.replayHash cache)
       (Concrete.treeNode parameter secret levels node : OracleComp HashSpec Digest) =
@@ -184,64 +184,64 @@ theorem eval_replayHash_treeNode (cache : QueryCache HashSpec)
 
 @[simp]
 theorem precomputedSecretKey_chainValue (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (chain : ChainIndex) (digit : Digit) :
-    (Concrete.precomputedSecretKey parameter secret cache).chainValue epoch chain digit =
-      Wots.walk (CacheView.chainStep cache parameter epoch chain) 0 digit.val
-        (secret epoch chain) :=
-  eval_replayHash_chainWalk cache parameter epoch chain 0 digit.val (secret epoch chain)
+    (secret : LeafIndex → ChainIndex → Digest) (cache : QueryCache HashSpec)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (digit : Digit) :
+    (Concrete.precomputedSecretKey parameter secret cache).chainValue leafIndex chain digit =
+      Wots.walk (CacheView.chainStep cache parameter leafIndex chain) 0 digit.val
+        (secret leafIndex chain) :=
+  eval_replayHash_chainWalk cache parameter leafIndex chain 0 digit.val (secret leafIndex chain)
 
 @[simp]
 theorem precomputedSecretKey_treeValue (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (cache : QueryCache HashSpec)
+    (secret : LeafIndex → ChainIndex → Digest) (cache : QueryCache HashSpec)
     (height : MerkleHeight) (node : MerkleNode) :
     (Concrete.precomputedSecretKey parameter secret cache).treeValue height node =
       treeNode cache parameter secret height.val node :=
   eval_replayHash_treeNode cache parameter secret height.val node
 
 def signedChainValues (cache : QueryCache HashSpec) (secretKey : SecretKey)
-    (epoch : Epoch) (encoding : Encoding) : ChainIndex → Digest :=
+    (leafIndex : LeafIndex) (encoding : Encoding) : ChainIndex → Digest :=
   fun chain => Wots.walk
-    (CacheView.chainStep cache secretKey.parameter epoch chain) 0
-    (encoding chain).val (secretKey.chainStart epoch chain)
+    (CacheView.chainStep cache secretKey.parameter leafIndex chain) 0
+    (encoding chain).val (secretKey.chainStart leafIndex chain)
 
 def authenticationPath (cache : QueryCache HashSpec) (secretKey : SecretKey)
-    (epoch : Epoch) : Fin treeHeight → Digest :=
+    (leafIndex : LeafIndex) : Fin treeHeight → Digest :=
   fun level => treeNode cache secretKey.parameter secretKey.chainStart level.val
-    (Concrete.authenticationPathNode epoch level)
+    (Concrete.authenticationPathNode leafIndex level)
 
 def signWithEncoding (cache : QueryCache HashSpec) (secretKey : SecretKey)
-    (epoch : Epoch) (randomness : Randomness) (encoding : Encoding) : Signature :=
-  ⟨randomness, signedChainValues cache secretKey epoch encoding,
-    authenticationPath cache secretKey epoch⟩
+    (leafIndex : LeafIndex) (randomness : Randomness) (encoding : Encoding) : Signature :=
+  ⟨randomness, signedChainValues cache secretKey leafIndex encoding,
+    authenticationPath cache secretKey leafIndex⟩
 
 theorem precomputedSignedChainValues_eq (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (encoding : Encoding) :
-    (fun chain => (Concrete.precomputedSecretKey parameter secret cache).chainValue epoch chain (encoding chain)) =
+    (secret : LeafIndex → ChainIndex → Digest) (cache : QueryCache HashSpec)
+    (leafIndex : LeafIndex) (encoding : Encoding) :
+    (fun chain => (Concrete.precomputedSecretKey parameter secret cache).chainValue leafIndex chain (encoding chain)) =
       signedChainValues cache (Concrete.precomputedSecretKey parameter secret cache)
-        epoch encoding := by
+        leafIndex encoding := by
   funext chain
-  exact precomputedSecretKey_chainValue parameter secret cache epoch chain (encoding chain)
+  exact precomputedSecretKey_chainValue parameter secret cache leafIndex chain (encoding chain)
 
 theorem precomputedAuthenticationPath_eq (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (cache : QueryCache HashSpec) (epoch : Epoch) :
+    (secret : LeafIndex → ChainIndex → Digest) (cache : QueryCache HashSpec) (leafIndex : LeafIndex) :
     (fun level : Fin treeHeight => (Concrete.precomputedSecretKey parameter secret cache).treeValue
-        level.castSucc (Concrete.authenticationPathNode epoch level)) =
+        level.castSucc (Concrete.authenticationPathNode leafIndex level)) =
       authenticationPath cache (Concrete.precomputedSecretKey parameter secret cache)
-        epoch := by
+        leafIndex := by
   funext level
   exact precomputedSecretKey_treeValue parameter secret cache level.castSucc
-    (Concrete.authenticationPathNode epoch level)
+    (Concrete.authenticationPathNode leafIndex level)
 
 @[simp]
 theorem eval_authenticationRoot (cache : QueryCache HashSpec)
-    (parameter : PublicParameter) (epoch : Epoch) (signature : Signature)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (signature : Signature)
     (levels : Nat) (leaf : Digest) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.authenticationRoot parameter epoch signature levels leaf :
+      (Concrete.authenticationRoot parameter leafIndex signature levels leaf :
         OracleComp HashSpec Digest) =
-      Merkle.ascend (CacheView.nodeHash cache parameter epoch)
+      Merkle.ascend (CacheView.nodeHash cache parameter leafIndex)
         (Concrete.signaturePath signature) 0 levels leaf := by
   induction levels with
   | zero => simp [Concrete.authenticationRoot, Merkle.ascend]
@@ -249,7 +249,7 @@ theorem eval_authenticationRoot (cache : QueryCache HashSpec)
       simp only [Concrete.authenticationRoot, evalWithAnswerFn_bind, ih, Merkle.ascend,
         Nat.zero_add]
       by_cases hlevel : levels < treeHeight
-      · by_cases hbit : epoch.val.testBit levels = true
+      · by_cases hbit : leafIndex.val.testBit levels = true
         · simp [Concrete.authenticationNodeHash, CacheView.nodeHash, hlevel, hbit,
             Concrete.nodeHash, CacheView.nodeInput, CacheView.authenticationNodePayload,
             CacheView.tweakableHash]
@@ -260,24 +260,24 @@ theorem eval_authenticationRoot (cache : QueryCache HashSpec)
 
 @[simp]
 theorem eval_verifyAfterLeaf (cache : QueryCache HashSpec) (publicKey : PublicKey)
-    (epoch : Epoch) (signature : Signature) (leaf : Digest) :
+    (leafIndex : LeafIndex) (signature : Signature) (leaf : Digest) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.verifyAfterLeaf publicKey epoch signature leaf : OracleComp HashSpec Bool) =
-      decide (Merkle.ascend (CacheView.nodeHash cache publicKey.parameter epoch)
+      (Concrete.verifyAfterLeaf publicKey leafIndex signature leaf : OracleComp HashSpec Bool) =
+      decide (Merkle.ascend (CacheView.nodeHash cache publicKey.parameter leafIndex)
         (Concrete.signaturePath signature) 0 treeHeight leaf = publicKey.root) := by
   simp [Concrete.verifyAfterLeaf]
 
 @[simp]
 theorem eval_verify (cache : QueryCache HashSpec) (publicKey : PublicKey)
-    (epoch : Epoch) (message : Message) (signature : Signature) :
+    (leafIndex : LeafIndex) (message : Message) (signature : Signature) :
     evalWithAnswerFn (answerFn cache)
-      (Concrete.verify publicKey epoch message signature : OracleComp HashSpec Bool) =
-      Concrete.verifyFromCache cache publicKey epoch message signature := by
+      (Concrete.verify publicKey leafIndex message signature : OracleComp HashSpec Bool) =
+      Concrete.verifyFromCache cache publicKey leafIndex message signature := by
   classical
   unfold Concrete.verify Concrete.verifyFromCache
   simp only [evalWithAnswerFn_bind, eval_encodingHash]
   cases TargetSum.decodeDigest
-    (CacheView.encodingHash cache publicKey.parameter epoch (message, signature.randomness)) <;> simp
+    (CacheView.encodingHash cache publicKey.parameter leafIndex (message, signature.randomness)) <;> simp
 
 theorem randomOracle_query_caches (input : HashInput)
     (initialCache : QueryCache HashSpec) (output : HashOutput)
@@ -405,17 +405,17 @@ theorem eval_answerFn_largerCache_eq_of_mem_support {α : Type}
       exact ih output middleCache resultCache result hrest hle
 
 theorem verifyFromCache_eq_of_mem_support
-    (publicKey : PublicKey) (epoch : Epoch) (message : Message)
+    (publicKey : PublicKey) (leafIndex : LeafIndex) (message : Message)
     (signature : Signature) (initialCache finalCache : QueryCache HashSpec)
     (result : Bool)
     (hmem : (result, finalCache) ∈ support
       ((simulateQ randomOracle
-        (Concrete.verify publicKey epoch message signature : OracleComp HashSpec Bool)).run
+        (Concrete.verify publicKey leafIndex message signature : OracleComp HashSpec Bool)).run
           initialCache)) :
-    Concrete.verifyFromCache finalCache publicKey epoch message signature = result := by
+    Concrete.verifyFromCache finalCache publicKey leafIndex message signature = result := by
   rw [← eval_verify]
   exact eval_answerFn_finalCache_eq_of_mem_support
-    (Concrete.verify publicKey epoch message signature : OracleComp HashSpec Bool)
+    (Concrete.verify publicKey leafIndex message signature : OracleComp HashSpec Bool)
     initialCache finalCache result hmem
 
 end XmssSecurity.Concrete.CacheReplay

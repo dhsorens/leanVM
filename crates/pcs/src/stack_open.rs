@@ -243,16 +243,7 @@ pub fn open_batch_mixed_whir_stacked(
         !ring.claims.is_empty(),
         "stacked PCS opening carries at least one ring-switched claim"
     );
-    // Optional phase timing, answering to the same env var as the WHIR
-    // prover/commit tracing (one env lookup per open, no work when unset).
-    let trace = std::env::var_os("WHIR_TRACE").is_some();
-    let mut t = std::time::Instant::now();
-    let mark = |label: &str, t: &mut std::time::Instant| {
-        if trace {
-            eprintln!("[stack-open-k] {label}: {:7.2} ms", t.elapsed().as_secs_f64() * 1e3);
-        }
-        *t = std::time::Instant::now();
-    };
+    let span = tracing::info_span!("Ring switch").entered();
 
     // 1. Ring-switch reduction: prepare every claim's s_hat_v (the caller bound
     //    them upstream), then sample one shared linear map.
@@ -275,7 +266,7 @@ pub fn open_batch_mixed_whir_stacked(
 
     // 2. The ONE batching challenge both families take disjoint power ranges of. Nothing is
     //    observed first: every claim value reached the caller through a binding stream read, so
-    //    the challenge already depends on all of them (`lean_vm::pcs::open`).
+    //    the challenge already depends on all of them (`leanvm_core::pcs::open`).
     let lambdas = powers(ps.sample(), ring.claims.len() + point_claims.len());
     let (lambdas_rs, lambdas_pd) = lambdas.split_at(ring.claims.len());
 
@@ -284,7 +275,7 @@ pub fn open_batch_mixed_whir_stacked(
         .zip(lambdas_rs.iter().copied())
         .map(|(state, lambda)| ring_switch::prove_finish_deferred(state, &coordinate_weights, lambda))
         .collect();
-    mark("ring-switch proves", &mut t);
+    drop(span);
 
     // 3. Combined target and lifted stack weight b_stack: the lambda-weighted
     //    rs_eq_ind sum scattered at the q_flock slice, plus the point-claim
@@ -301,8 +292,8 @@ pub fn open_batch_mixed_whir_stacked(
     // filled from the ring-switch outputs and the point claims, then feeds
     // round 0's message while it is still hot, so nothing re-reads the buffer.
     let lane_block = 1usize << (log_n - config.initial_k);
-    let (b_stack, message) = basis::build(stack, lane_block, point_claims, lambdas_pd, ring, &rs_outputs);
-    mark("basis + initial message", &mut t);
+    let (b_stack, message) = tracing::info_span!("Basis")
+        .in_scope(|| basis::build(stack, lane_block, point_claims, lambdas_pd, ring, &rs_outputs));
 
     // 4. One WHIR over the full stack against the combined claim (the
     //    stack is borrowed by the prover; no copy).
@@ -363,8 +354,8 @@ pub fn verify_opening_batch_mixed_whir_stacked(
     let map_challenges = ring_switch::sample_map_challenges(vs);
     let coordinate_weights = ring_switch::build_coordinate_weights(&map_challenges);
 
-    // 2. The one batching challenge (see the opener: the claim values are bound by the read that
-    //    produced them), then fold both families into the target over disjoint power ranges.
+    // 2. The one batching challenge (see the opener: the caller already bound the claim values),
+    //    then fold both families into the target over disjoint power ranges.
     let lambdas = powers(vs.sample(), n_rs + point_claims.len());
     let (lambdas_rs, lambdas_pd) = lambdas.split_at(n_rs);
 
@@ -405,7 +396,6 @@ pub fn verify_opening_batch_mixed_whir_stacked(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pack::{LOG_PACKING, pack_witness};
     use crate::ring_switch::fold_1b_rows;
     use crate::whir::{build_eq_table_ext, commit, default_config, inner_product_base_ext};
     use crate::whir_config::test_config_for;
@@ -527,8 +517,7 @@ mod tests {
 
         // Three random columns, the packed bit-witness region, then filler.
         let mut stack: Vec<F64> = (0..3 * col_len).map(|_| F64(rng.next_u64())).collect();
-        let bits = rng.bits(1usize << (qflock_vars + LOG_PACKING));
-        stack.extend(pack_witness(&bits, qflock_vars + LOG_PACKING));
+        stack.extend((0..1usize << qflock_vars).map(|_| F64(rng.next_u64())));
         while stack.len() < 1 << log_n {
             stack.push(F64(rng.next_u64()));
         }
@@ -720,8 +709,7 @@ mod tests {
         let mut rng = Rng::new(3);
 
         let mut stack: Vec<F64> = (0..1usize << 13).map(|_| F64(rng.next_u64())).collect();
-        let bits = rng.bits(1usize << (qflock_vars + LOG_PACKING));
-        stack.extend(pack_witness(&bits, qflock_vars + LOG_PACKING));
+        stack.extend((0..1usize << qflock_vars).map(|_| F64(rng.next_u64())));
         assert_eq!(stack.len(), 1 << log_n);
 
         // One point claim on the low column.

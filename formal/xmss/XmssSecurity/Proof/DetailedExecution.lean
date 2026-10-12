@@ -29,7 +29,7 @@ noncomputable def detailedGameAfterKeygen (scheme : Scheme SecretKey) (adversary
   let ((forgery, signingLog) : Forgery × QueryLog SigningSpec) ←
     (simulateQ (forwardOracles + signingOracle scheme secretKey)
       (adversary.main publicKey)).run
-  let verified ← scheme.verify publicKey forgery.epoch forgery.message forgery.signature
+  let verified ← scheme.verify publicKey forgery.leafIndex forgery.message forgery.signature
   return ⟨publicKey, secretKey, forgery, signingLog, verified⟩
 
 noncomputable def detailedGameCore (scheme : Scheme SecretKey) (adversary : Adversary) :

@@ -11,13 +11,13 @@ set_option maxHeartbeats 2000000
 
 theorem globalFilteredCausalAttackerHashPlan_eq_leafProbeThenFresh
     (secretKey : SecretKey) (state : GlobalCausalHashState)
-    (input : HashInput) (epoch : Epoch)
+    (input : HashInput) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
     (index : GlobalChainValueIndex) (target : Digest)
-    (hinput : input = Concrete.CacheView.leafInput secretKey.parameter epoch
+    (hinput : input = Concrete.CacheView.leafInput secretKey.parameter leafIndex
       endpoints)
     (hcache : state.cache input = none)
-    (hprobe : globalHiddenLeafProbe? state epoch endpoints =
+    (hprobe : globalHiddenLeafProbe? state leafIndex endpoints =
       some (index, target)) :
     globalFilteredCausalAttackerHashPlan secretKey input state =
       .probeThenFresh index target := by
@@ -31,13 +31,13 @@ theorem globalFilteredCausalAttackerHashPlan_eq_leafProbeThenFresh
 
 theorem globalFilteredCausalAttackerHashPlan_eq_leafRedirect
     (secretKey : SecretKey) (state : GlobalCausalHashState)
-    (input : HashInput) (epoch : Epoch)
+    (input : HashInput) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) (output : HashOutput)
-    (hinput : input = Concrete.CacheView.leafInput secretKey.parameter epoch
+    (hinput : input = Concrete.CacheView.leafInput secretKey.parameter leafIndex
       endpoints)
     (hcache : state.cache input = none)
-    (hhidden : globalHiddenLeafProbe? state epoch endpoints = none)
-    (hmatch : GlobalLeafRevealsMatch state epoch endpoints)
+    (hhidden : globalHiddenLeafProbe? state leafIndex endpoints = none)
+    (hmatch : GlobalLeafRevealsMatch state leafIndex endpoints)
     (hkeygen : state.keygenCache
       (keygenLeafTargetInput secretKey state.keygenCache input) = some output) :
     globalFilteredCausalAttackerHashPlan secretKey input state =
@@ -52,13 +52,13 @@ theorem globalFilteredCausalAttackerHashPlan_eq_leafRedirect
 
 theorem globalFilteredCausalAttackerHashPlan_eq_leafFresh_of_mismatch
     (secretKey : SecretKey) (state : GlobalCausalHashState)
-    (input : HashInput) (epoch : Epoch)
+    (input : HashInput) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
-    (hinput : input = Concrete.CacheView.leafInput secretKey.parameter epoch
+    (hinput : input = Concrete.CacheView.leafInput secretKey.parameter leafIndex
       endpoints)
     (hcache : state.cache input = none)
-    (hhidden : globalHiddenLeafProbe? state epoch endpoints = none)
-    (hmatch : ¬ GlobalLeafRevealsMatch state epoch endpoints) :
+    (hhidden : globalHiddenLeafProbe? state leafIndex endpoints = none)
+    (hmatch : ¬ GlobalLeafRevealsMatch state leafIndex endpoints) :
     globalFilteredCausalAttackerHashPlan secretKey input state = .fresh := by
   subst input
   rw [globalFilteredCausalAttackerHashPlan, hcache,
@@ -74,25 +74,25 @@ set_option maxHeartbeats 2000000
 
 theorem globalLeaf_not_match_endpoint_miss
     (table : GlobalChainValueIndex → Digest)
-    (state : GlobalCausalHashState) (epoch : Epoch)
+    (state : GlobalCausalHashState) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
     (hreveals : GlobalSigningRevealsAgree table state)
-    (hhidden : globalHiddenLeafProbe? state epoch endpoints = none)
-    (hmatch : ¬ GlobalLeafRevealsMatch state epoch endpoints) :
+    (hhidden : globalHiddenLeafProbe? state leafIndex endpoints = none)
+    (hmatch : ¬ GlobalLeafRevealsMatch state leafIndex endpoints) :
     ∃ chain : ChainIndex,
-      table (chain, epoch, chainEndpointDigit) ≠ endpoints chain := by
+      table (chain, leafIndex, chainEndpointDigit) ≠ endpoints chain := by
   classical
   have hall :=
-    (globalHiddenLeafProbe?_eq_none_iff state epoch endpoints).mp hhidden
+    (globalHiddenLeafProbe?_eq_none_iff state leafIndex endpoints).mp hhidden
   unfold GlobalLeafRevealsMatch at hmatch
   push Not at hmatch
   obtain ⟨chain, hmismatch⟩ := hmatch
-  cases hvalue : state.revealed (chain, epoch, chainEndpointDigit) with
+  cases hvalue : state.revealed (chain, leafIndex, chainEndpointDigit) with
   | none => exact (hall chain hvalue).elim
   | some value =>
       refine ⟨chain, ?_⟩
-      have htable : table (chain, epoch, chainEndpointDigit) = value :=
-        hreveals (chain, epoch, chainEndpointDigit) value hvalue
+      have htable : table (chain, leafIndex, chainEndpointDigit) = value :=
+        hreveals (chain, leafIndex, chainEndpointDigit) value hvalue
       intro heq
       apply hmismatch
       rw [hvalue, ← htable, heq]
@@ -107,21 +107,21 @@ theorem programmedGlobal_left_leaf_cache_none_of_hidden_probe_miss
     (hrightSupport : right.1.1 ∈ support
       trajectoryProgrammedGlobalChainKeygen)
     (state : GlobalCausalHashState) (input : HashInput)
-    (epoch : Epoch) (endpoints : ChainIndex → Digest)
+    (leafIndex : LeafIndex) (endpoints : ChainIndex → Digest)
     (index : GlobalChainValueIndex) (target : Digest)
     (hinput : input = Concrete.CacheView.leafInput
-      right.1.1.secretKey.parameter epoch endpoints)
-    (hprobe : globalHiddenLeafProbe? state epoch endpoints =
+      right.1.1.secretKey.parameter leafIndex endpoints)
+    (hprobe : globalHiddenLeafProbe? state leafIndex endpoints =
       some (index, target))
     (hmiss : right.1.2 index ≠ target) :
     left.cache input = none := by
   obtain ⟨chain, hindex, htarget, _hhidden⟩ :=
-    globalHiddenLeafProbe?_eq_some state epoch endpoints index target hprobe
+    globalHiddenLeafProbe?_eq_some state leafIndex endpoints index target hprobe
   have hparameter := programmedGlobal_secretKey_parameter_eq left right hrel
     hleftSupport hrightSupport
   rw [hinput, hparameter]
   apply programmedGlobal_left_leaf_cache_none_of_endpoint_miss left right hrel
-    hleftSupport epoch endpoints chain
+    hleftSupport leafIndex endpoints chain
   simpa [hindex, htarget] using hmiss
 
 theorem relTriple_programmed_globalFilteredLeafHashQuery_until_hit
@@ -138,10 +138,10 @@ theorem relTriple_programmed_globalFilteredLeafHashQuery_until_hit
       rightState)
     (monitor : AdaptiveRevealMonitor.State GlobalChainValueIndex)
     (hmonitor : monitor.revealed = rightState.revealed)
-    (input : HashInput) (epoch : Epoch)
+    (input : HashInput) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
     (hinput : input = Concrete.CacheView.leafInput
-      right.1.1.secretKey.parameter epoch endpoints) :
+      right.1.1.secretKey.parameter leafIndex endpoints) :
     RelTriple
       ((randomOracle input).run leftCache)
       ((simulateQ (RevealProbeOracleSimulation.eagerTraceImpl right.1.2)
@@ -157,15 +157,15 @@ theorem relTriple_programmed_globalFilteredLeafHashQuery_until_hit
       intro _leftResult _rightResult hresult
       exact Or.inl hresult
   | none =>
-      cases hprobe : globalHiddenLeafProbe? rightState epoch endpoints with
+      cases hprobe : globalHiddenLeafProbe? rightState leafIndex endpoints with
       | some probe =>
           obtain ⟨index, target⟩ := probe
           have hplan :=
             globalFilteredCausalAttackerHashPlan_eq_leafProbeThenFresh
-              right.1.1.secretKey rightState input epoch endpoints index target
+              right.1.1.secretKey rightState input leafIndex endpoints index target
                 hinput hcache hprobe
           obtain ⟨_chain, _hindex, _htarget, hhidden⟩ :=
-            globalHiddenLeafProbe?_eq_some rightState epoch endpoints index
+            globalHiddenLeafProbe?_eq_some rightState leafIndex endpoints index
               target hprobe
           exact
             relTriple_programmed_globalFilteredHashQuery_probeThenFresh_until_hit
@@ -173,16 +173,16 @@ theorem relTriple_programmed_globalFilteredLeafHashQuery_until_hit
                 target hhidden hplan
                   (programmedGlobal_left_leaf_cache_none_of_hidden_probe_miss
                     left right hrel hleftSupport hrightSupport rightState input
-                      epoch endpoints index target hinput hprobe)
+                      leafIndex endpoints index target hinput hprobe)
       | none =>
-          by_cases hmatch : GlobalLeafRevealsMatch rightState epoch endpoints
+          by_cases hmatch : GlobalLeafRevealsMatch rightState leafIndex endpoints
           · obtain ⟨output, hleftBase, hrightBase⟩ :=
               programmedGlobal_leaf_cache_pair_of_reveals_match left right hrel
                 hleftSupport hrightSupport rightState hstate.2.2.2.1
-                  hstate.2.2.2.2 input epoch endpoints hinput hmatch
+                  hstate.2.2.2.2 input leafIndex endpoints hinput hmatch
             have hplan :=
               globalFilteredCausalAttackerHashPlan_eq_leafRedirect
-                right.1.1.secretKey rightState input epoch endpoints output
+                right.1.1.secretKey rightState input leafIndex endpoints output
                   hinput hcache hprobe hmatch hrightBase
             have hparameter := programmedGlobal_secretKey_parameter_eq left
               right hrel hleftSupport hrightSupport
@@ -190,7 +190,7 @@ theorem relTriple_programmed_globalFilteredLeafHashQuery_until_hit
                 left.secretKey.parameter input := by
               rw [hinput, hparameter]
               exact globalLeafInput_not_signingComparable left.secretKey.parameter
-                epoch endpoints
+                leafIndex endpoints
             apply relTriple_post_mono
               (relTriple_programmed_globalFilteredHashQuery_redirect left right
                 leftCache rightState hstate input output hleftBase hnotSigning
@@ -198,16 +198,16 @@ theorem relTriple_programmed_globalFilteredLeafHashQuery_until_hit
             intro _leftResult _rightResult hresult
             exact Or.inl hresult
           · obtain ⟨chain, hmiss⟩ := globalLeaf_not_match_endpoint_miss
-              right.1.2 rightState epoch endpoints hstate.2.2.2.2 hprobe hmatch
+              right.1.2 rightState leafIndex endpoints hstate.2.2.2.2 hprobe hmatch
             have hparameter := programmedGlobal_secretKey_parameter_eq left
               right hrel hleftSupport hrightSupport
             have hbaseNone : left.cache input = none := by
               rw [hinput, hparameter]
               exact programmedGlobal_left_leaf_cache_none_of_endpoint_miss left
-                right hrel hleftSupport epoch endpoints chain hmiss
+                right hrel hleftSupport leafIndex endpoints chain hmiss
             have hplan :=
               globalFilteredCausalAttackerHashPlan_eq_leafFresh_of_mismatch
-                right.1.1.secretKey rightState input epoch endpoints hinput
+                right.1.1.secretKey rightState input leafIndex endpoints hinput
                   hcache hprobe hmatch
             apply relTriple_post_mono
               (relTriple_programmed_globalFilteredHashQuery_fresh left right
@@ -223,24 +223,24 @@ theorem Concrete.keygen_cache_none_at_global_chainAddress_of_probe_none
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (input : HashInput) (epoch : Epoch) (chain : ChainIndex)
+    (input : HashInput) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep)
     (haddress : AtHashAddress keyResult.1.2.parameter
-      (.chain epoch chain step) input)
+      (.chain leafIndex chain step) input)
     (hprobe : globalChainInputProbe? keyResult.1.2.parameter input = none) :
     keyResult.2 input = none := by
   obtain ⟨honestOutput, hhonest⟩ :=
-    Concrete.keygen_cache_has_chainInput keyResult hmem epoch chain step
+    Concrete.keygen_cache_has_chainInput keyResult hmem leafIndex chain step
   cases hcached : keyResult.2 input with
   | none => rfl
   | some output =>
       have heq : input = Concrete.CacheView.chainInput
-          keyResult.1.2.parameter epoch chain step
+          keyResult.1.2.parameter leafIndex chain step
             (Wots.walk
               (Concrete.CacheView.chainStep keyResult.2
-                keyResult.1.2.parameter epoch chain)
-              0 step.val (keyResult.1.2.chainStart epoch chain)) :=
-        Concrete.keygen_cache_unique_chainAddress keyResult hmem epoch chain
+                keyResult.1.2.parameter leafIndex chain)
+              0 step.val (keyResult.1.2.chainStart leafIndex chain)) :=
+        Concrete.keygen_cache_unique_chainAddress keyResult hmem leafIndex chain
           step input _ output honestOutput haddress (by
             simp [Concrete.CacheView.chainInput]) hcached hhonest
       rw [heq, globalChainInputProbe?_chainInput] at hprobe
@@ -250,20 +250,20 @@ theorem Concrete.keygen_cache_none_at_global_leafAddress_of_probe_none
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (input : HashInput) (epoch : Epoch)
-    (haddress : AtHashAddress keyResult.1.2.parameter (.leaf epoch) input)
+    (input : HashInput) (leafIndex : LeafIndex)
+    (haddress : AtHashAddress keyResult.1.2.parameter (.leaf leafIndex) input)
     (hprobe : globalLeafInputData? keyResult.1.2.parameter input = none) :
     keyResult.2 input = none := by
   obtain ⟨honestOutput, hhonest⟩ :=
-    Concrete.keygen_cache_has_leafInput keyResult hmem epoch
+    Concrete.keygen_cache_has_leafInput keyResult hmem leafIndex
   cases hcached : keyResult.2 input with
   | none => rfl
   | some output =>
       have heq : input = Concrete.CacheView.leafInput
-          keyResult.1.2.parameter epoch
+          keyResult.1.2.parameter leafIndex
             (Concrete.CacheReplay.oneTimePublicKey keyResult.2
-              keyResult.1.2.parameter keyResult.1.2.chainStart epoch) :=
-        Concrete.keygen_cache_unique_leafAddress keyResult hmem epoch input _
+              keyResult.1.2.parameter keyResult.1.2.chainStart leafIndex) :=
+        Concrete.keygen_cache_unique_leafAddress keyResult hmem leafIndex input _
           output honestOutput haddress (by
             simp [Concrete.CacheView.leafInput]) hcached hhonest
       rw [heq, globalLeafInputData?_leafInput] at hprobe
@@ -282,16 +282,16 @@ theorem Concrete.keygen_cache_none_of_global_probes_none_not_merkle
       keyResult.1.2.parameter input
   · obtain ⟨domain, hdomain⟩ := haddressed
     cases domain with
-    | chain epoch chain step =>
+    | chain leafIndex chain step =>
         exact Concrete.keygen_cache_none_at_global_chainAddress_of_probe_none
-          keyResult hmem input epoch chain step hdomain hchain
-    | leaf epoch =>
+          keyResult hmem input leafIndex chain step hdomain hchain
+    | leaf leafIndex =>
         exact Concrete.keygen_cache_none_at_global_leafAddress_of_probe_none
-          keyResult hmem input epoch hdomain hleaf
+          keyResult hmem input leafIndex hdomain hleaf
     | merkle level node => exact (hmerkle ⟨level, node, hdomain⟩).elim
-    | encoding epoch =>
+    | encoding leafIndex =>
         exact Concrete.keygen_cache_none_at_encodingAddress keyResult hmem
-          epoch input hdomain
+          leafIndex input hdomain
   · exact Concrete.keygen_cache_none_unaddressed keyResult hmem input
       haddressed
 
@@ -435,7 +435,7 @@ theorem relTriple_programmed_globalFilteredAttackerHashQuery_until_hit
                   right.1.1.secretKey.parameter input data).mp hleaf
               exact relTriple_programmed_globalFilteredLeafHashQuery_until_hit
                 left right hrel hleftSupport hrightSupport leftCache rightState
-                  hstate monitor hmonitor input data.epoch data.endpoints hinput
+                  hstate monitor hmonitor input data.leafIndex data.endpoints hinput
           | none =>
               have hbaseNone : left.cache input = none := by
                 by_cases hmerkle : MerkleHashInput
@@ -653,7 +653,7 @@ theorem simulate_eagerTrace_globalFilteredCausalSigningAttempt_stateExtends
   simp only [List.nil_append] at hresult
   have hcacheLe : state.cache ≤ encoded.2 :=
     Concrete.CacheReplay.randomOracle_cache_le
-      (Concrete.encodingHash keyView.secretKey.parameter request.epoch
+      (Concrete.encodingHash keyView.secretKey.parameter request.leafIndex
         request.message randomness) state.cache encoded hencoded
   cases hdecode : TargetSum.decodeDigest encoded.1 with
   | none =>
@@ -1142,7 +1142,7 @@ theorem globalSignatureRevealResult_replays
   | nil => exact ReplaysCausalReveals.nil state.revealed
   | cons chain chains ih =>
       let index : GlobalChainValueIndex :=
-        (chain, request.epoch, encoding chain)
+        (chain, request.leafIndex, encoding chain)
       rw [globalSignatureRevealTrace, globalSignatureRevealResult]
       apply ReplaysCausalReveals.reveal state.revealed _ index (table index) _
         (state.recordReveal index (table index)).revealed
@@ -1190,7 +1190,7 @@ theorem simulate_eagerTrace_globalFilteredCausalSigningAttempt_support_replays
       simpa using globalSignatureRevealResult_replays table request encoding
         allChains
         (Concrete.CacheReplay.signWithEncoding keyView.cache keyView.secretKey
-          request.epoch randomness encoding)
+          request.leafIndex randomness encoding)
         ({ state with cache := encoded.2 } : GlobalCausalHashState)
 
 theorem simulate_eagerTrace_globalFilteredCausalSignBoundedAttempts_support_replays
@@ -1261,7 +1261,7 @@ theorem relTriple_programmed_monitoredGlobalSigningQuery
       ((simulateQ romImpl
         (Concrete.scheme.sign
           (Concrete.materializePrecomputation left.cache left.secretKey)
-          request.epoch request.message)).run leftCache)
+          request.leafIndex request.message)).run leftCache)
       ((monitorGlobalCausalTrace fun causalState =>
         (simulateQ (RevealProbeOracleSimulation.eagerTraceImpl right.1.2)
           (globalFilteredCausalSigningQuery right.1.1 request

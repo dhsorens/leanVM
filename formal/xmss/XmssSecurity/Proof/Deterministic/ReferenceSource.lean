@@ -40,14 +40,14 @@ theorem runWorldSigning_withRequestLog {α : Type} (sign : SignRequest → Oracl
 
 theorem runWorldSigning_sourceGame (secretKey : XmssSecurity.SecretKey)
     (publicKey : PublicKey) (adversary : Adversary) :
-    runWorldSigning (fun (request : SignRequest) => Concrete.precomputedCappedSign secretKey request.epoch request.message) (sourceGame publicKey adversary) =
+    runWorldSigning (fun (request : SignRequest) => Concrete.precomputedCappedSign secretKey request.leafIndex request.message) (sourceGame publicKey adversary) =
       gameRest Concrete.scheme adversary publicKey secretKey := by
   unfold sourceGame
   rw [runWorldSigning, simulateQ_bind]
-  change (runWorldSigning (fun (request : SignRequest) => Concrete.precomputedCappedSign secretKey request.epoch request.message) (withRequestLog (adversary.main publicKey)) >>=
-    fun result => runWorldSigning (fun (request : SignRequest) => Concrete.precomputedCappedSign secretKey request.epoch request.message) (baseLift (finishGame publicKey result))) = _
+  change (runWorldSigning (fun (request : SignRequest) => Concrete.precomputedCappedSign secretKey request.leafIndex request.message) (withRequestLog (adversary.main publicKey)) >>=
+    fun result => runWorldSigning (fun (request : SignRequest) => Concrete.precomputedCappedSign secretKey request.leafIndex request.message) (baseLift (finishGame publicKey result))) = _
   rw [runWorldSigning_withRequestLog]
-  have hlift (result) : runWorldSigning (fun (request : SignRequest) => Concrete.precomputedCappedSign secretKey request.epoch request.message) (baseLift (finishGame publicKey result)) =
+  have hlift (result) : runWorldSigning (fun (request : SignRequest) => Concrete.precomputedCappedSign secretKey request.leafIndex request.message) (baseLift (finishGame publicKey result)) =
       finishGame publicKey result := by
     rw [runWorldSigning, simulateQ_baseLift, simulateQ_ofLift_eq_self]
   simp_rw [hlift]

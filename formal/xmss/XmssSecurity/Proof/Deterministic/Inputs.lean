@@ -7,7 +7,7 @@ namespace XmssSecurity
 set_option backward.isDefEq.respectTransparency false
 
 theorem randomizerHashInput_injective {p₁ p₂ : PublicParameter} {s₁ s₂ : MasterSeed}
-    {e₁ e₂ : Epoch} {m₁ m₂ : Message} {a₁ a₂ : BitVec 32}
+    {e₁ e₂ : LeafIndex} {m₁ m₂ : Message} {a₁ a₂ : BitVec 32}
     (h : randomizerHashInput p₁ s₁ e₁ m₁ a₁ = randomizerHashInput p₂ s₂ e₂ m₂ a₂) :
     p₁ = p₂ ∧ s₁ = s₂ ∧ e₁ = e₂ ∧ m₁ = m₂ ∧ a₁ = a₂ := by
   unfold randomizerHashInput at h
@@ -17,22 +17,22 @@ theorem randomizerHashInput_injective {p₁ p₂ : PublicParameter} {s₁ s₂ :
   have hf := fieldBytes_injective htweak
   have he : e₁ = e₂ := by
     apply Fin.ext
-    have h := congrArg BitVec.toNat (congrArg TweakFields.epoch hf)
-    simpa [Epoch, lifetime, BitVec.toNat_ofNat, Nat.mod_eq_of_lt e₁.isLt, Nat.mod_eq_of_lt e₂.isLt] using h
+    have h := congrArg BitVec.toNat (congrArg TweakFields.leafIndex hf)
+    simpa [LeafIndex, lifetime, BitVec.toNat_ofNat, Nat.mod_eq_of_lt e₁.isLt, Nat.mod_eq_of_lt e₂.isLt] using h
   exact ⟨bytesLE_injective 16 hp, bytesLE_injective 32 hs, he, bytesLE_injective 32 hm,
     congrArg TweakFields.position hf⟩
 
 theorem randomizerHashInput_ne_keygenHashInput (p₁ p₂ : PublicParameter)
-    (s₁ s₂ : MasterSeed) (epoch : Epoch) (message : Message) (trial : BitVec 32) (domain : KeygenDomain) :
-    randomizerHashInput p₁ s₁ epoch message trial ≠ keygenHashInput p₂ domain s₂ := by
+    (s₁ s₂ : MasterSeed) (leafIndex : LeafIndex) (message : Message) (trial : BitVec 32) (domain : KeygenDomain) :
+    randomizerHashInput p₁ s₁ leafIndex message trial ≠ keygenHashInput p₂ domain s₂ := by
   intro h
   have := congrArg List.length h
   simp [randomizerHashInput, keygenHashInput, fieldBytes, length_bytesLE] at this
 
 theorem randomizerHashInput_ne_tweakableHashInput (p₁ p₂ : PublicParameter)
-    (seed : MasterSeed) (epoch : Epoch) (message : Message) (trial : BitVec 32)
+    (seed : MasterSeed) (leafIndex : LeafIndex) (message : Message) (trial : BitVec 32)
     (domain : HashDomain) (payload : HashInput) :
-    randomizerHashInput p₁ seed epoch message trial ≠ tweakableHashInput p₂ domain payload := by
+    randomizerHashInput p₁ seed leafIndex message trial ≠ tweakableHashInput p₂ domain payload := by
   intro h
   simp only [randomizerHashInput, tweakableHashInput, tweakBytes, List.append_assoc] at h
   obtain ⟨htweak, _⟩ := List.append_inj h (by simp [fieldBytes, length_bytesLE])
@@ -48,8 +48,8 @@ theorem derivationSeedHit_keygen (parameter : PublicParameter) (domain : KeygenD
   simp [DerivationSeedHit, keygenHashInput, fieldBytes, bytesLE]
 
 theorem derivationSeedHit_randomizer (parameter : PublicParameter) (seed : MasterSeed)
-    (epoch : Epoch) (message : Message) (trial : BitVec 32) :
-    DerivationSeedHit (randomizerHashInput parameter seed epoch message trial) seed := by
+    (leafIndex : LeafIndex) (message : Message) (trial : BitVec 32) :
+    DerivationSeedHit (randomizerHashInput parameter seed leafIndex message trial) seed := by
   simp [DerivationSeedHit, randomizerHashInput, fieldBytes, bytesLE]
 
 theorem derivationSeedHit_unique {input : HashInput} {left right : MasterSeed}

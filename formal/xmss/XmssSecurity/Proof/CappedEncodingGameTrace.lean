@@ -39,7 +39,7 @@ noncomputable def cappedDetailedGameAfterKeygenWithEncodingTrace
       (adversary.main publicKey)).run ((initialCache, []), [])
   let (verified, finalCache) ←
     (simulateQ romImpl
-      (Concrete.scheme.verify publicKey forgery.epoch forgery.message
+      (Concrete.scheme.verify publicKey forgery.leafIndex forgery.message
         forgery.signature)).run adversaryState.1
   let finalEncodingTrace := appendVerificationEncodingObservation secretKey forgery
     adversaryState.1 finalCache encodingTrace
@@ -61,7 +61,7 @@ theorem cappedDetailedGameAfterKeygenWithEncodingTrace_projection
     fun result => do
       let (verified, finalCache) ←
         (simulateQ romImpl
-          (Concrete.scheme.verify publicKey result.1.epoch result.1.message
+          (Concrete.scheme.verify publicKey result.1.leafIndex result.1.message
             result.1.signature)).run result.2.1.1
       pure (⟨publicKey, secretKey, result.1, result.2.1.2.toSigningLog, verified⟩,
         (finalCache, result.2.1.2))
@@ -70,7 +70,7 @@ theorem cappedDetailedGameAfterKeygenWithEncodingTrace_projection
     fun result => do
       let (verified, finalCache) ←
         (simulateQ romImpl
-          (Concrete.scheme.verify publicKey result.1.epoch result.1.message
+          (Concrete.scheme.verify publicKey result.1.leafIndex result.1.message
             result.1.signature)).run result.2.1
       pure (⟨publicKey, secretKey, result.1, result.2.2.toSigningLog, verified⟩,
         (finalCache, result.2.2))

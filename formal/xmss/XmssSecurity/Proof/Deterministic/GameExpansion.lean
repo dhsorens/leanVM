@@ -62,7 +62,7 @@ theorem erases_deterministicGameRest (known : QueryCache HashSpec) (seed : Maste
   | inr request =>
       simp only [QueryImpl.add_apply_inr, signingOracle, QueryImpl.run_withLogging_apply, bind_pure_comp]
       exact (erases_sign known seed sk randomizers
-        hrandomizers request.epoch request.message).lift_hash.map _
+        hrandomizers request.leafIndex request.message).lift_hash.map _
 
 theorem erases_deterministicGameAfterSecrets (known : QueryCache HashSpec) (seed : MasterSeed)
     (parameter : PublicParameter) (secret : ChainSecrets) (randomizers : RandomizerOutputs)

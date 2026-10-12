@@ -4,7 +4,7 @@
 //! A node verifies `n_raw_xmss` XMSS signatures, `n_raw_sphincs` SPHINCS
 //! signatures and `n_children` sub-proofs **of this same bytecode**, and
 //! by default publishes the sorted deduplicated union of their signer sets. The XMSS
-//! signers are grouped by `(epoch, message)`, so one epoch may carry several
+//! signers are grouped by `(leaf_index, message)`, so one leaf index may carry several
 //! messages, each its own group. A SPHINCS
 //! signer carries its own message, so that half of the statement is a list of
 //! `(key, message)` pairs. Coverage is what carries the security claim: a write-once slot per
@@ -16,14 +16,14 @@
 //! SPHINCS, so the one range check a write already needs also keeps a
 //! signature off another group's declared keys, of either scheme: that is what
 //! makes the published split mean which scheme verified which key against
-//! which `(epoch, message)`, at every level of the tree.
+//! which `(leaf_index, message)`, at every level of the tree.
 //!
 //! A duplicate slot sits outside the prefix the digest hashes, so a key in one is
 //! covered and not claimed. `aggregate`'s `declare` rests on that, the table also
-//! holding undeclared groups so a whole `(epoch, message)` can go unpublished.
+//! holding undeclared groups so a whole `(leaf_index, message)` can go unpublished.
 //! A child's groups need
 //! not equal its parent's: a hinted map, checked by the guest, ties each
-//! non-empty child group to a parent group with the same epoch and message.
+//! non-empty child group to a parent group with the same leaf index and message.
 //! An XMSS slot holds the
 //! key's two cells and a SPHINCS slot four, its key and its message, so the
 //! guest reads each SPHINCS signature's message out of the slot it verifies.
@@ -51,9 +51,9 @@ use std::ops::Range;
 use lean_compiler::{compile, parse_with_replacements};
 use lean_da::{BLOB_SYMBOLS, CELL_SYMBOLS, CELLS_PER_ROW, CODEWORD_SYMBOLS};
 pub use lean_da::{DA_LOG_CELL, DA_LOG_K, DA_MAX_ROWS};
-use lean_vm::cpu::{Program, prove, verify};
-use lean_vm::leaf::{Block, Coord};
-use lean_vm::transcript::FiatShamirState;
+use leanvm_core::cpu::{Program, ProveError, prove, verify};
+use leanvm_core::leaf::{Block, Coord};
+use leanvm_core::transcript::FiatShamirState;
 use primitives::field::{F64, F192, G, g_pow};
 use primitives::multilinear::mle_eval_par;
 use xmss::{XmssPublicKey, XmssSignature};
@@ -64,11 +64,11 @@ use sphincs::{SphincsPublicKey, SphincsSignature};
 /// shares one message, every SPHINCS signer carries its own.
 pub type SphincsClaim = (SphincsPublicKey, sphincs::Message);
 
-/// The XMSS signers sharing one epoch: the epoch, the message they all signed
+/// The XMSS signers sharing one leaf index: the leaf index, the message they all signed
 /// at it, and their strictly sorted keys.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct XmssClaimGroup {
-    pub epoch: xmss::Epoch,
+    pub leaf_index: xmss::LeafIndex,
     pub message: xmss::Message,
     pub keys: Vec<XmssPublicKey>,
 }
@@ -96,17 +96,17 @@ pub const MAX_KEYS: usize = 1 << 16;
 pub const MAX_DA_ROOTS: usize = 16;
 const _: () = assert!(MAX_DA_ROOTS < MAX_KEYS);
 
-/// The most [`XmssClaimGroup`]s one aggregate can carry: headroom over the few epochs
+/// The most [`XmssClaimGroup`]s one aggregate can carry: headroom over the few leaf indices
 /// expected in practice. An empty group is in-circuit unprovable, its list hash
 /// having no valid window split, so this is a bound on cost, not on soundness.
-pub const MAX_EPOCHS: usize = 1024;
+pub const MAX_LEAF_INDICES: usize = 1024;
 
 // The guest bakes a bytecode claim's width from `N_TUPLE_BITS` while `bytecode_vars`
 // reads it off the stacked table, which is `N_BYTECODE_SELECTORS` wide. Two constants
 // that happen to agree: were they to drift, a leaf's claim point would be one length in
 // the guest and another in the statement, and nothing else would notice.
-const _: () = assert!(lean_vm::leaf::N_TUPLE_BITS == lean_vm::leaf::N_BYTECODE_SELECTORS);
-// The epoch fills a tweak's four-byte index field, so a longer lifetime would
+const _: () = assert!(leanvm_core::leaf::N_TUPLE_BITS == leanvm_core::leaf::N_BYTECODE_SELECTORS);
+// The leaf index fills a tweak's four-byte index field, so a longer lifetime would
 // need a weight per bit that `xmss::make_tweak` cannot express.
 const _: () = assert!(xmss::LOG_LIFETIME <= 32);
 // The guest's `WOTS_PK_BLOCKS = (2 + V) / 4` truncates, so a bad `V` would drop
@@ -199,7 +199,7 @@ fn list_split(n: usize, per_block: usize) -> Vec<F192> {
     vec![count(body), count(n - 1 - per_block * body)]
 }
 
-/// One epoch group's declared keys, hashed plainly: 32 bytes a key, so the hashed
+/// One leaf index group's declared keys, hashed plainly: 32 bytes a key, so the hashed
 /// string is `32n` bytes, four keys a block. The guest computes this same digest a
 /// block at a time (`key_list_digest`).
 fn key_list_digest(keys: &[XmssPublicKey]) -> [F192; 2] {
@@ -229,25 +229,25 @@ fn sphincs_signer_cells((pk, message): &SphincsClaim) -> [F192; 4] {
 
 /// One XMSS tweak as the cell the guest adds into: `xmss::make_tweak`'s own
 /// output, packed. The guest holds no byte layout of its own, building a tweak
-/// as this constant half plus one [`tweak_index_weight`] per set epoch bit, so a
+/// as this constant half plus one [`tweak_index_weight`] per set leaf index bit, so a
 /// field that moves in `make_tweak` moves both halves together.
 fn tweak_cell(tweak_type: u8, sub_position: u32) -> F192 {
     pack_16_bytes(&xmss::make_tweak(tweak_type, sub_position, 0))
 }
 
-/// What bit `b` of the epoch weighs in a tweak's index field, so an index is its
+/// What bit `b` of the leaf index weighs in a tweak's index field, so an index is its
 /// set bits summed. The one property of the layout this assumes is that the
 /// index field is linear in the index. Subtract the constant protocol prefix.
 fn tweak_index_weight(b: usize) -> F192 {
     pack_16_bytes(&xmss::make_tweak(0, 0, 1 << b)) + pack_16_bytes(&xmss::make_tweak(0, 0, 0))
 }
 /// The signer-set digest: the plain hash of one run of cells, both list lengths
-/// and the SPHINCS list's own digest, then eight cells a group: its `(epoch,
+/// and the SPHINCS list's own digest, then eight cells a group: its `(leaf_index,
 /// count, message)`, then its key list's digest. That makes every hash block but
 /// the last whole and the last four cells whatever the count, which is what lets
 /// the guest absorb it in a loop (`signer_set_digest` there). Leading with both
 /// lengths makes the encoding prefix-free, so no set's string is a prefix of
-/// another's, and the digest binds its own lengths, the groups' epochs and
+/// another's, and the digest binds its own lengths, the groups' leaf indices and
 /// messages, and every split. The two list digests carry the bulk, each a stock
 /// hash of its own ([`key_list_digest`], [`sphincs_list_digest`]).
 fn signers_hash(xmss_signers: &[XmssClaimGroup], sphincs_signers: &[SphincsClaim]) -> [F192; 2] {
@@ -258,9 +258,14 @@ fn signers_hash(xmss_signers: &[XmssClaimGroup], sphincs_signers: &[SphincsClaim
         sphincs[0],
         sphincs[1],
     ];
-    for XmssClaimGroup { epoch, message, keys } in xmss_signers {
+    for XmssClaimGroup {
+        leaf_index,
+        message,
+        keys,
+    } in xmss_signers
+    {
         cells.extend([
-            F192::new(*epoch as u64, 0, 0),
+            F192::new(*leaf_index as u64, 0, 0),
             count(keys.len()),
             pack_16_bytes(&message[..16]),
             pack_16_bytes(&message[16..]),
@@ -345,7 +350,7 @@ impl DeferredClaim {
 }
 
 /// The statement's fixed header, ahead of the deferred cells: the seed, the
-/// signer-set digest (which itself binds the epoch groups and every count), and
+/// signer-set digest (which itself binds the leaf index groups and every count), and
 /// the DA root-list digest. Fed to the guest as `STMT_HEADER`, so the two cannot drift.
 const STATEMENT_HEADER: usize = 6;
 
@@ -359,7 +364,7 @@ fn lane_hash(lanes: impl Iterator<Item = u64>) -> [F192; 2] {
 /// A node's public statement, hashed to the two words the VM publishes. The
 /// guest's `statement_digest` computes exactly this, both for itself and when it
 /// rebuilds a child's, which is what forces a whole tree onto one bytecode and
-/// each child's `(epoch, message)` groups, bound by the signer-set digest,
+/// each child's `(leaf_index, message)` groups, bound by the signer-set digest,
 /// onto its parent's list.
 ///
 /// Fixed-length preimage, so a plain hash, with no domain tag of its own: the
@@ -369,7 +374,7 @@ fn lane_hash(lanes: impl Iterator<Item = u64>) -> [F192; 2] {
 /// lanes each, whence the assert, the guest being unable to hash a third), then
 /// all three lanes of each deferred cell.
 fn statement_digest(signers_hash: [F192; 2], da_digest: [u8; 32], defer: &DeferredClaim) -> [F192; 2] {
-    let seed = lean_vm::cpu::fs_seed(unified_guest());
+    let seed = leanvm_core::cpu::fs_seed(unified_guest());
     let da_digest = pack_hash_state(&da_digest);
     let header = [
         seed[0],
@@ -408,7 +413,7 @@ struct DeferredSubproof {
 }
 
 /// A proof that every key in [`Self::xmss_signers`] signed its group's message
-/// at its group's epoch under XMSS, and that every `(key, message)` in
+/// at its group's leaf index under XMSS, and that every `(key, message)` in
 /// [`Self::sphincs_signers`] is backed by a valid SPHINCS signature. Each root in
 /// [`Self::da_commitments`] also attests that the committed blob rows are valid Reed-Solomon codewords.
 /// These claims can be established directly or carried from verified child proofs.
@@ -416,7 +421,7 @@ struct DeferredSubproof {
 /// The two lists describe the signature claims and remain separate because the proof says which scheme
 /// verified which key (the module docs give the coverage argument). Until
 /// [`Self::verify`] returns `Ok` they are claims, not attestation, and even then
-/// the epochs and messages are the prover's, so a caller that reads either list
+/// the leaf indices and messages are the prover's, so a caller that reads either list
 /// as attestation of something must compare it against what it expected.
 ///
 /// **Neither length counts signers, only claims.** One key may appear in several
@@ -424,7 +429,7 @@ struct DeferredSubproof {
 /// to count distinct keys itself.
 #[derive(Clone, Debug)]
 pub struct EthereumProof {
-    /// The XMSS signers: strictly increasing `(epoch, message)` pairs,
+    /// The XMSS signers: strictly increasing `(leaf_index, message)` pairs,
     /// each group non-empty and strictly sorted. May be empty. The claims of both schemes together are
     /// strictly fewer than [`MAX_KEYS`].
     xmss_signers: Vec<XmssClaimGroup>,
@@ -435,7 +440,7 @@ pub struct EthereumProof {
     /// What this aggregate defers to whoever discharges it: its parent, in
     /// circuit, or [`Self::verify`], natively.
     defer: DeferredClaim,
-    proof: lean_vm::cpu::Proof,
+    proof: leanvm_core::cpu::Proof,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -449,20 +454,20 @@ pub enum AggregateVerifyError {
     /// The bytes are not a valid encoding of an aggregate.
     MalformedEncoding,
     /// The snark itself did not verify.
-    Snark(lean_vm::cpu::CpuError),
+    Snark(leanvm_core::cpu::CpuError),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AggregationError {
-    /// The union of the `(epoch, message)` groups, over the raw signatures and
-    /// the children, exceeds [`MAX_EPOCHS`].
-    TooManyEpochs,
+    /// The union of the `(leaf_index, message)` groups, over the raw signatures and
+    /// the children, exceeds [`MAX_LEAF_INDICES`].
+    TooManyLeafIndices,
     /// A child aggregate does not verify.
     InvalidChild(AggregateVerifyError),
     /// No signature claims or DA roots to publish.
     Empty,
     /// A declared claim is not one the contributions cover. A claim is a key, an
-    /// epoch and a message, so another epoch or another message is another claim.
+    /// leaf index and a message, so another leaf index or another message is another claim.
     NotCovered,
     /// A raw signature's randomness does not decode to a target-sum encoding,
     /// so there is no witness to build for it.
@@ -480,6 +485,10 @@ pub enum AggregationError {
     /// compiled with. Small aggregates are padded up to the floor, so this means
     /// a child too big: more signatures than one node can hold.
     ChildOutOfRange { log_committed: usize },
+    /// The prover made no proof of this node: the guest rejects its input (a
+    /// forged signature fails the guest's run), or its witness is larger than any
+    /// verifier accepts (too many signatures for one proof).
+    ProofError(ProveError),
 }
 
 impl std::fmt::Display for AggregateVerifyError {
@@ -499,7 +508,7 @@ impl std::error::Error for AggregateVerifyError {}
 impl std::fmt::Display for AggregationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TooManyEpochs => write!(f, "more than MAX_EPOCHS ({MAX_EPOCHS}) XMSS groups"),
+            Self::TooManyLeafIndices => write!(f, "more than MAX_LEAF_INDICES ({MAX_LEAF_INDICES}) XMSS groups"),
             Self::InvalidChild(_) => write!(f, "invalid child aggregate"),
             Self::Empty => write!(f, "no signature claims or DA roots to publish"),
             Self::NotCovered => write!(f, "a declared claim is not covered by the children and raw signatures"),
@@ -528,6 +537,7 @@ impl std::fmt::Display for AggregationError {
                     "a child commits 2^{log_committed} words, outside the guest's opening arms"
                 )
             }
+            Self::ProofError(e) => write!(f, "proving failed: {e}"),
         }
     }
 }
@@ -536,15 +546,16 @@ impl std::error::Error for AggregationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::InvalidChild(e) => Some(e),
+            Self::ProofError(e) => Some(e),
             _ => None,
         }
     }
 }
 
 /// Everything but the signer set, which a receiver may already hold.
-type WireCore = (Vec<[u8; 32]>, Vec<F192>, Vec<F192>, lean_vm::cpu::Proof);
+type WireCore = (Vec<[u8; 32]>, Vec<F192>, Vec<F192>, leanvm_core::cpu::Proof);
 
-/// Signature claims grouped by scheme: XMSS epoch/message groups, then SPHINCS key/message pairs.
+/// Signature claims grouped by scheme: XMSS leaf index/message groups, then SPHINCS key/message pairs.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SignatureClaims {
     pub xmss: Vec<XmssClaimGroup>,
@@ -568,10 +579,10 @@ fn wire() -> impl bincode::Options {
 
 /// Reject a signer set that the coverage argument does not cover: strict sorting
 /// within each list is what stops one signer being counted many times: the XMSS
-/// list's length is a count of distinct `(epoch, message, key)` claims, the SPHINCS
+/// list's length is a count of distinct `(leaf_index, message, key)` claims, the SPHINCS
 /// list's of distinct `(key, message)` claims. The groups are strictly increasing
-/// on `(epoch, message)`, non-empty (an absent pair is an absent group, the one
-/// encoding of each set) and at most [`MAX_EPOCHS`]. Either list may be empty;
+/// on `(leaf_index, message)`, non-empty (an absent pair is an absent group, the one
+/// encoding of each set) and at most [`MAX_LEAF_INDICES`]. Either list may be empty;
 /// both may be empty for a blob proof. [`MAX_KEYS`] is exclusive here, as in the guest.
 fn check_signer_set(
     xmss_signers: &[XmssClaimGroup],
@@ -579,10 +590,10 @@ fn check_signer_set(
 ) -> Result<(), AggregateVerifyError> {
     let total = xmss_signers.iter().map(|group| group.keys.len()).sum::<usize>() + sphincs_signers.len();
     if total >= MAX_KEYS
-        || xmss_signers.len() > MAX_EPOCHS
+        || xmss_signers.len() > MAX_LEAF_INDICES
         || !xmss_signers
             .windows(2)
-            .all(|w| (w[0].epoch, w[0].message) < (w[1].epoch, w[1].message))
+            .all(|w| (w[0].leaf_index, w[0].message) < (w[1].leaf_index, w[1].message))
         || xmss_signers
             .iter()
             .any(|group| group.keys.is_empty() || !group.keys.windows(2).all(|w| w[0] < w[1]))
@@ -622,7 +633,7 @@ impl EthereumProof {
         )
     }
 
-    /// Strictly increasing `(epoch, message)` pairs, each group non-empty and
+    /// Strictly increasing `(leaf_index, message)` pairs, each group non-empty and
     /// strictly sorted. May be empty, including in a blob-only proof.
     pub fn xmss_signers(&self) -> &[XmssClaimGroup] {
         &self.xmss_signers
@@ -649,14 +660,14 @@ impl EthereumProof {
     /// The declared claims, as many as the coverage table's declared slots.
     ///
     /// NOT a count of distinct signers: a SPHINCS key may hold several claims,
-    /// one per message it signed, and an XMSS key one per `(epoch, message)` it signed
+    /// one per message it signed, and an XMSS key one per `(leaf_index, message)` it signed
     /// (see the notes on the two lists). A caller that wants signers has to
     /// deduplicate by key itself.
     pub fn num_signature_claims(&self) -> usize {
         self.xmss_signers.iter().map(|group| group.keys.len()).sum::<usize>() + self.sphincs_signers.len()
     }
 
-    /// The wire format: the signer set (each group with its epoch and
+    /// The wire format: the signer set (each group with its leaf index and
     /// message), the DA root list, the two deferred points, and the VM proof. The claim *values* are not transmitted;
     /// [`Self::from_bytes`] recomputes them, so there is nothing to lie about.
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -680,7 +691,8 @@ impl EthereumProof {
         wire().serialize(&self.core()).expect("an aggregate serializes")
     }
 
-    pub(crate) fn proof(&self) -> &lean_vm::cpu::Proof {
+    /// The underlying VM proof, whose serialized size the CLI's benchmarks report.
+    pub fn proof(&self) -> &leanvm_core::cpu::Proof {
         &self.proof
     }
 
@@ -694,7 +706,7 @@ impl EthereumProof {
         )
     }
 
-    fn core(&self) -> (&[[u8; 32]], &[F192], &[F192], &lean_vm::cpu::Proof) {
+    fn core(&self) -> (&[[u8; 32]], &[F192], &[F192], &leanvm_core::cpu::Proof) {
         (
             &self.da_roots,
             &self.defer.bytecode_point,
@@ -730,10 +742,10 @@ impl EthereumProof {
     /// all of it.
     ///
     /// This says "every key in `xmss_signers` signed its group's message at its
-    /// group's epoch, and every `(key, message)` in `sphincs_signers` is a valid
-    /// SPHINCS signature", with the epochs and messages chosen by whoever
+    /// group's leaf index, and every `(key, message)` in `sphincs_signers` is a valid
+    /// SPHINCS signature", with the leaf indices and messages chosen by whoever
     /// produced the aggregate: an aggregate over the same keys at different
-    /// epochs, or under different messages, verifies just as well. A caller that
+    /// leaf indices, or under different messages, verifies just as well. A caller that
     /// expects particular pairs has to check the two lists against them. Every root in
     /// [`Self::da_commitments`] also attests to a well-formed blob matrix; callers check
     /// that this list contains the commitments they require.
@@ -761,7 +773,7 @@ impl EthereumProof {
 /// evaluates it and building it walks the whole program.
 fn stacked_bytecode() -> &'static [F64] {
     static TABLE: std::sync::OnceLock<Vec<F64>> = std::sync::OnceLock::new();
-    TABLE.get_or_init(|| lean_vm::cpu::layout::bytecode_table(&unified_guest().prog))
+    TABLE.get_or_init(|| leanvm_core::cpu::layout::bytecode_table(&unified_guest().prog))
 }
 
 /// The slots of the stacked bytecode that are not structurally zero.
@@ -775,9 +787,9 @@ fn bytecode_window() -> Range<usize> {
     WINDOW
         .get_or_init(|| {
             let table = stacked_bytecode();
-            let kbc = bytecode_vars() - lean_vm::leaf::N_BYTECODE_SELECTORS;
+            let kbc = bytecode_vars() - leanvm_core::leaf::N_BYTECODE_SELECTORS;
             let live = |s: usize| table[s << kbc..(s + 1) << kbc].iter().any(|v| *v != F64::ZERO);
-            let slots = 1 << lean_vm::leaf::N_BYTECODE_SELECTORS;
+            let slots = 1 << leanvm_core::leaf::N_BYTECODE_SELECTORS;
             let start = (0..slots).find(|&s| live(s)).expect("the bytecode is not all zero");
             let end = (0..slots).rfind(|&s| live(s)).expect("the bytecode is not all zero") + 1;
             start..end
@@ -828,7 +840,7 @@ fn fold_lsb_base(table: &[F64], challenge: F192) -> Vec<F192> {
 /// variables are bound. A closed form, so the row rounds never have to carry the
 /// slot half of a `2^kbcv` weight table.
 fn slot_weights(points: &[Vec<F192>], lambdas: &[F192], r_row: &[F192], kbc: usize) -> Vec<F192> {
-    let slots = lean_vm::leaf::N_BYTECODE_SELECTORS;
+    let slots = leanvm_core::leaf::N_BYTECODE_SELECTORS;
     let mut weights = vec![F192::ZERO; 1 << slots];
     for (point, &lambda) in points.iter().zip(lambdas) {
         let row_weight: F192 = (0..kbc).fold(lambda, |acc, k| acc * (F192::ONE + point[k] + r_row[k]));
@@ -1042,9 +1054,9 @@ fn aggregate_deferred_claims(
     // stacked table is structurally zero and contributes nothing to any round
     // message, and folding LSB-first pairs entries within a slot, so the window's
     // blocks stay aligned all the way down.
-    let n_slots = 1 << lean_vm::leaf::N_BYTECODE_SELECTORS;
+    let n_slots = 1 << leanvm_core::leaf::N_BYTECODE_SELECTORS;
     let slot_window = bytecode_window();
-    let kbc = kbcv - lean_vm::leaf::N_BYTECODE_SELECTORS;
+    let kbc = kbcv - leanvm_core::leaf::N_BYTECODE_SELECTORS;
     let mut wt = weighted_eq_table(
         &points,
         &gbc,
@@ -1076,7 +1088,7 @@ fn aggregate_deferred_claims(
     bt_slots[slot_window.clone()].copy_from_slice(&bt);
     let wt_slots = slot_weights(&points, &gbc, &r_bc, kbc);
     let (mut bt, mut wt) = (bt_slots, wt_slots);
-    for _ in 0..lean_vm::leaf::N_BYTECODE_SELECTORS {
+    for _ in 0..leanvm_core::leaf::N_BYTECODE_SELECTORS {
         let msg = round_msg(&[(&bt, &wt, F192::ONE)]);
         let r = absorb_round(&mut transcript, &mut bscr, &mut r_bc, &mut brun, msg);
         fold_lsb(&mut bt, r);
@@ -1293,8 +1305,8 @@ fn merkle_cap_depth(queries: usize, depth: usize) -> usize {
 
 /// The SHA3 table's virtual value columns, in `hash_flock::SLOTS` order.
 fn sha3_value_columns() -> Vec<usize> {
-    let base = lean_vm::cpu::schema().base[5];
-    lean_vm::tables::SHA3_VALUE_COLS.iter().map(|&c| base + c).collect()
+    let base = leanvm_core::cpu::schema().base[5];
+    leanvm_core::tables::SHA3_VALUE_COLS.iter().map(|&c| base + c).collect()
 }
 
 /// One entry of the guest's claim pool.
@@ -1360,12 +1372,12 @@ fn push_coord_terms(c: &Coord, base: usize, terms: &mut Vec<Term>) {
 /// bus claims (deduped by `(column, kappa)`, as `leaf.rs` pools them), then every
 /// table's committed columns, then the PI memory triple. The placeholder map's
 /// claim descriptors follow this order.
-fn walk_claims(layout: &lean_vm::cpu::Layout, kbc: usize, mut visit: impl FnMut(ClaimSite)) {
+fn walk_claims(layout: &leanvm_core::cpu::Layout, kbc: usize, mut visit: impl FnMut(ClaimSite)) {
     let sides: [&[Block]; 3] = [&layout.push, &layout.pull, &layout.count];
     let valcols = sha3_value_columns();
     // Only the framework blocks raise claims: a table's coords are settled inside
     // the table sumcheck.
-    let is_framework: Vec<bool> = lean_vm::cpu::block_kappa_sources(kbc)
+    let is_framework: Vec<bool> = leanvm_core::cpu::block_kappa_sources(kbc)
         .into_iter()
         .map(|(src, _)| src < 2)
         .collect();
@@ -1389,8 +1401,8 @@ fn walk_claims(layout: &lean_vm::cpu::Layout, kbc: usize, mut visit: impl FnMut(
             }
         }
     }
-    let sch = lean_vm::cpu::schema();
-    for (t, table) in lean_vm::tables::tables().iter().enumerate() {
+    let sch = leanvm_core::cpu::schema();
+    for (t, table) in leanvm_core::tables::tables().iter().enumerate() {
         for c in 0..table.n_committed_columns() {
             let column = sch.base[t] + c;
             visit(ClaimSite::TableColumn {
@@ -1399,7 +1411,11 @@ fn walk_claims(layout: &lean_vm::cpu::Layout, kbc: usize, mut visit: impl FnMut(
             });
         }
     }
-    for &column in &[lean_vm::cpu::MEM_LO, lean_vm::cpu::MEM_HI, lean_vm::cpu::MEM_TOP] {
+    for &column in &[
+        leanvm_core::cpu::MEM_LO,
+        leanvm_core::cpu::MEM_HI,
+        leanvm_core::cpu::MEM_TOP,
+    ] {
         visit(ClaimSite::MemoryLimb { column });
     }
 }
@@ -1410,17 +1426,17 @@ fn walk_claims(layout: &lean_vm::cpu::Layout, kbc: usize, mut visit: impl FnMut(
 fn gen_verify(
     program: &Program,
     public_input: [F192; 2],
-    summary: lean_vm::cpu::VerifySummary,
+    summary: leanvm_core::cpu::VerifySummary,
 ) -> Result<(SubHints, DeferredSubproof), AggregationError> {
     let proof_stream = &summary.raw.stream;
-    let layout = lean_vm::cpu::layout(
+    let layout = leanvm_core::cpu::layout(
         &program.prog,
         proof_stream[0].c0 as usize,
         std::array::from_fn(|i| proof_stream[1 + i].c0 as usize),
         public_input,
     );
     let sides: [&[Block]; 3] = [&layout.push, &layout.pull, &layout.count];
-    let side_layouts = sides.map(lean_vm::leaf::layout);
+    let side_layouts = sides.map(leanvm_core::leaf::layout);
     // Fixed capacities: every buffer/stride placeholder is a global cap so
     // the placeholder map is SHAPE-INDEPENDENT (the definition of generic).
     assert!(side_layouts.iter().all(|side| side.mu <= MU_CAP) && proof_stream.len() <= STREAM_CAP);
@@ -1435,7 +1451,7 @@ fn gen_verify(
 
     // ---- typed extraction: proof structs + the verifier's summary ----
     // Push and pull share the bytecode point.
-    let kbc = summary.bytecode_claim.point.len() - lean_vm::leaf::N_BYTECODE_SELECTORS;
+    let kbc = summary.bytecode_claim.point.len() - leanvm_core::leaf::N_BYTECODE_SELECTORS;
 
     let taus = layout.taus;
     // Flock replay data, all named struct fields.
@@ -1514,7 +1530,7 @@ fn gen_verify(
     // sorted by descending kappa, then by their native column index. Transport
     // compact committed-column indices; the guest certifies the permutation,
     // ordering, and accumulated offsets before using them as claim selectors.
-    let col_sources = lean_vm::cpu::col_kappa_sources(kbc);
+    let col_sources = leanvm_core::cpu::col_kappa_sources(kbc);
     let committed_globals: Vec<usize> = col_sources
         .iter()
         .enumerate()
@@ -1630,9 +1646,9 @@ fn gen_verify(
 /// candidate `mu` in `MU_MIN..=MU_MAX` (mirrored by the soundness test's
 /// residual-log cap).
 const MU_MIN: usize = 22;
-const MU_MAX: usize = lean_vm::pcs::MAX_MU;
+const MU_MAX: usize = leanvm_core::pcs::MAX_MU;
 
-const _: () = assert!(MU_MIN >= lean_vm::pcs::MIN_MU);
+const _: () = assert!(MU_MIN >= leanvm_core::pcs::MIN_MU);
 
 /// The guest's baked buffer caps, which `placeholder_map` compiles in and
 /// `gen_verify` admits against: one definition, so a hinted shape can never
@@ -1679,16 +1695,16 @@ impl Hints {
 }
 
 /// The coverage slot each write in the guest's coverage walk targets, in walk
-/// order: the raw signatures first (grouped by epoch, as the guest loops over
+/// order: the raw signatures first (grouped by leaf index, as the guest loops over
 /// them), then each child's key lists.
 ///
-/// The table is one contiguous region per XMSS epoch group, then the SPHINCS
+/// The table is one contiguous region per XMSS leaf index group, then the SPHINCS
 /// pair, each region its declared keys followed by its own duplicate slots:
 ///
 /// | slots | holds |
 /// | --- | --- |
-/// | `[0, n_0 + d_0)` | epoch group 0: declared keys, then duplicates |
-/// | ... | one such region per declared group, in epoch order |
+/// | `[0, n_0 + d_0)` | leaf index group 0: declared keys, then duplicates |
+/// | ... | one such region per declared group, in leaf index order |
 /// | ... | then one per covered-but-undeclared group, all duplicates |
 /// | `[X, X + n_sphincs)` | the declared SPHINCS keys |
 /// | `[X + n_sphincs, n_total)` | SPHINCS duplicate slots |
@@ -1700,10 +1716,10 @@ impl Hints {
 /// count, is what makes every declared key covered by a real signature or a
 /// verified child.
 ///
-/// Keeping each region contiguous is what binds the scheme and the epoch: the
+/// Keeping each region contiguous is what binds the scheme and the leaf index: the
 /// guest addresses every writer as an offset into one region, bounded by that
 /// region's size, one range check per write, so no signature can reach a key
-/// declared under another epoch or the other scheme.
+/// declared under another leaf index or the other scheme.
 struct Coverage {
     /// Declared groups in statement order, then undeclared ones, all duplicates.
     xmss_groups: Vec<XmssClaimGroup>,
@@ -1716,7 +1732,7 @@ struct Coverage {
     /// Offsets within each raw signature's own group region, indexed as `raw_xmss`.
     raw_xmss: Vec<usize>,
     /// `raw_xmss` indices in the guest's walk order: it walks the table, whose
-    /// groups are declared-first rather than epoch-sorted.
+    /// groups are declared-first rather than leaf-index-sorted.
     raw_walk: Vec<usize>,
     /// Offsets past `X`, in the SPHINCS region.
     raw_sphincs: Vec<usize>,
@@ -1756,21 +1772,26 @@ fn take_slot<K: Ord + Clone>(claims: &[K], claimed: &mut [bool], duplicates: &mu
 }
 
 fn plan_coverage(
-    raw_xmss: &[(XmssPublicKey, xmss::Epoch, xmss::Message)],
+    raw_xmss: &[(XmssPublicKey, xmss::LeafIndex, xmss::Message)],
     raw_sphincs: &[SphincsClaim],
     children: &[EthereumProof],
     declare: Option<&SignatureClaims>,
 ) -> Result<Coverage, AggregationError> {
-    // The union, as `(epoch, message, key)` claims, then grouped: consecutive
-    // equal `(epoch, message)` pairs of the sorted deduplicated list are one group.
-    let mut claims: Vec<(xmss::Epoch, xmss::Message, XmssPublicKey)> = Vec::with_capacity(raw_xmss.len());
-    for (pk, epoch, message) in raw_xmss {
-        claims.push((*epoch, *message, pk.clone()));
+    // The union, as `(leaf_index, message, key)` claims, then grouped: consecutive
+    // equal `(leaf_index, message)` pairs of the sorted deduplicated list are one group.
+    let mut claims: Vec<(xmss::LeafIndex, xmss::Message, XmssPublicKey)> = Vec::with_capacity(raw_xmss.len());
+    for (pk, leaf_index, message) in raw_xmss {
+        claims.push((*leaf_index, *message, pk.clone()));
     }
     let mut sphincs_signers = raw_sphincs.to_vec();
     for child in children {
-        for XmssClaimGroup { epoch, message, keys } in &child.xmss_signers {
-            claims.extend(keys.iter().map(|pk| (*epoch, *message, pk.clone())));
+        for XmssClaimGroup {
+            leaf_index,
+            message,
+            keys,
+        } in &child.xmss_signers
+        {
+            claims.extend(keys.iter().map(|pk| (*leaf_index, *message, pk.clone())));
         }
         sphincs_signers.extend_from_slice(&child.sphincs_signers);
     }
@@ -1780,11 +1801,11 @@ fn plan_coverage(
     sphincs_signers.sort();
     sphincs_signers.dedup();
     let mut union_groups: Vec<XmssClaimGroup> = Vec::new();
-    for (epoch, message, pk) in claims {
+    for (leaf_index, message, pk) in claims {
         match union_groups.last_mut() {
-            Some(group) if (group.epoch, group.message) == (epoch, message) => group.keys.push(pk),
+            Some(group) if (group.leaf_index, group.message) == (leaf_index, message) => group.keys.push(pk),
             _ => union_groups.push(XmssClaimGroup {
-                epoch,
+                leaf_index,
                 message,
                 keys: vec![pk],
             }),
@@ -1792,11 +1813,16 @@ fn plan_coverage(
     }
     // Groups the declaration holds nothing of go last, so the declared ones are the
     // prefix the digest hashes. Claims are struck off, so leftovers are uncovered.
-    let mut wanted: BTreeSet<(xmss::Epoch, xmss::Message, XmssPublicKey)> = BTreeSet::new();
+    let mut wanted: BTreeSet<(xmss::LeafIndex, xmss::Message, XmssPublicKey)> = BTreeSet::new();
     let mut wanted_sphincs: BTreeSet<SphincsClaim> = BTreeSet::new();
     if let Some(SignatureClaims { xmss, sphincs }) = declare {
-        for XmssClaimGroup { epoch, message, keys } in xmss {
-            wanted.extend(keys.iter().map(|key| (*epoch, *message, key.clone())));
+        for XmssClaimGroup {
+            leaf_index,
+            message,
+            keys,
+        } in xmss
+        {
+            wanted.extend(keys.iter().map(|key| (*leaf_index, *message, key.clone())));
         }
         wanted_sphincs.extend(sphincs.iter().copied());
     }
@@ -1805,7 +1831,7 @@ fn plan_coverage(
     for mut group in union_groups {
         group
             .keys
-            .retain(|key| declare.is_none() || wanted.remove(&(group.epoch, group.message, key.clone())));
+            .retain(|key| declare.is_none() || wanted.remove(&(group.leaf_index, group.message, key.clone())));
         if group.keys.is_empty() {
             covered_only.push(group);
         } else {
@@ -1814,8 +1840,8 @@ fn plan_coverage(
     }
     let n_declared = xmss_groups.len();
     xmss_groups.append(&mut covered_only);
-    if xmss_groups.len() > MAX_EPOCHS {
-        return Err(AggregationError::TooManyEpochs);
+    if xmss_groups.len() > MAX_LEAF_INDICES {
+        return Err(AggregationError::TooManyLeafIndices);
     }
     if declare.is_some() {
         sphincs_signers.retain(|signer| wanted_sphincs.remove(signer));
@@ -1823,11 +1849,11 @@ fn plan_coverage(
             return Err(AggregationError::NotCovered);
         }
     }
-    // The table is no longer sorted by `(epoch, message)`.
-    let region_of: BTreeMap<(xmss::Epoch, xmss::Message), usize> = xmss_groups
+    // The table is no longer sorted by `(leaf_index, message)`.
+    let region_of: BTreeMap<(xmss::LeafIndex, xmss::Message), usize> = xmss_groups
         .iter()
         .enumerate()
-        .map(|(j, group)| ((group.epoch, group.message), j))
+        .map(|(j, group)| ((group.leaf_index, group.message), j))
         .collect();
     let mut xmss_claimed: Vec<Vec<bool>> = xmss_groups.iter().map(|group| vec![false; group.keys.len()]).collect();
     let mut xmss_dups: Vec<Vec<XmssPublicKey>> = vec![Vec::new(); xmss_groups.len()];
@@ -1835,8 +1861,8 @@ fn plan_coverage(
     let mut sphincs_dups = Vec::new();
     let raw_xmss_slots: Vec<usize> = raw_xmss
         .iter()
-        .map(|(pk, epoch, message)| {
-            let g = region_of[&(*epoch, *message)];
+        .map(|(pk, leaf_index, message)| {
+            let g = region_of[&(*leaf_index, *message)];
             take_slot(&xmss_groups[g].keys, &mut xmss_claimed[g], &mut xmss_dups[g], pk)
         })
         .collect();
@@ -1852,7 +1878,7 @@ fn plan_coverage(
                 .xmss_signers
                 .iter()
                 .map(|group| {
-                    let g = region_of[&(group.epoch, group.message)];
+                    let g = region_of[&(group.leaf_index, group.message)];
                     let offsets = group
                         .keys
                         .iter()
@@ -1897,10 +1923,10 @@ fn push_signature_hints(
     pk: &XmssPublicKey,
     sig: &XmssSignature,
     message: &xmss::Message,
-    xmss_epoch: xmss::Epoch,
+    xmss_leaf_index: xmss::LeafIndex,
 ) -> Result<(), AggregationError> {
     let wots = &sig.wots_signature;
-    let encoding = xmss::wots_encode(message, xmss_epoch, &pk.public_param, &wots.randomness)
+    let encoding = xmss::wots_encode(message, xmss_leaf_index, &pk.public_param, &wots.randomness)
         .ok_or(AggregationError::MalformedRawSignature)?;
     let mut randomness = [0u8; xmss::STATE_LEN];
     randomness[..xmss::RANDOMNESS_LEN].copy_from_slice(&wots.randomness);
@@ -1969,11 +1995,11 @@ pub(crate) struct DaInput<'a> {
     pub roots: Option<&'a [[u8; 32]]>,
 }
 
-/// Prove existence of signatures and valid encoding of PQ, potentially using recursive children.
+/// Prove existence of signatures and valid encoding of PQ-blobs, potentially using recursive children.
 ///
 /// - `children`: child proofs; at most [`MAX_RECURSIONS`].
-/// - `raw_xmss`: list of `(public_key, epoch, message, signature)`, any order; at most
-///   [`MAX_EPOCHS`] distinct `(epoch, message)` pairs across the whole result.
+/// - `raw_xmss`: list of `(public_key, leaf_index, message, signature)`, any order; at most
+///   [`MAX_LEAF_INDICES`] distinct `(leaf_index, message)` pairs across the whole result.
 /// - `raw_sphincs`: list of `(public_key, message, signature)`, any order.
 /// - `blobs`: concatenated blobs, each containing [`BLOB_SYMBOLS`] little-endian `u64` symbols;
 ///   at most [`DA_MAX_ROWS`] blobs.
@@ -1988,40 +2014,33 @@ pub(crate) struct DaInput<'a> {
 /// - `aggregate` should not be called more than once at a time in parallel per process.
 /// - Raw signatures are assumed valid (otherwise `aggregate` will panic).
 ///
-/// XMSS Performance: it is optimized for a small set of different (epoch, message), and many XMSS
+/// XMSS Performance: it is optimized for a small set of different (leaf index, message), and many XMSS
 /// sharing each such pair.
 pub fn aggregate(
     children: &[EthereumProof],
-    raw_xmss: Vec<(XmssPublicKey, xmss::Epoch, xmss::Message, XmssSignature)>,
+    raw_xmss: Vec<(XmssPublicKey, xmss::LeafIndex, xmss::Message, XmssSignature)>,
     raw_sphincs: Vec<(SphincsPublicKey, sphincs::Message, SphincsSignature)>,
     blobs: &[u64],
     declare: Option<ClaimSelection<'_>>,
     log_inv_rate: usize,
 ) -> Result<EthereumProof, AggregationError> {
+    aggregate_with_stats(children, raw_xmss, raw_sphincs, blobs, declare, log_inv_rate).map(|(sig, _)| sig)
+}
+
+/// [`aggregate`], also returning the prover's statistics (what the CLI's benchmarks report).
+pub fn aggregate_with_stats(
+    children: &[EthereumProof],
+    raw_xmss: Vec<(XmssPublicKey, xmss::LeafIndex, xmss::Message, XmssSignature)>,
+    raw_sphincs: Vec<(SphincsPublicKey, sphincs::Message, SphincsSignature)>,
+    blobs: &[u64],
+    declare: Option<ClaimSelection<'_>>,
+    log_inv_rate: usize,
+) -> Result<(EthereumProof, leanvm_core::cpu::Stats), AggregationError> {
     let da_input = DaInput {
         rows: blobs,
         roots: declare.map(|claims| claims.da_commitments),
     };
-    aggregate_with_stats(
-        children,
-        raw_xmss,
-        raw_sphincs,
-        declare.map(|claims| claims.signatures),
-        da_input,
-        log_inv_rate,
-    )
-    .map(|(sig, _)| sig)
-}
-
-/// [`aggregate`], keeping the prover statistics the benchmark reports.
-pub(crate) fn aggregate_with_stats(
-    children: &[EthereumProof],
-    raw_xmss: Vec<(XmssPublicKey, xmss::Epoch, xmss::Message, XmssSignature)>,
-    raw_sphincs: Vec<(SphincsPublicKey, sphincs::Message, SphincsSignature)>,
-    declare: Option<&SignatureClaims>,
-    da_input: DaInput<'_>,
-    log_inv_rate: usize,
-) -> Result<(EthereumProof, lean_vm::cpu::Stats), AggregationError> {
+    let declare = declare.map(|claims| claims.signatures);
     aggregate_tampered(children, raw_xmss, raw_sphincs, declare, da_input, log_inv_rate, |_| {})
 }
 
@@ -2033,15 +2052,15 @@ pub(crate) fn aggregate_with_stats(
 /// (`aggregate_hints_bind`); with an empty hook this is the production path.
 pub(crate) fn aggregate_tampered(
     children: &[EthereumProof],
-    raw_xmss: Vec<(XmssPublicKey, xmss::Epoch, xmss::Message, XmssSignature)>,
+    raw_xmss: Vec<(XmssPublicKey, xmss::LeafIndex, xmss::Message, XmssSignature)>,
     raw_sphincs: Vec<(SphincsPublicKey, sphincs::Message, SphincsSignature)>,
     declare: Option<&SignatureClaims>,
     da_input: DaInput<'_>,
     log_inv_rate: usize,
     tamper: impl FnOnce(&mut Hints),
-) -> Result<(EthereumProof, lean_vm::cpu::Stats), AggregationError> {
+) -> Result<(EthereumProof, leanvm_core::cpu::Stats), AggregationError> {
     // Otherwise this reaches `cpu::prove`, which asserts rather than reporting.
-    if !(lean_vm::pcs::MIN_LOG_INV_RATE..=lean_vm::pcs::MAX_LOG_INV_RATE).contains(&log_inv_rate) {
+    if !(leanvm_core::pcs::MIN_LOG_INV_RATE..=leanvm_core::pcs::MAX_LOG_INV_RATE).contains(&log_inv_rate) {
         return Err(AggregationError::InvalidRate { log_inv_rate });
     }
     if children.len() > MAX_RECURSIONS {
@@ -2068,7 +2087,7 @@ pub(crate) fn aggregate_tampered(
     }
 
     let guest = unified_guest();
-    // Sorted by `(epoch, message, key)` to group them; `Coverage::raw_walk` then
+    // Sorted by `(leaf_index, message, key)` to group them; `Coverage::raw_walk` then
     // puts the groups in the guest's order.
     let mut raw_xmss = raw_xmss;
     raw_xmss.sort_by(|(a, ae, am, _), (b, be, bm, _)| (ae, am, a).cmp(&(be, bm, b)));
@@ -2097,9 +2116,9 @@ pub(crate) fn aggregate_tampered(
     drop(_span);
 
     let _span = tracing::info_span!("Build witness").entered();
-    let raw_xmss_claims: Vec<(XmssPublicKey, xmss::Epoch, xmss::Message)> = raw_xmss
+    let raw_xmss_claims: Vec<(XmssPublicKey, xmss::LeafIndex, xmss::Message)> = raw_xmss
         .iter()
-        .map(|(pk, epoch, message, _)| (pk.clone(), *epoch, *message))
+        .map(|(pk, leaf_index, message, _)| (pk.clone(), *leaf_index, *message))
         .collect();
     let raw_sphincs_keys: Vec<SphincsClaim> = raw_sphincs.iter().map(|(pk, message, _)| (*pk, *message)).collect();
     let cover = plan_coverage(&raw_xmss_claims, &raw_sphincs_keys, children, declare)?;
@@ -2111,7 +2130,7 @@ pub(crate) fn aggregate_tampered(
     let n_sphincs = cover.sphincs_signers.len();
     let group_cells = |group: &XmssClaimGroup| {
         [
-            F192::new(group.epoch as u64, 0, 0),
+            F192::new(group.leaf_index as u64, 0, 0),
             pack_16_bytes(&group.message[..16]),
             pack_16_bytes(&group.message[16..]),
         ]
@@ -2130,9 +2149,9 @@ pub(crate) fn aggregate_tampered(
             count(usize::from(!rows.is_empty())),
         ],
     );
-    let fs_seed = lean_vm::cpu::fs_seed(guest);
+    let fs_seed = leanvm_core::cpu::fs_seed(guest);
     hints.push("fs_seed", vec![fs_seed[0], fs_seed[1]]);
-    // Per group: its epoch, its two message cells, and its declared, duplicate
+    // Per group: its leaf index, its two message cells, and its declared, duplicate
     // and raw-signature counts, in the guest's geometry-pass order. The keys
     // then ride one hash block's worth (four) per `pubkeys` entry, the last
     // entry holding what is left; each group's duplicates follow its keys.
@@ -2144,7 +2163,7 @@ pub(crate) fn aggregate_tampered(
             count(
                 raw_xmss
                     .iter()
-                    .filter(|(_, e, m, _)| (*e, *m) == (group.epoch, group.message))
+                    .filter(|(_, e, m, _)| (*e, *m) == (group.leaf_index, group.message))
                     .count(),
             ),
         ]);
@@ -2170,13 +2189,13 @@ pub(crate) fn aggregate_tampered(
     for signer in &cover.sphincs_dups {
         hints.push("dup_sphincs", sphincs_signer_cells(signer).to_vec());
     }
-    // Group-major over the table, not over the epochs `raw_xmss` is sorted by: a
+    // Group-major over the table, not over the leaf indices `raw_xmss` is sorted by: a
     // declaration puts the undeclared groups last. Each index is an offset within
     // the signature's own group region.
     for &i in &cover.raw_walk {
-        let (pk, epoch, message, sig) = &raw_xmss[i];
+        let (pk, leaf_index, message, sig) = &raw_xmss[i];
         hints.push("raw_index", vec![count(cover.raw_xmss[i])]);
-        push_signature_hints(&mut hints, pk, sig, message, *epoch)?;
+        push_signature_hints(&mut hints, pk, sig, message, *leaf_index)?;
     }
     // A SPHINCS slot is hinted as an offset into the SPHINCS region, which is
     // how one range check keeps the scheme's writers off the other's keys.
@@ -2309,7 +2328,7 @@ pub(crate) fn aggregate_tampered(
     program.min_log_committed = MU_MIN;
     tamper(&mut hints);
     hints.install(&mut program);
-    let (proof, stats) = prove(&program, public_input, log_inv_rate);
+    let (proof, stats) = prove(&program, public_input, log_inv_rate).map_err(AggregationError::ProofError)?;
     Ok((
         EthereumProof {
             xmss_signers: cover.declared().to_vec(),
@@ -2377,8 +2396,13 @@ struct OpeningShape {
 fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     // Only block and coordinate structure is used here; dummy instructions and
     // table sizes let us derive it before the guest's bytecode exists.
-    let stand_in = vec![lean_vm::cpu::Op::Xor { a: 0, b: 0, c: 0 }; 1 << kbc];
-    let layout = lean_vm::cpu::layout(&stand_in, 20, [10; lean_vm::tables::N_TABLES], [F192::ZERO, F192::ZERO]);
+    let stand_in = vec![leanvm_core::cpu::Op::Xor { a: 0, b: 0, c: 0 }; 1 << kbc];
+    let layout = leanvm_core::cpu::layout(
+        &stand_in,
+        20,
+        [10; leanvm_core::tables::N_TABLES],
+        [F192::ZERO, F192::ZERO],
+    );
     let sides: [&[Block]; 3] = [&layout.push, &layout.pull, &layout.count];
     let lcrounds = flock::hash::K_LOG - 6;
 
@@ -2396,8 +2420,8 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     // successor) costs terms rather than columns. A framework coordinate has none:
     // it decomposes into pooled claims instead.
     // The table sumcheck settles table claims; only framework blocks stream column values.
-    let sch_pm = lean_vm::cpu::schema();
-    let owner_pm: Vec<Option<usize>> = lean_vm::cpu::block_kappa_sources(kbc)
+    let sch_pm = leanvm_core::cpu::schema();
+    let owner_pm: Vec<Option<usize>> = leanvm_core::cpu::block_kappa_sources(kbc)
         .into_iter()
         .map(|(src, _)| src.checked_sub(2))
         .collect();
@@ -2438,12 +2462,15 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
         }
         sblk.push(nblocks);
     }
-    let evtot: usize = lean_vm::tables::tables().iter().map(|t| t.n_committed_columns()).sum();
+    let evtot: usize = leanvm_core::tables::tables()
+        .iter()
+        .map(|t| t.n_committed_columns())
+        .sum();
     let ncl = nclaims + evtot + 3; // bus + constraint + the three PI memory-limb claims
 
     // ---- claim descriptor buffer ids (structural) ----
     let valcols = sha3_value_columns();
-    let col_sources_pm = lean_vm::cpu::col_kappa_sources(kbc);
+    let col_sources_pm = leanvm_core::cpu::col_kappa_sources(kbc);
     let mut compact_col_pm = vec![usize::MAX; col_sources_pm.len()];
     let mut n_committed = 0usize;
     for (global, source) in col_sources_pm.iter().enumerate() {
@@ -2452,7 +2479,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
             n_committed += 1;
         }
     }
-    let qflock_compact = compact_col_pm[lean_vm::cpu::QFLOCK];
+    let qflock_compact = compact_col_pm[leanvm_core::cpu::QFLOCK];
     assert_ne!(qflock_compact, usize::MAX, "QFLOCK must be committed");
     // Buffer codes are the guest's POINT_BUF_*: zeta, chi, pi, qflock-chi.
     let mut claims = Vec::new();
@@ -2475,7 +2502,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
                     compact_col_pm[column]
                 },
                 qflock_slot: if is_virtual {
-                    lean_vm::hash_flock::SLOTS[valcols.iter().position(|&v| v == column).unwrap()]
+                    leanvm_core::hash_flock::SLOTS[valcols.iter().position(|&v| v == column).unwrap()]
                 } else {
                     0
                 },
@@ -2502,7 +2529,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
         rep.insert(format!("{k}_PLACEHOLDER"), v);
     };
     ps("STREAM_CAP", STREAM_CAP.to_string());
-    ps("MIN_LOG_MEM", lean_vm::cpu::MIN_LOG_MEM.to_string());
+    ps("MIN_LOG_MEM", leanvm_core::cpu::MIN_LOG_MEM.to_string());
     ps("INV_GEN", dsl_u128(F192::new(G.inv().0, 0, 0)).to_string());
     ps("MU_CAP", MU_CAP.to_string());
     ps("NO_TABLE", layout.taus.len().to_string());
@@ -2510,7 +2537,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("GKR_POINTS_CAP", ((MU_CAP + 1) * MU_CAP).to_string());
     ps("SIDE_BLOCK_START", literals(&sblk));
     ps("N_BLOCKS", nblocks.to_string());
-    let bks = lean_vm::cpu::block_kappa_sources(kbc);
+    let bks = leanvm_core::cpu::block_kappa_sources(kbc);
     // Push and pull emit bus blocks in matched pairs, so their baked kappa-source
     // segments are identical; the guest computes only push's side total and
     // aliases pull's mu to push's on this basis.
@@ -2558,16 +2585,19 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     // The table sumcheck's xi layout, from the native verifier's own numbers:
     // a disjoint range of identities per table, then THREE powers shared by every
     // table, one per bus side. Sharing is what lets the target be derived from the
-    // three leaf claims instead of trusted (lean_vm::cpu::xi_form_base).
-    let n_id: Vec<usize> = lean_vm::tables::tables().iter().map(|t| t.n_constraints()).collect();
-    let form_base = lean_vm::cpu::xi_form_base();
+    // three leaf claims instead of trusted (leanvm_core::cpu::xi_form_base).
+    let n_id: Vec<usize> = leanvm_core::tables::tables()
+        .iter()
+        .map(|t| t.n_constraints())
+        .collect();
+    let form_base = leanvm_core::cpu::xi_form_base();
     ps(
         "ETA_OFFSET",
-        literals(lean_vm::constraints::xi_offsets(n_id.iter().copied())),
+        literals(leanvm_core::constraints::xi_offsets(n_id.iter().copied())),
     );
     ps("ETA_FORM_BASE", form_base.to_string());
     ps("N_ETA_POWS", (form_base + 3).to_string());
-    let committed: Vec<usize> = lean_vm::tables::tables()
+    let committed: Vec<usize> = leanvm_core::tables::tables()
         .iter()
         .map(|t| t.n_committed_columns())
         .collect();
@@ -2583,7 +2613,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("N_FIXED_CHALLENGE_ROUNDS", fixed_challenges.len().to_string());
     ps("PHI8_NODES", flds(&primitives::field::PHI_8_TABLE_192[..128]));
     // Tower F192 = F64[Y]/(Y^3+Y+1), Y = new(0,1,0). Y_TOWER embeds Y for
-    // AIR lane reassembly; Y_INV helps derive the top PI-memory limb.
+    // AIR lane reassembly; Y_INV splits a canonical word into its two K limbs.
     let y_tower = F192::new(0, 1, 0);
     ps("Y_TOWER", dsl_u128(y_tower).to_string());
     ps("Y_INV", f192_literal(y_tower.inv()));
@@ -2614,7 +2644,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("K_LOG", flock::hash::K_LOG.to_string());
     // The q_flock Strided-claim slot stride is K_LOG - LOG_PACKING (= 10), so the
     // qflock point-claim slot must use THIS, not LOG2_FIELD_BITS.
-    ps("SLOT_STRIDE_LOG", lean_vm::hash_flock::SLOT_STRIDE_LOG.to_string());
+    ps("SLOT_STRIDE_LOG", leanvm_core::hash_flock::SLOT_STRIDE_LOG.to_string());
 
     // ---- LIG candidate tables (fixed [minm, maxm] range; open_stacked config) ----
     let oshape = |m: usize, log_inv_rate: usize| {
@@ -2698,12 +2728,12 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("LIG_MAX_VANISH_LEN", maxsvk.to_string());
     ps("LIG_MAX_OOD_SAMPLES", maxood.to_string());
     ps("LIG_MIN_LOG_SIZE", minm.to_string());
-    let cks: Vec<(usize, usize)> = lean_vm::cpu::col_kappa_sources(kbc).into_iter().flatten().collect();
+    let cks: Vec<(usize, usize)> = leanvm_core::cpu::col_kappa_sources(kbc).into_iter().flatten().collect();
     ps("N_COMMITTED_COLS", cks.len().to_string());
     ps("N_COLUMN_LOGS", (MU_MAX + 1).to_string());
     ps("COL_KAPPA_SRC", literals(cks.iter().map(|&(s, _)| s)));
     ps("COL_KAPPA_ADJ", literals(cks.iter().map(|&(_, a)| a)));
-    ps("PCS_MIN_MU", lean_vm::pcs::MIN_MU.to_string());
+    ps("PCS_MIN_MU", leanvm_core::pcs::MIN_MU.to_string());
     ps(
         "LIG_LOG_MSG_COLS_CAP",
         cands
@@ -2840,7 +2870,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     );
     ps("CLAIM_POINT_BUF", literals(claims.iter().map(|c| c.buffer)));
     ps("CLAIM_COMMITTED_COL", literals(claims.iter().map(|c| c.column)));
-    let slot_stride_log = lean_vm::hash_flock::SLOT_STRIDE_LOG;
+    let slot_stride_log = leanvm_core::hash_flock::SLOT_STRIDE_LOG;
     let cpqbits: Vec<usize> = claims
         .iter()
         .flat_map(|c| (0..slot_stride_log).map(move |k| (c.qflock_slot >> k) & 1))
@@ -2854,7 +2884,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     // 2*kbc points + sel bits + 2 reduced + alpha + z_skip + 2*lcrounds rounds
     // + 64 z_partial + 1 matpart.
     let bc_cols = nbcv / 2;
-    let log2_bc_cols = lean_vm::leaf::N_TUPLE_BITS;
+    let log2_bc_cols = leanvm_core::leaf::N_TUPLE_BITS;
     ps("BYTECODE_COLS", bc_cols.to_string());
     ps("LOG2_BYTECODE_COLS", log2_bc_cols.to_string());
     ps("DEFER_SIZE", (kbc + log2_bc_cols + 2 * lcrounds + 68).to_string());
@@ -2879,7 +2909,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     let pairs = defer_cells.div_ceil(2);
     ps("STMT_ODD", (defer_cells % 2).to_string());
     ps("STMT_PAIRS", pairs.to_string());
-    ps("SHA3_STATE", lean_vm::hash_flock::STATE_CELLS.to_string());
+    ps("SHA3_STATE", leanvm_core::hash_flock::STATE_CELLS.to_string());
 
     // The XMSS instance, from which the guest derives every table width by
     // compile-time integer arithmetic.
@@ -2888,7 +2918,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("TARGET_SUM", xmss::TARGET_SUM.to_string());
     ps("LOG_LIFETIME", xmss::LOG_LIFETIME.to_string());
     // Every XMSS tweak the guest builds is one of these constants plus the
-    // epoch's weighed bits, so the byte layout lives in `xmss::make_tweak` and
+    // leaf_index's weighed bits, so the byte layout lives in `xmss::make_tweak` and
     // nowhere else. The chain table is indexed `CHAIN_STEPS * i + s` and the
     // Merkle one by level, exactly as `verify_sig` walks them.
     ps(
@@ -2916,10 +2946,10 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("MAX_DA_ROOTS", MAX_DA_ROOTS.to_string());
     ps("DA_ROOT_COUNTS", (MAX_DA_ROOTS + 1).to_string());
     ps("MAX_RECURSIONS", MAX_RECURSIONS.to_string());
-    ps("MAX_EPOCHS", MAX_EPOCHS.to_string());
+    ps("MAX_LEAF_INDICES", MAX_LEAF_INDICES.to_string());
 
     // The SPHINCS instance. Its tweaks are derived per signature from the index
-    // the message digest picks, where XMSS's come from one public epoch, so the
+    // the message digest picks, where XMSS's come from one public leaf index, so the
     // guest receives the shape and the native tweak prefixes.
     let dsl_list = |values: &[usize]| {
         let inner: Vec<String> = values.iter().map(usize::to_string).collect();
@@ -3018,21 +3048,23 @@ mod tests {
     use rand::rngs::StdRng;
 
     use crate::signers_cache::{
-        KEY_START, XMSS_EPOCH_A, XMSS_EPOCH_B, get_signers, get_signers_at, get_sphincs_signers, message, message_for,
+        KEY_START, XMSS_LEAF_INDEX_A, get_signers, get_signers_at, get_sphincs_signers, message, message_for,
     };
 
+    /// A second leaf index inside the cached keys' window; signer `i` holds the same key at both.
+    const XMSS_LEAF_INDEX_B: xmss::LeafIndex = XMSS_LEAF_INDEX_A + 2;
     const SMALL_LEAF_SIZE: usize = 6;
-    const LOG_INV_RATE: usize = lean_vm::pcs::TEST_LOG_INV_RATE;
+    const LOG_INV_RATE: usize = leanvm_core::pcs::TEST_LOG_INV_RATE;
 
     /// Cached `(key, signature)` pairs as the API takes them, every one at
-    /// `epoch` over the cache's message for it.
-    fn at_epoch(
+    /// `leaf_index` over the cache's message for it.
+    fn at_leaf_index(
         signers: &[(XmssPublicKey, XmssSignature)],
-        epoch: xmss::Epoch,
-    ) -> Vec<(XmssPublicKey, xmss::Epoch, xmss::Message, XmssSignature)> {
+        leaf_index: xmss::LeafIndex,
+    ) -> Vec<(XmssPublicKey, xmss::LeafIndex, xmss::Message, XmssSignature)> {
         signers
             .iter()
-            .map(|(pk, sig)| (pk.clone(), epoch, message_for(epoch), sig.clone()))
+            .map(|(pk, sig)| (pk.clone(), leaf_index, message_for(leaf_index), sig.clone()))
             .collect()
     }
 
@@ -3054,7 +3086,7 @@ mod tests {
     fn signature_claims_keep_the_wire_layout() {
         let claims = SignatureClaims {
             xmss: vec![XmssClaimGroup {
-                epoch: XMSS_EPOCH_A,
+                leaf_index: XMSS_LEAF_INDEX_A,
                 message: message(),
                 keys: signer_set(2),
             }],
@@ -3066,7 +3098,7 @@ mod tests {
         let groups: Vec<_> = claims
             .xmss
             .iter()
-            .map(|group| (group.epoch, &group.message, &group.keys))
+            .map(|group| (group.leaf_index, &group.message, &group.keys))
             .collect();
         let bytes = wire().serialize(&(groups, &claims.sphincs)).unwrap();
         assert_eq!(wire().serialize(&claims).unwrap(), bytes);
@@ -3096,19 +3128,21 @@ mod tests {
     /// `MAX_KEYS` is exclusive at both host checks: one key short of it passes,
     /// the cap itself is the documented error. The cap counts both schemes, so
     /// one XMSS key short of it plus one SPHINCS claim is already over. No proof
-    /// involved, and the epoch cap has its own error alongside.
+    /// involved, and the leaf index cap has its own error alongside.
     #[test]
     fn max_keys_bound_is_exclusive() {
         let full = signer_set(MAX_KEYS);
         let group = |keys: &[XmssPublicKey]| {
             vec![XmssClaimGroup {
-                epoch: XMSS_EPOCH_A,
+                leaf_index: XMSS_LEAF_INDEX_A,
                 message: message(),
                 keys: keys.to_vec(),
             }]
         };
-        let claims = |keys: &[XmssPublicKey]| -> Vec<(XmssPublicKey, xmss::Epoch, xmss::Message)> {
-            keys.iter().map(|pk| (pk.clone(), XMSS_EPOCH_A, message())).collect()
+        let claims = |keys: &[XmssPublicKey]| -> Vec<(XmssPublicKey, xmss::LeafIndex, xmss::Message)> {
+            keys.iter()
+                .map(|pk| (pk.clone(), XMSS_LEAF_INDEX_A, message()))
+                .collect()
         };
         let claim = [(
             SphincsPublicKey::from_bytes(&[0; sphincs::PUB_KEY_SIZE]),
@@ -3123,19 +3157,19 @@ mod tests {
             check_signer_set(&group(&full[..MAX_KEYS - 1]), &claim),
             Err(AggregateVerifyError::MalformedSignerSet)
         );
-        // One group per epoch: MAX_EPOCHS groups pass, one more is malformed.
+        // One group per leaf index: MAX_LEAF_INDICES groups pass, one more is malformed.
         let spread = |n: usize| -> Vec<XmssClaimGroup> {
             (0..n)
                 .map(|e| XmssClaimGroup {
-                    epoch: e as u32,
+                    leaf_index: e as u32,
                     message: message(),
                     keys: vec![full[e].clone()],
                 })
                 .collect()
         };
-        check_signer_set(&spread(MAX_EPOCHS), &[]).expect("at the epoch cap");
+        check_signer_set(&spread(MAX_LEAF_INDICES), &[]).expect("at the leaf index cap");
         assert_eq!(
-            check_signer_set(&spread(MAX_EPOCHS + 1), &[]),
+            check_signer_set(&spread(MAX_LEAF_INDICES + 1), &[]),
             Err(AggregateVerifyError::MalformedSignerSet)
         );
         plan_coverage(&claims(&full[..MAX_KEYS - 1]), &[], &[], None).expect("one short of the cap");
@@ -3147,18 +3181,26 @@ mod tests {
             plan_coverage(&claims(&full[..MAX_KEYS - 1]), &claim, &[], None).err(),
             Some(AggregationError::TooLarge)
         );
-        let spread_claims = |n: usize| -> Vec<(XmssPublicKey, xmss::Epoch, xmss::Message)> {
+        let spread_claims = |n: usize| -> Vec<(XmssPublicKey, xmss::LeafIndex, xmss::Message)> {
             (0..n).map(|e| (full[e].clone(), e as u32, message())).collect()
         };
-        plan_coverage(&spread_claims(MAX_EPOCHS), &[], &[], None).expect("at the epoch cap");
+        plan_coverage(&spread_claims(MAX_LEAF_INDICES), &[], &[], None).expect("at the leaf index cap");
         assert_eq!(
-            plan_coverage(&spread_claims(MAX_EPOCHS + 1), &[], &[], None).err(),
-            Some(AggregationError::TooManyEpochs)
+            plan_coverage(&spread_claims(MAX_LEAF_INDICES + 1), &[], &[], None).err(),
+            Some(AggregationError::TooManyLeafIndices)
         );
     }
 
     fn prove_leaf(signers: &[(XmssPublicKey, XmssSignature)]) -> EthereumProof {
-        aggregate(&[], at_epoch(signers, XMSS_EPOCH_A), vec![], &[], None, LOG_INV_RATE).expect("leaf aggregates")
+        aggregate(
+            &[],
+            at_leaf_index(signers, XMSS_LEAF_INDEX_A),
+            vec![],
+            &[],
+            None,
+            LOG_INV_RATE,
+        )
+        .expect("leaf aggregates")
     }
 
     #[test]
@@ -3227,7 +3269,7 @@ mod tests {
 
     #[test]
     fn aggregate_one_sphincs_signer() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let aggregate = prove_sphincs_leaf(&get_sphincs_signers(1));
         aggregate.verify().expect("verifies");
         assert!(aggregate.xmss_signers.is_empty());
@@ -3236,10 +3278,10 @@ mod tests {
 
     #[test]
     fn aggregate_one_signer() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let aggregate = prove_leaf(&get_signers(1));
         aggregate.verify().expect("verifies");
-        assert_eq!(aggregate.xmss_signers[0].epoch, XMSS_EPOCH_A);
+        assert_eq!(aggregate.xmss_signers[0].leaf_index, XMSS_LEAF_INDEX_A);
         assert_eq!(aggregate.xmss_signers[0].message, message());
     }
 
@@ -3248,10 +3290,10 @@ mod tests {
     /// case, absorbing one entry a frame.
     #[test]
     fn aggregate_mixed_leaf() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let aggregate = aggregate(
             &[],
-            at_epoch(&get_signers(3), XMSS_EPOCH_A),
+            at_leaf_index(&get_signers(3), XMSS_LEAF_INDEX_A),
             get_sphincs_signers(3),
             &[],
             None,
@@ -3267,11 +3309,19 @@ mod tests {
     /// child's two key lists have to land in their own.
     #[test]
     fn aggregate_mixed_two_to_one() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let xmss = get_signers(6);
         let sphincs = get_sphincs_signers(4);
         let leaf = |x: &[(XmssPublicKey, XmssSignature)], s: &[RawSphincs]| {
-            aggregate(&[], at_epoch(x, XMSS_EPOCH_A), s.to_vec(), &[], None, LOG_INV_RATE).expect("leaf aggregates")
+            aggregate(
+                &[],
+                at_leaf_index(x, XMSS_LEAF_INDEX_A),
+                s.to_vec(),
+                &[],
+                None,
+                LOG_INV_RATE,
+            )
+            .expect("leaf aggregates")
         };
         let left = leaf(&xmss[..4], &sphincs[..3]);
         let right = leaf(&xmss[3..], &sphincs[2..]);
@@ -3288,7 +3338,7 @@ mod tests {
     /// log(g^0)` (unsatisfiable, so nothing may be written there) is reached.
     #[test]
     fn aggregate_one_scheme_per_child() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let xmss_child = prove_leaf(&get_signers(3));
         let sphincs_child = prove_sphincs_leaf(&get_sphincs_signers(2));
         let node =
@@ -3302,7 +3352,7 @@ mod tests {
     /// here rather than cached, the cache holding one message per key.
     #[test]
     fn aggregate_one_key_two_messages() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let mut rng = StdRng::seed_from_u64(77);
         let (secret_key, public_key) = sphincs::key_gen(&mut rng);
         let raw: Vec<RawSphincs> = [3u8, 9]
@@ -3323,7 +3373,7 @@ mod tests {
 
     #[test]
     fn guest_column_selectors_match_native_eq() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let (helpers, _) = include_str!("../guests/lean_ethereum.py")
             .split_once("\ndef main():")
             .unwrap();
@@ -3366,19 +3416,24 @@ def main():
                         .map(|k| F192::from(F64(((offset >> k) & 1) as u64)))
                         .collect();
                     let expected = primitives::multilinear::eq_eval(&selector, &point[kappa..mu]);
-                    assert!(run(&point, offset, kappa, expected).unconstrained_reads.is_empty());
+                    assert!(
+                        run(&point, offset, kappa, expected)
+                            .unwrap()
+                            .unconstrained_reads
+                            .is_empty()
+                    );
                     if kappa != 0 {
-                        assert!(std::panic::catch_unwind(|| run(&point, offset + 1, kappa, expected)).is_err());
+                        assert!(run(&point, offset + 1, kappa, expected).is_err());
                     }
                 }
             }
-            assert!(std::panic::catch_unwind(|| run(&point, 1usize << MU_MAX, 0, F192::ZERO)).is_err());
+            assert!(run(&point, 1usize << MU_MAX, 0, F192::ZERO).is_err());
         }
     }
 
     #[test]
     fn guest_merkle_children_bind_every_link() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let (helpers, _) = include_str!("../guests/lean_ethereum.py")
             .split_once("\ndef main():")
             .unwrap();
@@ -3431,6 +3486,7 @@ def main():
                 .collect();
             assert!(
                 run(index, tree[8 + index], &pairs, tree[1])
+                    .unwrap()
                     .unconstrained_reads
                     .is_empty()
             );
@@ -3439,7 +3495,7 @@ def main():
                     for byte in [0, 16] {
                         let mut forged = pairs.clone();
                         forged[level][side][byte] ^= 1;
-                        assert!(std::panic::catch_unwind(|| run(index, tree[8 + index], &forged, tree[1])).is_err());
+                        assert!(run(index, tree[8 + index], &forged, tree[1]).is_err());
                     }
                 }
                 // Rehash a forged running child all the way to a matching public root.
@@ -3452,10 +3508,10 @@ def main():
                         pair[(index >> height) & 1] = root;
                         root = pcs::merkle::hash_pair(&pair[0], &pair[1]);
                     }
-                    assert!(std::panic::catch_unwind(|| run(index, tree[8 + index], &forged, root)).is_err());
+                    assert!(run(index, tree[8 + index], &forged, root).is_err());
                 }
             }
-            assert!(std::panic::catch_unwind(|| run(index ^ 1, tree[8 + index], &pairs, tree[1])).is_err());
+            assert!(run(index ^ 1, tree[8 + index], &pairs, tree[1]).is_err());
         }
     }
 
@@ -3464,7 +3520,7 @@ def main():
     /// then a partial last block, while the left leaf's list is one block alone.
     #[test]
     fn aggregate_two_to_one() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let big = 4 * 2 + 3;
         let signers = get_signers(SMALL_LEAF_SIZE + big);
         let left = prove_leaf(&signers[..SMALL_LEAF_SIZE]);
@@ -3486,7 +3542,7 @@ def main():
     /// aggregate has to verify against a statement that carries it.
     #[test]
     fn aggregate_with_a_da_payload() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let rows = da_rows(3, 97);
 
         let node = aggregate(&[], vec![], vec![], &rows, None, LOG_INV_RATE).expect("node aggregates");
@@ -3550,12 +3606,22 @@ def main():
 
     #[test]
     fn da_roots_accumulate_and_can_be_selected_or_omitted() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let signers = get_signers(SMALL_LEAF_SIZE);
         let mut children = Vec::new();
         for seed in [509, 510] {
             let rows = da_rows(1, seed);
-            children.push(aggregate(&[], at_epoch(&signers, XMSS_EPOCH_A), vec![], &rows, None, LOG_INV_RATE).unwrap());
+            children.push(
+                aggregate(
+                    &[],
+                    at_leaf_index(&signers, XMSS_LEAF_INDEX_A),
+                    vec![],
+                    &rows,
+                    None,
+                    LOG_INV_RATE,
+                )
+                .unwrap(),
+            );
         }
         let signatures = SignatureClaims {
             xmss: children[0].xmss_signers.clone(),
@@ -3726,114 +3792,101 @@ def main():
         // The first child's omitted root occupies slot 1; it cannot cover slot 0
         // (the second child's declared root) or write outside the DA region.
         for index in [count(0), count(2), count(MAX_KEYS - 1), F192::ZERO, F192::new(0, 1, 0)] {
-            let outcome = std::panic::catch_unwind(|| {
-                aggregate_tampered(
-                    &children,
-                    vec![],
-                    vec![],
-                    None,
-                    DaInput {
-                        rows: &[],
-                        roots: Some(&[second]),
-                    },
-                    LOG_INV_RATE,
-                    |h| {
-                        h.entries("da_index")[0] = vec![index];
-                    },
-                )
-            });
-            assert!(!matches!(outcome, Ok(Ok(_))), "accepted false DA slot {index:?}");
-        }
-        let outcome = std::panic::catch_unwind(|| {
-            aggregate_tampered(
-                &[children[0].clone(), children[0].clone()],
+            let outcome = aggregate_tampered(
+                &children,
                 vec![],
                 vec![],
                 None,
-                DaInput::default(),
+                DaInput {
+                    rows: &[],
+                    roots: Some(&[second]),
+                },
                 LOG_INV_RATE,
                 |h| {
-                    h.entries("da_index")[1] = h.entries("da_index")[0].clone();
+                    h.entries("da_index")[0] = vec![index];
                 },
-            )
-        });
+            );
+            assert!(outcome.is_err(), "accepted false DA slot {index:?}");
+        }
+        let outcome = aggregate_tampered(
+            &[children[0].clone(), children[0].clone()],
+            vec![],
+            vec![],
+            None,
+            DaInput::default(),
+            LOG_INV_RATE,
+            |h| {
+                h.entries("da_index")[1] = h.entries("da_index")[0].clone();
+            },
+        );
         assert!(
-            !matches!(outcome, Ok(Ok(_))),
+            outcome.is_err(),
             "identical roots still require distinct coverage writes"
         );
         // An extra, unclaimed slot leaves the published digest and both child
         // statements intact; only the final coverage count rejects it.
         for (declared, duplicates) in [(1, 2), (MAX_DA_ROOTS + 1, 1), (1, MAX_RECURSIONS * MAX_DA_ROOTS + 2)] {
-            let outcome = std::panic::catch_unwind(|| {
-                aggregate_tampered(
-                    &children,
-                    vec![],
-                    vec![],
-                    None,
-                    DaInput {
-                        rows: &[],
-                        roots: Some(&[second]),
-                    },
-                    LOG_INV_RATE,
-                    |h| {
-                        h.entries("da_meta")[0] = vec![count(declared), count(duplicates)];
-                        h.entries("da_roots").push(da_claim_cells(&second));
-                    },
-                )
-            });
-            assert!(!matches!(outcome, Ok(Ok(_))), "accepted invalid DA coverage shape");
+            let outcome = aggregate_tampered(
+                &children,
+                vec![],
+                vec![],
+                None,
+                DaInput {
+                    rows: &[],
+                    roots: Some(&[second]),
+                },
+                LOG_INV_RATE,
+                |h| {
+                    h.entries("da_meta")[0] = vec![count(declared), count(duplicates)];
+                    h.entries("da_roots").push(da_claim_cells(&second));
+                },
+            );
+            assert!(outcome.is_err(), "accepted invalid DA coverage shape");
         }
         for selected in [None, Some([].as_slice()), Some([second].as_slice())] {
-            let outcome = std::panic::catch_unwind(|| {
-                aggregate_tampered(
-                    &children,
-                    vec![],
-                    vec![],
-                    None,
-                    DaInput {
-                        rows: &[],
-                        roots: selected,
-                    },
-                    LOG_INV_RATE,
-                    |h| {
-                        let root = h
-                            .entries("da_roots")
-                            .iter_mut()
-                            .find(|r| **r == da_claim_cells(&second))
-                            .unwrap();
-                        *root = da_claim_cells(&first);
-                    },
-                )
-            });
-            assert!(
-                !matches!(outcome, Ok(Ok(_))),
-                "every child's complete DA list must be authenticated"
+            let outcome = aggregate_tampered(
+                &children,
+                vec![],
+                vec![],
+                None,
+                DaInput {
+                    rows: &[],
+                    roots: selected,
+                },
+                LOG_INV_RATE,
+                |h| {
+                    let root = h
+                        .entries("da_roots")
+                        .iter_mut()
+                        .find(|r| **r == da_claim_cells(&second))
+                        .unwrap();
+                    *root = da_claim_cells(&first);
+                },
             );
+            assert!(outcome.is_err(), "every child's complete DA list must be authenticated");
         }
         for limb in [2, 3] {
-            let outcome = std::panic::catch_unwind(|| {
-                aggregate_tampered(
-                    &children,
-                    vec![],
-                    vec![],
-                    None,
-                    DaInput {
-                        rows: &[],
-                        roots: Some(&[second]),
-                    },
-                    LOG_INV_RATE,
-                    |h| {
-                        let omitted = h
-                            .entries("da_roots")
-                            .iter_mut()
-                            .find(|claim| claim[..2] == pack_hash_state(&first))
-                            .unwrap();
-                        omitted[limb] += F192::ONE;
-                    },
-                )
-            });
+            let outcome = aggregate_tampered(
+                &children,
+                vec![],
+                vec![],
+                None,
+                DaInput {
+                    rows: &[],
+                    roots: Some(&[second]),
+                },
+                LOG_INV_RATE,
+                |h| {
+                    let omitted = h
+                        .entries("da_roots")
+                        .iter_mut()
+                        .find(|claim| claim[..2] == pack_hash_state(&first))
+                        .unwrap();
+                    omitted[limb] += F192::ONE;
+                },
+            );
             assert!(
-                !matches!(outcome, Ok(Ok(_))),
+                outcome.is_err(),
                 "a child's vector hash cannot change, even for an omitted root"
             );
         }
@@ -3854,7 +3907,7 @@ def main():
 
     #[test]
     fn da_root_lists_merge_two_and_three() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let mut leaves = Vec::new();
         let mut expected = Vec::new();
         for seed in 600..605 {
@@ -3898,7 +3951,7 @@ def main():
 
     #[test]
     fn da_guest_hashes_root_lists() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let (helpers, _) = include_str!("../guests/lean_ethereum.py")
             .split_once("\ndef main():")
             .unwrap();
@@ -3932,10 +3985,10 @@ def main():
             hints.install(&mut program);
             let public = pack_hash_state(&da_list_digest(&roots));
             if n <= MAX_DA_ROOTS {
-                let execution = program.execute(public);
+                let execution = program.execute(public).unwrap();
                 assert!(execution.unconstrained_reads.is_empty(), "{n} roots");
             } else {
-                assert!(std::panic::catch_unwind(|| program.execute(public)).is_err());
+                assert!(program.execute(public).is_err());
             }
         }
     }
@@ -3967,27 +4020,22 @@ def main():
             hints.push("signers_split", vec![body, rest]);
             let mut program = guest.clone();
             hints.install(&mut program);
-            std::panic::catch_unwind(|| program.execute([body, rest]))
+            program.execute([body, rest])
         };
         // Six claims two to a block: two whole blocks, then a last one of two.
         assert!(run(count(2), count(1)).is_ok());
         // Three blocks and a last one of g^-1 + 1 = 0 claims: the product identity
         // holds, the range check must not.
         let negative = F192::new(g_pow(1).inv().0, 0, 0);
-        let Err(message) = run(count(3), negative) else {
+        let Err(err) = run(count(3), negative) else {
             panic!("a negative last-block count was accepted");
         };
-        let message = message
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| message.downcast_ref::<&str>().copied())
-            .unwrap_or_default();
-        assert!(message.contains("list_split"), "rejected elsewhere: {message}");
+        assert!(err.to_string().contains("list_split"), "rejected elsewhere: {err}");
     }
 
     #[test]
     fn da_guest_bounds_coverage_slots() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let (helpers, _) = include_str!("../guests/lean_ethereum.py")
             .split_once("\ndef main():")
             .unwrap();
@@ -4031,8 +4079,8 @@ def main():
             hints.install(&mut program);
             program.execute(pack_hash_state(&da_list_digest(&[claimed])))
         };
-        assert!(run(2, count(0), first).unconstrained_reads.is_empty());
-        assert!(run(2, count(1), second).unconstrained_reads.is_empty());
+        assert!(run(2, count(0), first).unwrap().unconstrained_reads.is_empty());
+        assert!(run(2, count(1), second).unwrap().unconstrained_reads.is_empty());
         // Matching public roots must not bypass the region bound, even when the
         // out-of-range root is present in memory.
         for (slots, index, claimed) in [
@@ -4042,13 +4090,13 @@ def main():
             (2, F192::ZERO, first),
             (2, F192::new(0, 1, 0), first),
         ] {
-            assert!(std::panic::catch_unwind(|| run(slots, index, claimed)).is_err());
+            assert!(run(slots, index, claimed).is_err());
         }
     }
 
     #[test]
     fn da_guest_checks_commitment_and_codewords() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let source = include_str!("../guests/lean_ethereum.py");
         let (helpers, _) = source.split_once("\ndef main():").unwrap();
         let source = format!(
@@ -4088,26 +4136,26 @@ def main():
             hints.install(&mut program);
             program.execute(public)
         };
-        let honest = run(&codewords, &|_, _| {});
+        let honest = run(&codewords, &|_, _| {}).unwrap();
         assert!(honest.unconstrained_reads.is_empty());
 
         // Every vector is orthogonal to zero rows: only hashing can reject these changes.
         let zeros = vec![0; codewords.len()];
         for limb in [F192::ONE, F192::new(0, 1, 0), F192::new(0, 0, 1)] {
             assert!(
-                std::panic::catch_unwind(|| run(&zeros, &|h, _| {
+                run(&zeros, &|h, _| {
                     h.entries("da_weights")[0][0] += limb;
-                }))
+                })
                 .is_err(),
                 "every limb of L must be bound by its hash"
             );
         }
         assert!(
-            std::panic::catch_unwind(|| run(&zeros, &|h, _| {
+            run(&zeros, &|h, _| {
                 for block in h.entries("da_weights") {
                     block.fill(F192::ZERO);
                 }
-            }))
+            })
             .is_err(),
             "zero weights must not bypass the external vector hash"
         );
@@ -4123,7 +4171,7 @@ def main():
         ] {
             let mut bad = codewords.clone();
             bad[position] ^= 1;
-            assert!(std::panic::catch_unwind(|| run(&bad, &|_, _| {})).is_err());
+            assert!(run(&bad, &|_, _| {}).is_err());
         }
         // A zero vector with its own hash passes the guest even for bad data.
         // The verifier must derive the expected hash from the root, never trust this hash.
@@ -4139,17 +4187,17 @@ def main():
             }
             *public = pack_hash_state(&forged_digest);
         });
-        assert!(unchecked.unconstrained_reads.is_empty());
+        assert!(unchecked.unwrap().unconstrained_reads.is_empty());
         assert!(
-            std::panic::catch_unwind(|| run(&codewords, &|_, public| {
+            run(&codewords, &|_, public| {
                 public[0] += F192::ONE;
-            }))
+            })
             .is_err()
         );
         assert!(
-            std::panic::catch_unwind(|| run(&codewords, &|h, _| {
+            run(&codewords, &|h, _| {
                 h.entries("da_symbols")[0][0] += F192::new(0, 1, 0);
-            }))
+            })
             .is_err()
         );
         // Give the inflated tree its own matching root, so rejection must come
@@ -4158,25 +4206,25 @@ def main():
         padded_words.resize(8 * CODEWORD_SYMBOLS, 0);
         let (padded_commitment, _) = lean_da::commit_codewords(padded_words);
         assert!(
-            std::panic::catch_unwind(|| run(&codewords, &|h, public| {
+            run(&codewords, &|h, public| {
                 h.entries("da_shape")[0][1] = count(3);
                 *public = pack_hash_state(&da_list_digest(&[padded_commitment.root]));
-            }))
+            })
             .is_err(),
             "three rows must not use an eight-row tree, even with a matching root"
         );
         assert!(
-            std::panic::catch_unwind(|| run(&zeros, &|h, _| {
+            run(&zeros, &|h, _| {
                 h.entries("da_shape")[0][0] = count(0);
-            }))
+            })
             .is_err(),
             "an empty payload with a matching zero-padded root must be rejected"
         );
         for (rows, log_pad) in [(DA_MAX_ROWS + 1, 10), (3, 1), (3, DA_MAX_ROWS.ilog2() as usize + 1)] {
             assert!(
-                std::panic::catch_unwind(|| run(&codewords, &|h, _| {
+                run(&codewords, &|h, _| {
                     h.entries("da_shape")[0] = vec![count(rows), count(log_pad)];
-                }))
+                })
                 .is_err(),
                 "accepted shape ({rows}, {log_pad})"
             );
@@ -4185,7 +4233,7 @@ def main():
 
     #[test]
     fn da_row_shape_checks_power_of_two_boundaries() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let (helpers, _) = include_str!("../guests/lean_ethereum.py")
             .split_once("\ndef main():")
             .unwrap();
@@ -4203,7 +4251,7 @@ def main():
         counts.dedup();
         for rows in counts {
             for depth in 0..=max_depth + 1 {
-                let result = std::panic::catch_unwind(|| guest.execute([count(rows), count(depth)]));
+                let result = guest.execute([count(rows), count(depth)]);
                 let valid = (1..=DA_MAX_ROWS).contains(&rows) && rows.next_power_of_two() == 1 << depth;
                 assert_eq!(result.is_ok(), valid, "rows={rows}, depth={depth}");
                 if let Ok(execution) = result {
@@ -4213,14 +4261,14 @@ def main():
         }
         for bad in [F192::ZERO, F192::new(0, 1, 0), count(1).inv()] {
             for public in [[bad, count(0)], [count(1), bad]] {
-                assert!(std::panic::catch_unwind(|| guest.execute(public)).is_err());
+                assert!(guest.execute(public).is_err());
             }
         }
     }
 
     #[test]
     fn ceil_log_hints_enforce_rounding_and_floor() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let (helpers, _) = include_str!("../guests/lean_ethereum.py")
             .split_once("\ndef main():")
             .unwrap();
@@ -4244,7 +4292,7 @@ def main():
                         vec![(0..8).map(|j| F192::from(F64(((value >> j) & 1) as u64))).collect()],
                     );
                     program.set_witness("ceil_log", vec![vec![count(depth)]]);
-                    let result = std::panic::catch_unwind(|| program.execute([count(value), count(depth)]));
+                    let result = program.execute([count(value), count(depth)]);
                     assert_eq!(
                         result.is_ok(),
                         depth == expected.max(floor),
@@ -4275,12 +4323,19 @@ def main():
     /// 8, exercising two different arms of the tree dispatch and a non-empty gap.
     #[test]
     fn da_row_count_is_a_run_time_parameter() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let signers = get_signers(SMALL_LEAF_SIZE);
         for n_rows in [1usize, 3, 4, 5] {
             let rows = da_rows(n_rows, 200 + n_rows as u64);
-            let node = aggregate(&[], at_epoch(&signers, XMSS_EPOCH_A), vec![], &rows, None, LOG_INV_RATE)
-                .expect("node aggregates");
+            let node = aggregate(
+                &[],
+                at_leaf_index(&signers, XMSS_LEAF_INDEX_A),
+                vec![],
+                &rows,
+                None,
+                LOG_INV_RATE,
+            )
+            .expect("node aggregates");
             node.verify().expect("node verifies");
             let (commitment, _) = lean_da::commit(&rows);
             assert_eq!(node.da_roots, vec![commitment.root], "{n_rows} rows");
@@ -4292,10 +4347,10 @@ def main():
     #[test]
     #[ignore]
     fn da_blob_proof() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let signers = get_signers(SMALL_LEAF_SIZE);
         // One discarded proof: the first pays the flock circuit build and the
-        // arena's page faults, which would otherwise land entirely on the first row
+        // allocator's page faults, which would otherwise land entirely on the first row
         // count reported.
         warm_up();
         println!(
@@ -4304,13 +4359,10 @@ def main():
         );
         let _ = aggregate_with_stats(
             &[],
-            at_epoch(&signers, XMSS_EPOCH_A),
+            at_leaf_index(&signers, XMSS_LEAF_INDEX_A),
             vec![],
+            &da_rows(1, 7),
             None,
-            DaInput {
-                rows: &da_rows(1, 7),
-                roots: None,
-            },
             LOG_INV_RATE,
         );
         for n_rows in [1usize, 6, 14, 32] {
@@ -4318,13 +4370,10 @@ def main():
             let started = std::time::Instant::now();
             let (node, stats) = aggregate_with_stats(
                 &[],
-                at_epoch(&signers, XMSS_EPOCH_A),
+                at_leaf_index(&signers, XMSS_LEAF_INDEX_A),
                 vec![],
+                &rows,
                 None,
-                DaInput {
-                    rows: &rows,
-                    roots: None,
-                },
                 LOG_INV_RATE,
             )
             .expect("node aggregates");
@@ -4345,30 +4394,30 @@ def main():
     /// A leaf carrying no payload publishes the digest of an empty root list.
     #[test]
     fn no_payload_publishes_the_empty_root_list() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let signers = get_signers(SMALL_LEAF_SIZE);
         let node = prove_leaf(&signers);
         assert!(node.da_roots.is_empty());
         assert_eq!(node.da_commitments_digest(), primitives::hash::hash(&[]));
     }
 
-    /// Two epochs in one tree. Signer `i` holds the same key at both epochs, so
+    /// Two leaf indices in one tree. Signer `i` holds the same key at both leaf indices, so
     /// group B repeats keys of group A as distinct claims; the left leaf holds
-    /// one epoch, the right both, and the node maps each child group onto its
+    /// one leaf index, the right both, and the node maps each child group onto its
     /// own region, with a duplicate slot for the key both leaves cover at A.
-    /// Several epoch groups in one leaf, each a block of the set's own hash, so
+    /// Several leaf index groups in one leaf, each a block of the set's own hash, so
     /// that hash's block loop runs more than once.
     #[test]
-    fn aggregate_many_epoch_groups() {
-        lean_vm::init_prover_pool();
-        // The cached keys are activated over this many epochs, and one key may
-        // claim once per epoch, so a single signer covers them all.
+    fn aggregate_many_leaf_index_groups() {
+        leanvm_core::init_prover();
+        // The cached keys are activated over this many leaf indices, and one key may
+        // claim once per leaf index, so a single signer covers them all.
         let groups = 5;
         let raw: Vec<_> = (0..groups)
             .map(|i| {
-                let epoch = KEY_START + i as xmss::Epoch;
-                let (public_key, signature) = get_signers_at(1, epoch).remove(0);
-                (public_key, epoch, message_for(epoch), signature)
+                let leaf_index = KEY_START + i as xmss::LeafIndex;
+                let (public_key, signature) = get_signers_at(1, leaf_index).remove(0);
+                (public_key, leaf_index, message_for(leaf_index), signature)
             })
             .collect();
         let leaf = aggregate(&[], raw, vec![], &[], None, LOG_INV_RATE).expect("many-group leaf aggregates");
@@ -4377,16 +4426,16 @@ def main():
         assert!(leaf.xmss_signers.iter().all(|group| group.keys.len() == 1));
     }
 
-    /// A whole `(epoch, message)` needs the table's undeclared groups; keys of a group
+    /// A whole `(leaf_index, message)` needs the table's undeclared groups; keys of a group
     /// that stays need only its duplicate slots. The first narrowing does one, the
     /// second both.
     #[test]
     fn a_node_may_publish_less_than_it_covers() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let at_a = get_signers(3);
-        let at_b = get_signers_at(2, XMSS_EPOCH_B);
-        let mut raw = at_epoch(&at_a, XMSS_EPOCH_A);
-        raw.extend(at_epoch(&at_b, XMSS_EPOCH_B));
+        let at_b = get_signers_at(2, XMSS_LEAF_INDEX_B);
+        let mut raw = at_leaf_index(&at_a, XMSS_LEAF_INDEX_A);
+        raw.extend(at_leaf_index(&at_b, XMSS_LEAF_INDEX_B));
         let wide = aggregate(&[], raw, vec![], &[], None, LOG_INV_RATE).expect("the wide leaf aggregates");
         wide.verify().expect("the wide leaf verifies");
         assert_eq!(wide.xmss_signers.len(), 2);
@@ -4407,7 +4456,7 @@ def main():
         };
         let (group_a, group_b) = (wide.xmss_signers[0].clone(), wide.xmss_signers[1].clone());
 
-        // One group declared: the other's epoch and message go with it.
+        // One group declared: the other's leaf index and message go with it.
         let narrow = narrowed(
             &wide,
             &SignatureClaims {
@@ -4421,7 +4470,7 @@ def main():
 
         // One key of one group: B goes whole, A keeps one of three.
         let one_of_a = XmssClaimGroup {
-            epoch: XMSS_EPOCH_A,
+            leaf_index: XMSS_LEAF_INDEX_A,
             message: message(),
             keys: vec![group_a.keys[0].clone()],
         };
@@ -4453,8 +4502,8 @@ def main():
                 &wide,
                 &SignatureClaims {
                     xmss: vec![XmssClaimGroup {
-                        epoch: XMSS_EPOCH_B,
-                        message: message_for(XMSS_EPOCH_B),
+                        leaf_index: XMSS_LEAF_INDEX_B,
+                        message: message_for(XMSS_LEAF_INDEX_B),
                         keys: vec![only_at_a],
                     }],
                     sphincs: vec![],
@@ -4469,8 +4518,8 @@ def main():
                 &wide,
                 &SignatureClaims {
                     xmss: vec![XmssClaimGroup {
-                        epoch: XMSS_EPOCH_A,
-                        message: message_for(XMSS_EPOCH_B),
+                        leaf_index: XMSS_LEAF_INDEX_A,
+                        message: message_for(XMSS_LEAF_INDEX_B),
                         keys: group_a.keys.clone(),
                     }],
                     sphincs: vec![],
@@ -4491,20 +4540,23 @@ def main():
 
     /// The guest walks raw signatures group by group over the table, and a
     /// declaration puts the undeclared groups last, so the table stops agreeing with
-    /// the epoch order `raw_xmss` is sorted by. Declaring only the HIGHER epoch is
+    /// the leaf index order `raw_xmss` is sorted by. Declaring only the HIGHER leaf index is
     /// what separates the two: the table becomes [B, A] while the raw stream starts
     /// with A, and a signature verified against the wrong group's tweaks fails.
     #[test]
-    fn raw_signatures_follow_the_table_not_the_epochs() {
-        lean_vm::init_prover_pool();
-        const _: () = assert!(XMSS_EPOCH_A < XMSS_EPOCH_B, "A must sort first for this to bite");
+    fn raw_signatures_follow_the_table_not_the_leaf_indices() {
+        leanvm_core::init_prover();
+        const _: () = assert!(
+            XMSS_LEAF_INDEX_A < XMSS_LEAF_INDEX_B,
+            "A must sort first for this to bite"
+        );
         let a = get_signers(1);
-        let b = get_signers_at(1, XMSS_EPOCH_B);
-        let mut raw = at_epoch(&a, XMSS_EPOCH_A);
-        raw.extend(at_epoch(&b, XMSS_EPOCH_B));
+        let b = get_signers_at(1, XMSS_LEAF_INDEX_B);
+        let mut raw = at_leaf_index(&a, XMSS_LEAF_INDEX_A);
+        raw.extend(at_leaf_index(&b, XMSS_LEAF_INDEX_B));
         let group_b = XmssClaimGroup {
-            epoch: XMSS_EPOCH_B,
-            message: message_for(XMSS_EPOCH_B),
+            leaf_index: XMSS_LEAF_INDEX_B,
+            message: message_for(XMSS_LEAF_INDEX_B),
             keys: vec![b[0].0.clone()],
         };
         let sig = aggregate(
@@ -4527,47 +4579,55 @@ def main():
     }
 
     #[test]
-    fn aggregate_two_epochs() {
-        lean_vm::init_prover_pool();
+    fn aggregate_two_leaf_indices() {
+        leanvm_core::init_prover();
         let at_a = get_signers(4);
-        let at_b = get_signers_at(2, XMSS_EPOCH_B);
-        assert_eq!(at_a[0].0, at_b[0].0, "the cache reuses keys across epochs");
-        let left = aggregate(&[], at_epoch(&at_a[..3], XMSS_EPOCH_A), vec![], &[], None, LOG_INV_RATE).expect("left");
-        let mut right_raw = at_epoch(&at_a[2..], XMSS_EPOCH_A);
-        right_raw.extend(at_epoch(&at_b, XMSS_EPOCH_B));
-        let right = aggregate(&[], right_raw, vec![], &[], None, LOG_INV_RATE).expect("right");
-        right.verify().expect("the two-epoch leaf verifies");
-        // A second message at epoch A is its own group, beside `left`'s.
-        let (sk, pk) = xmss::key_gen_from_seed([42; 32], XMSS_EPOCH_A, XMSS_EPOCH_A).expect("keygen");
-        let sig = xmss::sign(&sk, &message_for(XMSS_EPOCH_B), XMSS_EPOCH_A).expect("sign");
-        let crossed = aggregate(
-            std::slice::from_ref(&left),
-            vec![(pk.clone(), XMSS_EPOCH_A, message_for(XMSS_EPOCH_B), sig)],
+        let at_b = get_signers_at(2, XMSS_LEAF_INDEX_B);
+        assert_eq!(at_a[0].0, at_b[0].0, "the cache reuses keys across leaf indices");
+        let left = aggregate(
+            &[],
+            at_leaf_index(&at_a[..3], XMSS_LEAF_INDEX_A),
             vec![],
             &[],
             None,
             LOG_INV_RATE,
         )
-        .expect("two messages at one epoch aggregate");
+        .expect("left");
+        let mut right_raw = at_leaf_index(&at_a[2..], XMSS_LEAF_INDEX_A);
+        right_raw.extend(at_leaf_index(&at_b, XMSS_LEAF_INDEX_B));
+        let right = aggregate(&[], right_raw, vec![], &[], None, LOG_INV_RATE).expect("right");
+        right.verify().expect("the two-leaf-index leaf verifies");
+        // A second message at leaf index A is its own group, beside `left`'s.
+        let (sk, pk) = xmss::key_gen_from_seed([42; 32], XMSS_LEAF_INDEX_A, XMSS_LEAF_INDEX_A).expect("keygen");
+        let sig = xmss::sign(&sk, &message_for(XMSS_LEAF_INDEX_B), XMSS_LEAF_INDEX_A).expect("sign");
+        let crossed = aggregate(
+            std::slice::from_ref(&left),
+            vec![(pk.clone(), XMSS_LEAF_INDEX_A, message_for(XMSS_LEAF_INDEX_B), sig)],
+            vec![],
+            &[],
+            None,
+            LOG_INV_RATE,
+        )
+        .expect("two messages at one leaf index aggregate");
         crossed.verify().expect("the two-message leaf verifies");
         assert_eq!(
             crossed
                 .xmss_signers
                 .iter()
-                .map(|group| (group.epoch, group.message, group.keys.len()))
+                .map(|group| (group.leaf_index, group.message, group.keys.len()))
                 .collect::<Vec<_>>(),
             vec![
-                (XMSS_EPOCH_A, message(), 3),
-                (XMSS_EPOCH_A, message_for(XMSS_EPOCH_B), 1)
+                (XMSS_LEAF_INDEX_A, message(), 3),
+                (XMSS_LEAF_INDEX_A, message_for(XMSS_LEAF_INDEX_B), 1)
             ]
         );
         assert_eq!(crossed.xmss_signers[1].keys, vec![pk]);
         let node = aggregate(&[left, right], vec![], vec![], &[], None, LOG_INV_RATE).expect("node");
-        node.verify().expect("the two-epoch node verifies");
+        node.verify().expect("the two-leaf-index node verifies");
         let messages: Vec<xmss::Message> = node.xmss_signers.iter().map(|group| group.message).collect();
-        assert_eq!(messages, vec![message(), message_for(XMSS_EPOCH_B)]);
-        let epochs: Vec<xmss::Epoch> = node.xmss_signers.iter().map(|group| group.epoch).collect();
-        assert_eq!(epochs, vec![XMSS_EPOCH_A, XMSS_EPOCH_B]);
+        assert_eq!(messages, vec![message(), message_for(XMSS_LEAF_INDEX_B)]);
+        let leaf_indices: Vec<xmss::LeafIndex> = node.xmss_signers.iter().map(|group| group.leaf_index).collect();
+        assert_eq!(leaf_indices, vec![XMSS_LEAF_INDEX_A, XMSS_LEAF_INDEX_B]);
         assert_eq!(node.xmss_signers[0].keys.len(), 4);
         let mut b_keys: Vec<XmssPublicKey> = at_b.iter().map(|(pk, _)| pk.clone()).collect();
         b_keys.sort();
@@ -4582,7 +4642,7 @@ def main():
             assert!(bad.verify().is_err(), "a tampered aggregate must not verify");
         };
         tampered(&|s| s.xmss_signers.swap(0, 1));
-        tampered(&|s| s.xmss_signers[1].epoch = XMSS_EPOCH_B + 1);
+        tampered(&|s| s.xmss_signers[1].leaf_index = XMSS_LEAF_INDEX_B + 1);
         tampered(&|s| {
             let moved = s.xmss_signers[1].keys.pop().expect("a key to move");
             s.xmss_signers[0].keys.push(moved);
@@ -4601,7 +4661,7 @@ def main():
 
     #[test]
     fn aggregate_overlapping_signers() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let signers = get_signers(40);
         let left = prove_leaf(&signers[..25]);
         let right = prove_leaf(&signers[15..]);
@@ -4619,15 +4679,15 @@ def main():
     #[test]
     #[ignore]
     fn aggregate_three_levels() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let signers = get_signers(4 * SMALL_LEAF_SIZE);
         let claims = get_sphincs_signers(5);
         let leaf = |index: usize, sphincs: &[RawSphincs]| {
             aggregate(
                 &[],
-                at_epoch(
+                at_leaf_index(
                     &signers[index * SMALL_LEAF_SIZE..(index + 1) * SMALL_LEAF_SIZE],
-                    XMSS_EPOCH_A,
+                    XMSS_LEAF_INDEX_A,
                 ),
                 sphincs.to_vec(),
                 &[],
@@ -4640,13 +4700,13 @@ def main():
             aggregate(children, vec![], vec![], &[], None, LOG_INV_RATE).expect("node aggregates")
         };
         // Claim 1 is under both nodes; claim 4 arrives raw at the root, and so
-        // do two XMSS signatures at a second epoch, so the root holds a group
+        // do two XMSS signatures at a second leaf index, so the root holds a group
         // its children never carried.
         let left = node(&[leaf(0, &claims[..2]), leaf(1, &[])]);
         let right = node(&[leaf(2, &claims[1..3]), leaf(3, &[])]);
         let root = aggregate(
             &[left, right],
-            at_epoch(&get_signers_at(2, XMSS_EPOCH_B), XMSS_EPOCH_B),
+            at_leaf_index(&get_signers_at(2, XMSS_LEAF_INDEX_B), XMSS_LEAF_INDEX_B),
             claims[4..].to_vec(),
             &[],
             None,
@@ -4655,7 +4715,11 @@ def main():
         .expect("root aggregates");
         root.verify().expect("root verifies");
         assert_eq!(xmss_claims(&root), 4 * SMALL_LEAF_SIZE + 2);
-        assert_eq!(root.xmss_signers.len(), 2, "the raw epoch-B group joins the children's");
+        assert_eq!(
+            root.xmss_signers.len(),
+            2,
+            "the raw leaf-index-B group joins the children's"
+        );
         assert_eq!(root.sphincs_signers.len(), 4, "claims 0, 1, 2 and 4, the repeat merged");
         assert!(
             root.xmss_signers
@@ -4668,7 +4732,7 @@ def main():
     #[test]
     #[ignore]
     fn aggregate_statement_binds() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let signers = get_signers(2 * SMALL_LEAF_SIZE);
         let left = prove_leaf(&signers[..SMALL_LEAF_SIZE]);
         let right = prove_leaf(&signers[SMALL_LEAF_SIZE..]);
@@ -4726,7 +4790,7 @@ def main():
             s.sphincs_signers.push(claimed);
             s.sphincs_signers.sort();
         });
-        tampered(&|s| s.xmss_signers[0].epoch += 1);
+        tampered(&|s| s.xmss_signers[0].leaf_index += 1);
         tampered(&|s| s.xmss_signers[0].message[0] ^= 1);
         // A signer's own message is in the statement too, so editing it is not a
         // free re-attribution of that signature to another message.
@@ -4734,14 +4798,14 @@ def main():
         tampered(&|s| s.defer.bytecode_point[0] += F192::ONE);
         tampered(&|s| s.defer.matrix_point[0] += F192::ONE);
         tampered(&|s| s.xmss_signers[0].keys[0] = get_signers(2 * SMALL_LEAF_SIZE + 1)[2 * SMALL_LEAF_SIZE].0.clone());
-        // Splitting one group's keys across two epochs: the same claims cannot
-        // be re-attributed to an epoch nothing signed at.
+        // Splitting one group's keys across two leaf indices: the same claims cannot
+        // be re-attributed to a leaf index nothing signed at.
         tampered(&|s| {
             let moved = s.xmss_signers[0].keys.pop().expect("a key to move");
-            let epoch = s.xmss_signers[0].epoch;
+            let leaf_index = s.xmss_signers[0].leaf_index;
             let message = s.xmss_signers[0].message;
             s.xmss_signers.push(XmssClaimGroup {
-                epoch: epoch + 1,
+                leaf_index: leaf_index + 1,
                 message,
                 keys: vec![moved],
             });
@@ -4785,33 +4849,28 @@ def main():
     #[test]
     #[ignore]
     fn aggregate_hints_bind() {
-        lean_vm::init_prover_pool();
+        leanvm_core::init_prover();
         let signers = get_signers(2 * SMALL_LEAF_SIZE);
 
         let rejects = |children: &[EthereumProof],
-                       raw_signatures: Vec<(XmssPublicKey, xmss::Epoch, xmss::Message, XmssSignature)>,
+                       raw_signatures: Vec<(XmssPublicKey, xmss::LeafIndex, xmss::Message, XmssSignature)>,
                        raw_sphincs: Vec<RawSphincs>,
                        description: &str,
                        tamper: &dyn Fn(&mut Hints)| {
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                aggregate_tampered(
-                    children,
-                    raw_signatures,
-                    raw_sphincs,
-                    None,
-                    DaInput::default(),
-                    LOG_INV_RATE,
-                    |hints| tamper(hints),
-                )
-                .map(|(signature, _)| signature.verify().is_ok())
-            }));
-            assert!(
-                !matches!(outcome, Ok(Ok(true))),
-                "tampering {description} must be rejected"
-            );
+            let outcome = aggregate_tampered(
+                children,
+                raw_signatures,
+                raw_sphincs,
+                None,
+                DaInput::default(),
+                LOG_INV_RATE,
+                |hints| tamper(hints),
+            )
+            .map(|(signature, _)| signature.verify().is_ok());
+            assert!(!matches!(outcome, Ok(true)), "tampering {description} must be rejected");
         };
 
-        let raw_signatures = at_epoch(&signers[..SMALL_LEAF_SIZE], XMSS_EPOCH_A);
+        let raw_signatures = at_leaf_index(&signers[..SMALL_LEAF_SIZE], XMSS_LEAF_INDEX_A);
         prove_leaf(&signers[..SMALL_LEAF_SIZE]);
         let leaf_cases: &[Tamper] = &[
             ("raw_index (duplicate slot)", &|h: &mut Hints| {
@@ -4832,7 +4891,7 @@ def main():
             }),
             // One more group than the hint stream carries: witness generation
             // has nothing to pop for it.
-            ("meta (n_epochs inflated)", &|h: &mut Hints| {
+            ("meta (n_leaf_indices inflated)", &|h: &mut Hints| {
                 h.entries("meta")[0][0] = count(2);
             }),
             ("pubkeys (a key nobody signed for)", &|h: &mut Hints| {
@@ -4859,8 +4918,8 @@ def main():
                 h.entries("leaf_defer")[0][0] += F192::ONE;
             }),
             // A leaf derives its group's tweak table from this, so a wrong
-            // epoch is caught by the signatures long before the statement digest.
-            ("group (another epoch's tweak table)", &|h: &mut Hints| {
+            // leaf index is caught by the signatures long before the statement digest.
+            ("group (another leaf_index's tweak table)", &|h: &mut Hints| {
                 h.entries("group")[0][0] += F192::ONE;
             }),
             ("group (wider than the u32 the verifier holds)", &|h: &mut Hints| {
@@ -4876,21 +4935,21 @@ def main():
             rejects(&[], raw_signatures.clone(), vec![], description, *tamper);
         }
 
-        // A leaf holding two epoch groups: the second group's region is one
+        // A leaf holding two leaf index groups: the second group's region is one
         // slot, so its writer cannot reach the first group's keys, and the two
         // groups' tweak tables cannot be swapped.
-        let mut two_epoch_raw = at_epoch(&signers[..2], XMSS_EPOCH_A);
-        two_epoch_raw.extend(at_epoch(&get_signers_at(1, XMSS_EPOCH_B), XMSS_EPOCH_B));
-        aggregate(&[], two_epoch_raw.clone(), vec![], &[], None, LOG_INV_RATE)
-            .expect("the honest two-epoch leaf aggregates");
-        let two_epoch_cases: &[Tamper] = &[
+        let mut two_leaf_index_raw = at_leaf_index(&signers[..2], XMSS_LEAF_INDEX_A);
+        two_leaf_index_raw.extend(at_leaf_index(&get_signers_at(1, XMSS_LEAF_INDEX_B), XMSS_LEAF_INDEX_B));
+        aggregate(&[], two_leaf_index_raw.clone(), vec![], &[], None, LOG_INV_RATE)
+            .expect("the honest two-leaf-index leaf aggregates");
+        let two_leaf_index_cases: &[Tamper] = &[
             (
-                "raw_index (an XMSS signature crossing into another epoch's region)",
+                "raw_index (an XMSS signature crossing into another leaf_index's region)",
                 &|h: &mut Hints| {
                     h.entries("raw_index")[2] = vec![count(1)];
                 },
             ),
-            ("group (two epochs swapped)", &|h: &mut Hints| {
+            ("group (two leaf indices swapped)", &|h: &mut Hints| {
                 let entries = h.entries("group");
                 let other = entries[1][0];
                 entries[1][0] = entries[0][0];
@@ -4907,15 +4966,15 @@ def main():
                 h.entries("meta")[0][1] = count(1);
             }),
         ];
-        for (description, tamper) in two_epoch_cases {
-            rejects(&[], two_epoch_raw.clone(), vec![], description, *tamper);
+        for (description, tamper) in two_leaf_index_cases {
+            rejects(&[], two_leaf_index_raw.clone(), vec![], description, *tamper);
         }
 
         // A mixed leaf: three XMSS signers then two SPHINCS ones, so the XMSS
         // region is slots 0..3 and the SPHINCS region 3..5. Each scheme's
         // witness has to bind, and neither scheme's signature may cover the
         // other's declared key, which is what the statement's split claims.
-        let mixed_xmss = at_epoch(&signers[..3], XMSS_EPOCH_A);
+        let mixed_xmss = at_leaf_index(&signers[..3], XMSS_LEAF_INDEX_A);
         let mixed_sphincs = get_sphincs_signers(2);
         aggregate(&[], mixed_xmss.clone(), mixed_sphincs.clone(), &[], None, LOG_INV_RATE)
             .expect("the honest mixed leaf aggregates");
@@ -5035,9 +5094,9 @@ def main():
             ("child_group (count understated)", &|h: &mut Hints| {
                 h.entries("child_group")[0][3] = count(SMALL_LEAF_SIZE - 1);
             }),
-            // A child group claimed at an epoch or under a message the child
+            // A child group claimed at a leaf index or under a message the child
             // never carried: the map equality or the rebuilt digest rejects.
-            ("child_group (epoch)", &|h: &mut Hints| {
+            ("child_group (leaf index)", &|h: &mut Hints| {
                 h.entries("child_group")[0][0] += F192::ONE;
             }),
             ("child_group (message)", &|h: &mut Hints| {
@@ -5060,11 +5119,11 @@ def main():
                 h.entries("matpart")[0][0] += F192::ONE;
             }),
             // A node holding no raw XMSS signature builds no tweak tables, so
-            // the statement digest is all that pins its epochs. The children's
-            // epochs must then land on slots of this altered list, and the map
+            // the statement digest is all that pins its leaf indices. The children's
+            // leaf indices must then land on slots of this altered list, and the map
             // equality has no target, so the node cannot be proven.
             (
-                "group (a node that derives nothing from the epoch)",
+                "group (a node that derives nothing from the leaf index)",
                 &|h: &mut Hints| {
                     h.entries("group")[0][0] += F192::ONE;
                 },
@@ -5074,34 +5133,37 @@ def main():
             rejects(&children, vec![], vec![], description, *tamper);
         }
 
-        // A node over children of two different epochs: the hinted group map is
-        // what ties each child's group to the parent region of the same epoch.
-        let epoch_children = vec![
+        // A node over children of two different leaf indices: the hinted group map is
+        // what ties each child's group to the parent region of the same leaf index.
+        let leaf_index_children = vec![
             prove_leaf(&signers[..2]),
             aggregate(
                 &[],
-                at_epoch(&get_signers_at(2, XMSS_EPOCH_B), XMSS_EPOCH_B),
+                at_leaf_index(&get_signers_at(2, XMSS_LEAF_INDEX_B), XMSS_LEAF_INDEX_B),
                 vec![],
                 &[],
                 None,
                 LOG_INV_RATE,
             )
-            .expect("the honest epoch-B leaf aggregates"),
+            .expect("the honest leaf-index-B leaf aggregates"),
         ];
-        aggregate(&epoch_children, vec![], vec![], &[], None, LOG_INV_RATE)
-            .expect("the honest two-epoch node aggregates");
-        let epoch_node_cases: &[Tamper] = &[
-            // Pointing the second child's group at the parent's epoch-A region:
-            // the epochs disagree, so the map equality fails.
-            ("child_group_map (a group mapped across epochs)", &|h: &mut Hints| {
-                h.entries("child_group_map")[1][0] = count(0);
-            }),
+        aggregate(&leaf_index_children, vec![], vec![], &[], None, LOG_INV_RATE)
+            .expect("the honest two-leaf-index node aggregates");
+        let leaf_index_node_cases: &[Tamper] = &[
+            // Pointing the second child's group at the parent's leaf-index-A region:
+            // the leaf indices disagree, so the map equality fails.
+            (
+                "child_group_map (a group mapped across leaf indices)",
+                &|h: &mut Hints| {
+                    h.entries("child_group_map")[1][0] = count(0);
+                },
+            ),
             ("child_group_map (out of range)", &|h: &mut Hints| {
                 h.entries("child_group_map")[0][0] = count(2);
             }),
         ];
-        for (description, tamper) in epoch_node_cases {
-            rejects(&epoch_children, vec![], vec![], description, *tamper);
+        for (description, tamper) in leaf_index_node_cases {
+            rejects(&leaf_index_children, vec![], vec![], description, *tamper);
         }
 
         // The same discipline over a child's SPHINCS claims, which are rebuilt by
@@ -5109,8 +5171,15 @@ def main():
         // the cases above do not reach them: these children carry claims.
         let sphincs = get_sphincs_signers(4);
         let mixed_child = |x: &[(XmssPublicKey, XmssSignature)], s: &[RawSphincs]| {
-            aggregate(&[], at_epoch(x, XMSS_EPOCH_A), s.to_vec(), &[], None, LOG_INV_RATE)
-                .expect("the honest mixed child aggregates")
+            aggregate(
+                &[],
+                at_leaf_index(x, XMSS_LEAF_INDEX_A),
+                s.to_vec(),
+                &[],
+                None,
+                LOG_INV_RATE,
+            )
+            .expect("the honest mixed child aggregates")
         };
         let mixed_children = vec![
             mixed_child(&signers[..2], &sphincs[..2]),
@@ -5136,25 +5205,19 @@ def main():
     #[test]
     #[ignore]
     fn aggregate_rejects_a_bad_signature() {
-        lean_vm::init_prover_pool();
-        let mut raw_signatures = at_epoch(&get_signers(3), XMSS_EPOCH_A);
+        leanvm_core::init_prover();
+        let mut raw_signatures = at_leaf_index(&get_signers(3), XMSS_LEAF_INDEX_A);
         raw_signatures[1].3.wots_signature.chain_tips[0][0] ^= 1;
-        let built = std::panic::catch_unwind(|| {
-            aggregate(&[], raw_signatures, vec![], &[], None, LOG_INV_RATE).map(|signature| signature.verify().is_ok())
-        });
         assert!(
-            !matches!(built, Ok(Ok(true))),
-            "a forged signature must not produce a verifying aggregate"
+            aggregate(&[], raw_signatures, vec![], &[], None, LOG_INV_RATE).is_err(),
+            "a forged signature must be rejected"
         );
 
         let mut raw_sphincs = get_sphincs_signers(2);
         raw_sphincs[1].2.ots[2][0][0] ^= 1;
-        let built = std::panic::catch_unwind(|| {
-            aggregate(&[], vec![], raw_sphincs, &[], None, LOG_INV_RATE).map(|signature| signature.verify().is_ok())
-        });
         assert!(
-            !matches!(built, Ok(Ok(true))),
-            "a forged SPHINCS signature must not produce a verifying aggregate"
+            aggregate(&[], vec![], raw_sphincs, &[], None, LOG_INV_RATE).is_err(),
+            "a forged SPHINCS signature must be rejected"
         );
     }
 
@@ -5172,7 +5235,7 @@ def main():
             .find_map(|byte| {
                 let mut randomness = [0; xmss::RANDOMNESS_LEN];
                 randomness[0] = byte;
-                xmss::wots_encode(&message, XMSS_EPOCH_A, &pk.public_param, &randomness)
+                xmss::wots_encode(&message, XMSS_LEAF_INDEX_A, &pk.public_param, &randomness)
                     .is_none()
                     .then_some(randomness)
             })
@@ -5187,14 +5250,14 @@ def main():
 
         let mut hints = Hints::default();
         assert_eq!(
-            push_signature_hints(&mut hints, &pk, &sig, &message, XMSS_EPOCH_A),
+            push_signature_hints(&mut hints, &pk, &sig, &message, XMSS_LEAF_INDEX_A),
             Err(AggregationError::MalformedRawSignature)
         );
         assert!(hints.is_empty());
         assert_eq!(
             aggregate(
                 &[],
-                vec![(pk, XMSS_EPOCH_A, message, sig)],
+                vec![(pk, XMSS_LEAF_INDEX_A, message, sig)],
                 vec![],
                 &[],
                 None,

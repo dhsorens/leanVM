@@ -10,14 +10,14 @@ set_option maxRecDepth 100000
 def ValidFreshSigningCollisionsRepresented
     (secretKey : SecretKey) (signingTrace : SigningCacheTrace)
     (actions : EncodingActionTrace) : Prop :=
-  signingTrace.epochs.Nodup →
+  signingTrace.leafIndices.Nodup →
     ∀ entry ∈ signingTrace, entry.FreshSigningEncodingCollision secretKey →
       ∃ signedOutput oldOutput before middle after,
         TargetSum.ValidDigest (truncateHash signedOutput) ∧
         TargetSum.ValidDigest (truncateHash oldOutput) ∧
         truncateHash signedOutput = truncateHash oldOutput ∧
-        actions = before ++ [.query entry.request.epoch oldOutput] ++ middle ++
-          [.sign entry.request.epoch signedOutput] ++ after
+        actions = before ++ [.query entry.request.leafIndex oldOutput] ++ middle ++
+          [.sign entry.request.leafIndex signedOutput] ++ after
 
 theorem ValidFreshSigningCollisionsRepresented.append_actions
     {secretKey : SecretKey} {signingTrace : SigningCacheTrace}
@@ -169,24 +169,24 @@ theorem cappedUnloggedMappedAdversaryImpl_uniform_cache_eq
   obtain ⟨sample, _hsample, heq⟩ := hmem
   exact (congrArg Prod.snd heq).symm
 
-theorem cappedEncodingTracedMappedAdversaryImpl_query_signEpochs_sublist
+theorem cappedEncodingTracedMappedAdversaryImpl_query_signLeafIndices_sublist
     (publicKey : PublicKey) (secretKey : SecretKey)
     (input : (OracleWorld + SigningSpec).Domain)
     (initialState : (QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace)
     (result : (OracleWorld + SigningSpec).Range input ×
       ((QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace))
     (hsublist : List.Sublist
-      (EncodingMonitor.observedSignEpochs initialState.2) initialState.1.2.epochs)
+      (EncodingMonitor.observedSignLeafIndices initialState.2) initialState.1.2.leafIndices)
     (hmem : result ∈ support
       ((cappedEncodingTracedMappedAdversaryImpl publicKey secretKey input).run initialState)) :
-    List.Sublist (EncodingMonitor.observedSignEpochs result.2.2)
-      result.2.1.2.epochs := by
+    List.Sublist (EncodingMonitor.observedSignLeafIndices result.2.2)
+      result.2.1.2.leafIndices := by
   obtain ⟨output, finalState, _suffix, hresult, _hbase, htraceEq,
     _hcacheLe, _hsuffix⟩ :=
     cappedEncodingTracedMappedAdversaryImpl_query_support_info publicKey
       secretKey input initialState result hmem
   subst result
-  exact encodingActionTraceUpdate_signEpochs_sublist secretKey input initialState.1
+  exact encodingActionTraceUpdate_signLeafIndices_sublist secretKey input initialState.1
     output finalState initialState.2 htraceEq hsublist
 
 theorem cappedEncodingTracedMappedAdversaryImpl_query_freshSigningActionsRepresented
@@ -226,16 +226,16 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_freshSigningActionsReprese
             simp only [Option.some.injEq] at hsignature
             subst returnedSignature
             change initialState.1.1
-              (Concrete.CacheView.encodingInput secretKey.parameter request.epoch
+              (Concrete.CacheView.encodingInput secretKey.parameter request.leafIndex
                 (request.message, signature.randomness)) = none at hfresh
             have hsignSupport : (some signature, finalState.1) ∈ support
                 ((simulateQ romImpl
-                  (Concrete.precomputedCappedSign secretKey request.epoch
+                  (Concrete.precomputedCappedSign secretKey request.leafIndex
                     request.message)).run
                     initialState.1.1) := by
               change (some signature, finalState.1) ∈ support
                 ((simulateQ romImpl
-                  (Concrete.precomputedCappedSign secretKey request.epoch
+                  (Concrete.precomputedCappedSign secretKey request.leafIndex
                     request.message)).run
                     initialState.1.1) at hbaseSupport
               exact hbaseSupport
@@ -279,7 +279,7 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_unsignedEncodingEntriesRep
           simpa [encodingActionTraceUpdate, encodingObservation?] using hrepresented
       | inr queriedInput =>
           rw [htraceEq]
-          intro epoch hunsigned targetInput targetOutput hencoding hbaseFresh hfinal
+          intro leafIndex hunsigned targetInput targetOutput hencoding hbaseFresh hfinal
           cases hinitial : initialState.1.1 targetInput with
           | some oldOutput =>
               have hfinalOld := hcacheLe hinitial
@@ -287,7 +287,7 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_unsignedEncodingEntriesRep
                 rw [hfinal] at hfinalOld
                 exact Option.some.inj hfinalOld.symm
               subst oldOutput
-              obtain ⟨before, after, hactions⟩ := hrepresented epoch hunsigned
+              obtain ⟨before, after, hactions⟩ := hrepresented leafIndex hunsigned
                 targetInput targetOutput hencoding hbaseFresh hinitial
               refine ⟨before, after ++ suffix, ?_⟩
               rw [hsuffix, hactions]
@@ -305,14 +305,14 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_unsignedEncodingEntriesRep
   | inr request =>
       rw [signingCacheTraceUpdate] at htraceEq
       rw [htraceEq]
-      intro epoch hunsigned targetInput targetOutput hencoding hbaseFresh hfinal
-      have hunsignedInitial : epoch ∉ initialState.1.2.epochs := by
+      intro leafIndex hunsigned targetInput targetOutput hencoding hbaseFresh hfinal
+      have hunsignedInitial : leafIndex ∉ initialState.1.2.leafIndices := by
         intro hmem
         exact hunsigned (by simp [hmem])
-      have hotherEpoch : request.epoch ≠ epoch := by
+      have hotherLeafIndex : request.leafIndex ≠ leafIndex := by
         intro heq
-        subst epoch
-        exact hunsigned (by simp [SigningCacheTrace.epochs])
+        subst leafIndex
+        exact hunsigned (by simp [SigningCacheTrace.leafIndices])
       cases hinitial : initialState.1.1 targetInput with
       | some oldOutput =>
           have hfinalOld := hcacheLe hinitial
@@ -320,7 +320,7 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_unsignedEncodingEntriesRep
             rw [hfinal] at hfinalOld
             exact Option.some.inj hfinalOld.symm
           subst oldOutput
-          obtain ⟨before, after, hactions⟩ := hrepresented epoch hunsignedInitial
+          obtain ⟨before, after, hactions⟩ := hrepresented leafIndex hunsignedInitial
             targetInput targetOutput hencoding hbaseFresh hinitial
           refine ⟨before, after ++ suffix, ?_⟩
           rw [hsuffix, hactions]
@@ -328,22 +328,22 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_unsignedEncodingEntriesRep
       | none =>
           have hsignSupport : (output, finalState.1) ∈ support
               ((simulateQ romImpl
-                (Concrete.precomputedCappedSign secretKey request.epoch
+                (Concrete.precomputedCappedSign secretKey request.leafIndex
                   request.message)).run
                   initialState.1.1) := by
             change (output, finalState.1) ∈ support
               ((simulateQ romImpl
-                (Concrete.precomputedCappedSign secretKey request.epoch
+                (Concrete.precomputedCappedSign secretKey request.leafIndex
                   request.message)).run
                   initialState.1.1) at hbaseSupport
             exact hbaseSupport
           obtain ⟨targetPair, htargetPair⟩ :=
-            exists_encodingInput_of_encodingInputEpoch?_eq_some secretKey.parameter
-              targetInput epoch hencoding
+            exists_encodingInput_of_encodingInputLeafIndex?_eq_some secretKey.parameter
+              targetInput leafIndex hencoding
           have hnone :=
-            Concrete.precomputedCappedSign_preserves_other_epoch_encodingInput
-              secretKey request.epoch epoch request.message targetPair initialState.1.1
-              finalState.1 output hsignSupport hotherEpoch
+            Concrete.precomputedCappedSign_preserves_other_leafIndex_encodingInput
+              secretKey request.leafIndex leafIndex request.message targetPair initialState.1.1
+              finalState.1 output hsignSupport hotherLeafIndex
             (by rw [htargetPair]; exact hinitial)
           rw [htargetPair, hfinal] at hnone
           cases hnone
@@ -351,8 +351,8 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_unsignedEncodingEntriesRep
 theorem cappedEncodingTracedMappedAdversaryImpl_query_validFreshSigningCollisionsRepresented
     (publicKey : PublicKey) (secretKey : SecretKey)
     (baseCache : QueryCache HashSpec)
-    (hbaseEncodingFree : ∀ epoch input,
-      baseCache (Concrete.CacheView.encodingInput secretKey.parameter epoch input) = none)
+    (hbaseEncodingFree : ∀ leafIndex input,
+      baseCache (Concrete.CacheView.encodingInput secretKey.parameter leafIndex input) = none)
     (input : (OracleWorld + SigningSpec).Domain)
     (initialState : (QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace)
     (result : (OracleWorld + SigningSpec).Range input ×
@@ -381,7 +381,7 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_validFreshSigningCollision
       rw [signingCacheTraceUpdate] at htraceEq
       rw [htraceEq]
       intro hnodup entry hentry hcollision
-      have hnodupInitial : initialState.1.2.epochs.Nodup := by
+      have hnodupInitial : initialState.1.2.leafIndices.Nodup := by
         exact (List.nodup_append.mp (by simpa using hnodup)).1
       rw [List.mem_append] at hentry
       rcases hentry with hentry | hentry
@@ -392,13 +392,13 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_validFreshSigningCollision
         obtain ⟨signature, signedOutput, oldInput, oldOutput, hsignature,
           hfresh, hsigned, hold, _hne, hdigest⟩ := hcollision
         change initialState.1.1
-          (Concrete.CacheView.encodingInput secretKey.parameter request.epoch
+          (Concrete.CacheView.encodingInput secretKey.parameter request.leafIndex
             (request.message, signature.randomness)) = none at hfresh
         change finalState.1
-          (Concrete.CacheView.encodingInput secretKey.parameter request.epoch
+          (Concrete.CacheView.encodingInput secretKey.parameter request.leafIndex
             (request.message, signature.randomness)) = some signedOutput at hsigned
         change initialState.1.1
-          (Concrete.CacheView.encodingInput secretKey.parameter request.epoch oldInput) =
+          (Concrete.CacheView.encodingInput secretKey.parameter request.leafIndex oldInput) =
             some oldOutput at hold
         cases output with
         | none => simp at hsignature
@@ -407,11 +407,11 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_validFreshSigningCollision
             subst returnedSignature
             have hsignSupport : (some signature, finalState.1) ∈ support
                 ((simulateQ romImpl
-                  (Concrete.precomputedCappedSign secretKey request.epoch
+                  (Concrete.precomputedCappedSign secretKey request.leafIndex
                     request.message)).run initialState.1.1) := by
               change (some signature, finalState.1) ∈ support
                 ((simulateQ romImpl
-                  (Concrete.precomputedCappedSign secretKey request.epoch
+                  (Concrete.precomputedCappedSign secretKey request.leafIndex
                     request.message)).run initialState.1.1) at hbaseSupport
               exact hbaseSupport
             obtain ⟨encoding, hdecode⟩ :=
@@ -424,20 +424,20 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_validFreshSigningCollision
             have holdValid : TargetSum.ValidDigest (truncateHash oldOutput) := by
               rw [← hdigest]
               exact hsignedValid
-            have hrequestFresh : request.epoch ∉ initialState.1.2.epochs := by
+            have hrequestFresh : request.leafIndex ∉ initialState.1.2.leafIndices := by
               intro hmem
               have hcross := (List.nodup_append.mp (by simpa using hnodup)).2.2
-              exact hcross request.epoch hmem request.epoch
-                (by simp [SigningCacheTrace.epochs]) rfl
-            obtain ⟨before, middle, hqueryActions⟩ := hunsigned request.epoch
+              exact hcross request.leafIndex hmem request.leafIndex
+                (by simp [SigningCacheTrace.leafIndices]) rfl
+            obtain ⟨before, middle, hqueryActions⟩ := hunsigned request.leafIndex
               hrequestFresh
-              (Concrete.CacheView.encodingInput secretKey.parameter request.epoch oldInput)
-              oldOutput (by simp) (hbaseEncodingFree request.epoch oldInput) hold
+              (Concrete.CacheView.encodingInput secretKey.parameter request.leafIndex oldInput)
+              oldOutput (by simp) (hbaseEncodingFree request.leafIndex oldInput) hold
             refine ⟨signedOutput, oldOutput, before, middle, [], hsignedValid,
               holdValid, hdigest, ?_⟩
             rw [show encodingActionTraceUpdate secretKey (.inr request) initialState.1
                 (some signature) finalState initialState.2 =
-                initialState.2 ++ [.sign request.epoch signedOutput] by
+                initialState.2 ++ [.sign request.leafIndex signedOutput] by
               simp [encodingActionTraceUpdate, encodingObservation?, hfresh, hsigned]]
             rw [hqueryActions]
             simp [List.append_assoc]
@@ -508,7 +508,7 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_postSigningQueriesRepresen
               refine ⟨before, middle, [], ?_⟩
               rw [show encodingActionTraceUpdate secretKey (.inl (.inr targetInput))
                   initialState.1 targetOutput finalState initialState.2 =
-                  initialState.2 ++ [.query entry.request.epoch targetOutput] by
+                  initialState.2 ++ [.query entry.request.leafIndex targetOutput] by
                 simp [encodingActionTraceUpdate, encodingObservation?, hinitial,
                   hencoding]]
               rw [hsignActionsEq]
@@ -518,16 +518,16 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_postSigningQueriesRepresen
       rw [htraceEq]
       intro hnodup entry hentry signature signedOutput targetInput targetOutput
         hsignature hfresh hsigned hencoding hentryFresh hfinal
-      have hnodupInitial : initialState.1.2.epochs.Nodup :=
+      have hnodupInitial : initialState.1.2.leafIndices.Nodup :=
         (List.nodup_append.mp (by simpa using hnodup)).1
       rw [List.mem_append] at hentry
       rcases hentry with hentry | hentry
-      · have hotherEpoch : request.epoch ≠ entry.request.epoch := by
+      · have hotherLeafIndex : request.leafIndex ≠ entry.request.leafIndex := by
           intro heq
           have hcross := (List.nodup_append.mp (by simpa using hnodup)).2.2
-          exact hcross entry.request.epoch
-            (by exact List.mem_map.mpr ⟨entry, hentry, rfl⟩) request.epoch
-            (by simp [SigningCacheTrace.epochs]) heq.symm
+          exact hcross entry.request.leafIndex
+            (by exact List.mem_map.mpr ⟨entry, hentry, rfl⟩) request.leafIndex
+            (by simp [SigningCacheTrace.leafIndices]) heq.symm
         cases hinitial : initialState.1.1 targetInput with
         | some oldOutput =>
             have hfinalOld := hcacheLe hinitial
@@ -544,22 +544,22 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_postSigningQueriesRepresen
         | none =>
             have hsignSupport : (output, finalState.1) ∈ support
                 ((simulateQ romImpl
-                  (Concrete.precomputedCappedSign secretKey request.epoch
+                  (Concrete.precomputedCappedSign secretKey request.leafIndex
                     request.message)).run
                     initialState.1.1) := by
               change (output, finalState.1) ∈ support
                 ((simulateQ romImpl
-                  (Concrete.precomputedCappedSign secretKey request.epoch
+                  (Concrete.precomputedCappedSign secretKey request.leafIndex
                     request.message)).run
                     initialState.1.1) at hbaseSupport
               exact hbaseSupport
             obtain ⟨targetPair, htargetPair⟩ :=
-              exists_encodingInput_of_encodingInputEpoch?_eq_some secretKey.parameter
-                targetInput entry.request.epoch hencoding
+              exists_encodingInput_of_encodingInputLeafIndex?_eq_some secretKey.parameter
+                targetInput entry.request.leafIndex hencoding
             have hnone :=
-              Concrete.precomputedCappedSign_preserves_other_epoch_encodingInput
-                secretKey request.epoch entry.request.epoch request.message targetPair
-                initialState.1.1 finalState.1 output hsignSupport hotherEpoch
+              Concrete.precomputedCappedSign_preserves_other_leafIndex_encodingInput
+                secretKey request.leafIndex entry.request.leafIndex request.message targetPair
+                initialState.1.1 finalState.1 output hsignSupport hotherLeafIndex
               (by rw [htargetPair]; exact hinitial)
             rw [htargetPair, hfinal] at hnone
             cases hnone
@@ -569,34 +569,34 @@ theorem cappedEncodingTracedMappedAdversaryImpl_query_postSigningQueriesRepresen
         rw [hfinal] at hentryFresh
         cases hentryFresh
 
-theorem cappedEncodingTracedMappedAdversaryImpl_signEpochs_sublist
+theorem cappedEncodingTracedMappedAdversaryImpl_signLeafIndices_sublist
     (publicKey : PublicKey) (secretKey : SecretKey)
     (computation : OracleComp (OracleWorld + SigningSpec) α)
     (initialState : (QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace)
     (result : α ×
       ((QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace))
     (hsublist : List.Sublist
-      (EncodingMonitor.observedSignEpochs initialState.2) initialState.1.2.epochs)
+      (EncodingMonitor.observedSignLeafIndices initialState.2) initialState.1.2.leafIndices)
     (hmem : result ∈ support
       ((simulateQ (cappedEncodingTracedMappedAdversaryImpl publicKey secretKey)
         computation).run initialState)) :
-    List.Sublist (EncodingMonitor.observedSignEpochs result.2.2)
-      result.2.1.2.epochs := by
+    List.Sublist (EncodingMonitor.observedSignLeafIndices result.2.2)
+      result.2.1.2.leafIndices := by
   exact OracleComp.simulateQ_run_preservesInv
     (cappedEncodingTracedMappedAdversaryImpl publicKey secretKey)
-    (fun state => List.Sublist (EncodingMonitor.observedSignEpochs state.2)
-      state.1.2.epochs)
+    (fun state => List.Sublist (EncodingMonitor.observedSignLeafIndices state.2)
+      state.1.2.leafIndices)
     (by
       intro input state hstate queryResult hquery
-      exact cappedEncodingTracedMappedAdversaryImpl_query_signEpochs_sublist
+      exact cappedEncodingTracedMappedAdversaryImpl_query_signLeafIndices_sublist
         publicKey secretKey input state queryResult hstate hquery)
     computation initialState hsublist result hmem
 
 theorem cappedEncodingTracedMappedAdversaryImpl_validEncodingCollisionInvariants
     (publicKey : PublicKey) (secretKey : SecretKey)
     (baseCache : QueryCache HashSpec)
-    (hbaseEncodingFree : ∀ epoch input,
-      baseCache (Concrete.CacheView.encodingInput secretKey.parameter epoch input) = none)
+    (hbaseEncodingFree : ∀ leafIndex input,
+      baseCache (Concrete.CacheView.encodingInput secretKey.parameter leafIndex input) = none)
     (computation : OracleComp (OracleWorld + SigningSpec) α)
     (initialState : (QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace)
     (result : α ×
@@ -661,7 +661,7 @@ theorem cappedEncodingTracedMappedAdversaryImpl_postSigningInvariants
     computation initialState ⟨hsignActions, hpostSigning⟩ result hmem
 
 
-theorem cappedDetailedGameAfterKeygenWithEncodingTrace_signEpochs_sublist
+theorem cappedDetailedGameAfterKeygenWithEncodingTrace_signLeafIndices_sublist
     (adversary : Adversary)
     (publicKey : PublicKey) (secretKey : SecretKey)
     (initialCache : QueryCache HashSpec)
@@ -670,8 +670,8 @@ theorem cappedDetailedGameAfterKeygenWithEncodingTrace_signEpochs_sublist
     (hmem : result ∈ support
       (cappedDetailedGameAfterKeygenWithEncodingTrace adversary publicKey secretKey
         initialCache)) :
-    List.Sublist (EncodingMonitor.observedSignEpochs result.2.2)
-      result.2.1.2.epochs := by
+    List.Sublist (EncodingMonitor.observedSignLeafIndices result.2.2)
+      result.2.1.2.leafIndices := by
   unfold cappedDetailedGameAfterKeygenWithEncodingTrace at hmem
   rw [mem_support_bind_iff] at hmem
   obtain ⟨⟨forgery, adversaryState, encodingTrace⟩, hadversary, hrest⟩ := hmem
@@ -679,33 +679,33 @@ theorem cappedDetailedGameAfterKeygenWithEncodingTrace_signEpochs_sublist
   obtain ⟨⟨verified, finalCache⟩, _hverify, hfinal⟩ := hrest
   simp only [support_pure, Set.mem_singleton_iff] at hfinal
   subst result
-  have hsublist := cappedEncodingTracedMappedAdversaryImpl_signEpochs_sublist
+  have hsublist := cappedEncodingTracedMappedAdversaryImpl_signLeafIndices_sublist
     publicKey secretKey (adversary.main publicKey) ((initialCache, []), [])
     (forgery, (adversaryState, encodingTrace))
     (List.Sublist.refl []) hadversary
-  change List.Sublist (EncodingMonitor.observedSignEpochs
+  change List.Sublist (EncodingMonitor.observedSignLeafIndices
     (appendVerificationEncodingObservation secretKey forgery adversaryState.1
-      finalCache encodingTrace)) adversaryState.2.epochs
-  let forgedInput := Concrete.CacheView.encodingInput secretKey.parameter forgery.epoch
+      finalCache encodingTrace)) adversaryState.2.leafIndices
+  let forgedInput := Concrete.CacheView.encodingInput secretKey.parameter forgery.leafIndex
     (forgery.message, forgery.signature.randomness)
   by_cases hfresh : adversaryState.1 forgedInput = none
   · cases houtput : finalCache forgedInput with
     | none =>
         simpa [appendVerificationEncodingObservation, forgedInput, hfresh,
-          houtput, EncodingMonitor.observedSignEpochs] using hsublist
+          houtput, EncodingMonitor.observedSignLeafIndices] using hsublist
     | some output =>
         simpa [appendVerificationEncodingObservation, forgedInput, hfresh,
-          houtput, EncodingMonitor.observedSignEpochs] using hsublist
+          houtput, EncodingMonitor.observedSignLeafIndices] using hsublist
   · simpa [appendVerificationEncodingObservation, forgedInput, hfresh,
-      EncodingMonitor.observedSignEpochs] using hsublist
+      EncodingMonitor.observedSignLeafIndices] using hsublist
 
 theorem cappedDetailedGameAfterKeygenWithEncodingTrace_validFreshSigningCollisionsRepresented
     (adversary : Adversary)
     (publicKey : PublicKey) (secretKey : SecretKey)
     (initialCache : QueryCache HashSpec)
-    (hinitialEncodingFree : ∀ epoch input,
+    (hinitialEncodingFree : ∀ leafIndex input,
       initialCache
-        (Concrete.CacheView.encodingInput secretKey.parameter epoch input) = none)
+        (Concrete.CacheView.encodingInput secretKey.parameter leafIndex input) = none)
     (result : GameOutcome ×
       ((QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace))
     (hmem : result ∈ support
@@ -723,12 +723,12 @@ theorem cappedDetailedGameAfterKeygenWithEncodingTrace_validFreshSigningCollisio
     publicKey secretKey initialCache hinitialEncodingFree (adversary.main publicKey)
     ((initialCache, []), []) (forgery, (adversaryState, encodingTrace))
     (UnsignedEncodingEntriesRepresented.refl secretKey.parameter initialCache)
-    (by simp [ValidFreshSigningCollisionsRepresented, SigningCacheTrace.epochs]) hadversary
+    (by simp [ValidFreshSigningCollisionsRepresented, SigningCacheTrace.leafIndices]) hadversary
   have hrepresented := hinvariants.2
   change ValidFreshSigningCollisionsRepresented secretKey adversaryState.2
     (appendVerificationEncodingObservation secretKey forgery adversaryState.1
       finalCache encodingTrace)
-  let forgedInput := Concrete.CacheView.encodingInput secretKey.parameter forgery.epoch
+  let forgedInput := Concrete.CacheView.encodingInput secretKey.parameter forgery.leafIndex
     (forgery.message, forgery.signature.randomness)
   by_cases hfresh : adversaryState.1 forgedInput = none
   · cases houtput : finalCache forgedInput with
@@ -738,21 +738,21 @@ theorem cappedDetailedGameAfterKeygenWithEncodingTrace_validFreshSigningCollisio
     | some output =>
         simpa [appendVerificationEncodingObservation, forgedInput, hfresh, houtput]
           using hrepresented.append_actions
-            [EncodingMonitor.ObservedAction.query forgery.epoch output]
+            [EncodingMonitor.ObservedAction.query forgery.leafIndex output]
   · simpa [appendVerificationEncodingObservation, forgedInput, hfresh] using hrepresented
 
 
-theorem cappedDetailedGameWithEncodingTrace_signEpochs_sublist
+theorem cappedDetailedGameWithEncodingTrace_signLeafIndices_sublist
     (adversary : Adversary)
     (result : GameOutcome ×
       ((QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace))
     (hmem : result ∈ support (cappedDetailedGameWithEncodingTrace adversary)) :
-    List.Sublist (EncodingMonitor.observedSignEpochs result.2.2)
-      result.2.1.2.epochs := by
+    List.Sublist (EncodingMonitor.observedSignLeafIndices result.2.2)
+      result.2.1.2.leafIndices := by
   unfold cappedDetailedGameWithEncodingTrace at hmem
   rw [mem_support_bind_iff] at hmem
   obtain ⟨⟨⟨publicKey, secretKey⟩, keyCache⟩, _hkeygen, hrest⟩ := hmem
-  exact cappedDetailedGameAfterKeygenWithEncodingTrace_signEpochs_sublist adversary
+  exact cappedDetailedGameAfterKeygenWithEncodingTrace_signLeafIndices_sublist adversary
     publicKey secretKey keyCache result hrest
 
 theorem cappedDetailedGameWithEncodingTrace_validFreshSigningCollisionsRepresented
@@ -768,10 +768,10 @@ theorem cappedDetailedGameWithEncodingTrace_validFreshSigningCollisionsRepresent
   have hkeygen' : ((publicKey, secretKey), keyCache) ∈ support
       ((simulateQ romImpl Concrete.precomputedKeygen).run ∅) := by
     simpa only [Concrete.scheme] using hkeygen
-  have hencodingFree : ∀ epoch input,
-      keyCache (Concrete.CacheView.encodingInput secretKey.parameter epoch input) = none :=
-    fun epoch input => Concrete.precomputedKeygen_cache_none_encodingInput
-      ((publicKey, secretKey), keyCache) hkeygen' epoch input
+  have hencodingFree : ∀ leafIndex input,
+      keyCache (Concrete.CacheView.encodingInput secretKey.parameter leafIndex input) = none :=
+    fun leafIndex input => Concrete.precomputedKeygen_cache_none_encodingInput
+      ((publicKey, secretKey), keyCache) hkeygen' leafIndex input
   have hrepresented :=
     cappedDetailedGameAfterKeygenWithEncodingTrace_validFreshSigningCollisionsRepresented
       adversary publicKey secretKey keyCache hencodingFree result hrest
@@ -786,110 +786,110 @@ theorem cappedDetailedGameWithEncodingTrace_validFreshSigningCollisionsRepresent
   exact hrepresented
 
 
-theorem cappedDetailedGameWithEncodingTrace_signingEpochs_nodup_of_winning
+theorem cappedDetailedGameWithEncodingTrace_signingLeafIndices_nodup_of_winning
     (adversary : Adversary)
     (result : GameOutcome ×
       ((QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace))
     (hmem : result ∈ support (cappedDetailedGameWithEncodingTrace adversary))
     (hevent : WinningOutcomeBadEventOccurs result.2.1.1 result.1 .encoding) :
-    result.2.1.2.epochs.Nodup := by
+    result.2.1.2.leafIndices.Nodup := by
   have hprojected : (result.1, result.2.1) ∈
       support (cappedDetailedGameWithSigningTrace adversary) := by
     rw [← cappedDetailedGameWithEncodingTrace_projection, support_map]
     exact ⟨result, hmem, rfl⟩
   have hlog := (cappedDetailedGameWithSigningTrace_invariants adversary
     (result.1, result.2.1) hprojected).1
-  have htraceNodup : result.2.1.2.epochs.Nodup := by
+  have htraceNodup : result.2.1.2.leafIndices.Nodup := by
     have hvalid := hevent.signingTranscript_valid
     rw [← hlog] at hvalid
     unfold SigningTranscript.Valid at hvalid
-    simpa [SigningCacheTrace.epochs, SigningCacheTrace.toSigningLog,
+    simpa [SigningCacheTrace.leafIndices, SigningCacheTrace.toSigningLog,
       List.map_map, Function.comp_def] using hvalid
   exact htraceNodup
 
-theorem cappedDetailedGameWithEncodingTrace_signEpochs_nodup_of_winning
+theorem cappedDetailedGameWithEncodingTrace_signLeafIndices_nodup_of_winning
     (adversary : Adversary)
     (result : GameOutcome ×
       ((QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace))
     (hmem : result ∈ support (cappedDetailedGameWithEncodingTrace adversary))
     (hevent : WinningOutcomeBadEventOccurs result.2.1.1 result.1 .encoding) :
-    (EncodingMonitor.observedSignEpochs result.2.2).Nodup := by
+    (EncodingMonitor.observedSignLeafIndices result.2.2).Nodup := by
   have htraceNodup :=
-    cappedDetailedGameWithEncodingTrace_signingEpochs_nodup_of_winning adversary result
+    cappedDetailedGameWithEncodingTrace_signingLeafIndices_nodup_of_winning adversary result
       hmem hevent
   exact htraceNodup.sublist
-    (cappedDetailedGameWithEncodingTrace_signEpochs_sublist adversary result hmem)
+    (cappedDetailedGameWithEncodingTrace_signLeafIndices_sublist adversary result hmem)
 
-theorem cappedDetailedGameWithEncodingTrace_validSignEpochs_nodup_of_winning
+theorem cappedDetailedGameWithEncodingTrace_validSignLeafIndices_nodup_of_winning
     (adversary : Adversary)
     (result : GameOutcome ×
       ((QueryCache HashSpec × SigningCacheTrace) × EncodingActionTrace))
     (hmem : result ∈ support (cappedDetailedGameWithEncodingTrace adversary))
     (hevent : WinningOutcomeBadEventOccurs result.2.1.1 result.1 .encoding) :
-    (CappedEncodingMonitor.validObservedSignEpochs result.2.2).Nodup := by
-  have hraw := cappedDetailedGameWithEncodingTrace_signEpochs_nodup_of_winning
+    (CappedEncodingMonitor.validObservedSignLeafIndices result.2.2).Nodup := by
+  have hraw := cappedDetailedGameWithEncodingTrace_signLeafIndices_nodup_of_winning
     adversary result hmem hevent
-  exact hraw.sublist (EncodingMonitor.observedSignEpochs_sublist
+  exact hraw.sublist (EncodingMonitor.observedSignLeafIndices_sublist
     (CappedEncodingMonitor.validActions_sublist result.2.2))
 
 theorem CappedEncodingMonitor.runObserved_empty_eq_true_of_query_before_sign_of_valid
-    (epoch : Epoch) (oldOutput signedOutput : HashOutput)
+    (leafIndex : LeafIndex) (oldOutput signedOutput : HashOutput)
     (before middle after : EncodingActionTrace)
     (holdValid : TargetSum.ValidDigest (truncateHash oldOutput))
     (hsignedValid : TargetSum.ValidDigest (truncateHash signedOutput))
     (hdigest : truncateHash oldOutput = truncateHash signedOutput)
-    (hnodup : (CappedEncodingMonitor.validObservedSignEpochs
-      (before ++ [.query epoch oldOutput] ++ middle ++
-        [.sign epoch signedOutput] ++ after)).Nodup) :
+    (hnodup : (CappedEncodingMonitor.validObservedSignLeafIndices
+      (before ++ [.query leafIndex oldOutput] ++ middle ++
+        [.sign leafIndex signedOutput] ++ after)).Nodup) :
     CappedEncodingMonitor.runObserved EncodingMonitor.State.empty
-      (before ++ [.query epoch oldOutput] ++ middle ++
-        [.sign epoch signedOutput] ++ after) = true := by
+      (before ++ [.query leafIndex oldOutput] ++ middle ++
+        [.sign leafIndex signedOutput] ++ after) = true := by
   rw [CappedEncodingMonitor.runObserved_eq_standard_validActions _ _
     CappedEncodingMonitor.State.valid_empty]
-  have hquery : CappedEncodingMonitor.ActionValid (.query epoch oldOutput) := holdValid
-  have hsign : CappedEncodingMonitor.ActionValid (.sign epoch signedOutput) := hsignedValid
+  have hquery : CappedEncodingMonitor.ActionValid (.query leafIndex oldOutput) := holdValid
+  have hsign : CappedEncodingMonitor.ActionValid (.sign leafIndex signedOutput) := hsignedValid
   rw [CappedEncodingMonitor.validActions_append_two_valid before middle after
-    (.query epoch oldOutput) (.sign epoch signedOutput) hquery hsign]
+    (.query leafIndex oldOutput) (.sign leafIndex signedOutput) hquery hsign]
   apply EncodingMonitor.runObserved_empty_eq_true_of_query_before_sign_of_nodup
-    epoch oldOutput signedOutput (CappedEncodingMonitor.validActions before)
+    leafIndex oldOutput signedOutput (CappedEncodingMonitor.validActions before)
       (CappedEncodingMonitor.validActions middle)
       (CappedEncodingMonitor.validActions after) hdigest
-  change (EncodingMonitor.observedSignEpochs
+  change (EncodingMonitor.observedSignLeafIndices
     (CappedEncodingMonitor.validActions
-      (before ++ [.query epoch oldOutput] ++ middle ++
-        [.sign epoch signedOutput] ++ after))).Nodup at hnodup
+      (before ++ [.query leafIndex oldOutput] ++ middle ++
+        [.sign leafIndex signedOutput] ++ after))).Nodup at hnodup
   rw [CappedEncodingMonitor.validActions_append_two_valid before middle after
-    (.query epoch oldOutput) (.sign epoch signedOutput) hquery hsign] at hnodup
+    (.query leafIndex oldOutput) (.sign leafIndex signedOutput) hquery hsign] at hnodup
   exact hnodup
 
 theorem CappedEncodingMonitor.runObserved_empty_eq_true_of_sign_before_query_of_valid
-    (epoch : Epoch) (signedOutput forgedOutput : HashOutput)
+    (leafIndex : LeafIndex) (signedOutput forgedOutput : HashOutput)
     (before middle after : EncodingActionTrace)
     (hsignedValid : TargetSum.ValidDigest (truncateHash signedOutput))
     (hforgedValid : TargetSum.ValidDigest (truncateHash forgedOutput))
     (hdigest : truncateHash signedOutput = truncateHash forgedOutput)
-    (hnodup : (CappedEncodingMonitor.validObservedSignEpochs
-      (before ++ [.sign epoch signedOutput] ++ middle ++
-        [.query epoch forgedOutput] ++ after)).Nodup) :
+    (hnodup : (CappedEncodingMonitor.validObservedSignLeafIndices
+      (before ++ [.sign leafIndex signedOutput] ++ middle ++
+        [.query leafIndex forgedOutput] ++ after)).Nodup) :
     CappedEncodingMonitor.runObserved EncodingMonitor.State.empty
-      (before ++ [.sign epoch signedOutput] ++ middle ++
-        [.query epoch forgedOutput] ++ after) = true := by
+      (before ++ [.sign leafIndex signedOutput] ++ middle ++
+        [.query leafIndex forgedOutput] ++ after) = true := by
   rw [CappedEncodingMonitor.runObserved_eq_standard_validActions _ _
     CappedEncodingMonitor.State.valid_empty]
-  have hsign : CappedEncodingMonitor.ActionValid (.sign epoch signedOutput) := hsignedValid
-  have hquery : CappedEncodingMonitor.ActionValid (.query epoch forgedOutput) := hforgedValid
+  have hsign : CappedEncodingMonitor.ActionValid (.sign leafIndex signedOutput) := hsignedValid
+  have hquery : CappedEncodingMonitor.ActionValid (.query leafIndex forgedOutput) := hforgedValid
   rw [CappedEncodingMonitor.validActions_append_two_valid before middle after
-    (.sign epoch signedOutput) (.query epoch forgedOutput) hsign hquery]
+    (.sign leafIndex signedOutput) (.query leafIndex forgedOutput) hsign hquery]
   apply EncodingMonitor.runObserved_empty_eq_true_of_sign_before_query_of_nodup
-    epoch signedOutput forgedOutput (CappedEncodingMonitor.validActions before)
+    leafIndex signedOutput forgedOutput (CappedEncodingMonitor.validActions before)
       (CappedEncodingMonitor.validActions middle)
       (CappedEncodingMonitor.validActions after) hdigest
-  change (EncodingMonitor.observedSignEpochs
+  change (EncodingMonitor.observedSignLeafIndices
     (CappedEncodingMonitor.validActions
-      (before ++ [.sign epoch signedOutput] ++ middle ++
-        [.query epoch forgedOutput] ++ after))).Nodup at hnodup
+      (before ++ [.sign leafIndex signedOutput] ++ middle ++
+        [.query leafIndex forgedOutput] ++ after))).Nodup at hnodup
   rw [CappedEncodingMonitor.validActions_append_two_valid before middle after
-    (.sign epoch signedOutput) (.query epoch forgedOutput) hsign hquery] at hnodup
+    (.sign leafIndex signedOutput) (.query leafIndex forgedOutput) hsign hquery] at hnodup
   exact hnodup
 
 theorem cappedDetailedGameWithEncodingTrace_freshSigningCollision_monitorHit
@@ -903,7 +903,7 @@ theorem cappedDetailedGameWithEncodingTrace_freshSigningCollision_monitorHit
     CappedEncodingMonitor.runObserved EncodingMonitor.State.empty result.2.2 = true := by
   obtain ⟨entry, hentry, hentryCollision⟩ := hcollision
   have hactionNodup :=
-    cappedDetailedGameWithEncodingTrace_validSignEpochs_nodup_of_winning
+    cappedDetailedGameWithEncodingTrace_validSignLeafIndices_nodup_of_winning
       adversary result hmem hevent
   have hrepresented :=
     cappedDetailedGameWithEncodingTrace_validFreshSigningCollisionsRepresented
@@ -911,12 +911,12 @@ theorem cappedDetailedGameWithEncodingTrace_freshSigningCollision_monitorHit
   obtain ⟨signedOutput, oldOutput, before, middle, after, hsignedValid,
     holdValid, hdigest, hactions⟩ :=
     hrepresented
-      (cappedDetailedGameWithEncodingTrace_signingEpochs_nodup_of_winning
+      (cappedDetailedGameWithEncodingTrace_signingLeafIndices_nodup_of_winning
         adversary result hmem hevent)
       entry hentry hentryCollision
   rw [hactions]
   exact CappedEncodingMonitor.runObserved_empty_eq_true_of_query_before_sign_of_valid
-    entry.request.epoch oldOutput signedOutput before middle after holdValid
+    entry.request.leafIndex oldOutput signedOutput before middle after holdValid
       hsignedValid hdigest.symm (by simpa [hactions] using hactionNodup)
 
 theorem cappedDetailedGameWithEncodingTrace_postSigningFreshForgedCollision_monitorHit
@@ -928,7 +928,7 @@ theorem cappedDetailedGameWithEncodingTrace_postSigningFreshForgedCollision_moni
     (encoding : Encoding)
     (hdecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash result.2.1.1 result.1.secretKey.parameter
-        result.1.forgery.epoch
+        result.1.forgery.leafIndex
         (result.1.forgery.message, result.1.forgery.signature.randomness)) =
       some encoding)
     (hcollision : ∃ entry ∈ result.2.1.2,
@@ -936,10 +936,10 @@ theorem cappedDetailedGameWithEncodingTrace_postSigningFreshForgedCollision_moni
         result.1.forgery result.2.1.1) :
     CappedEncodingMonitor.runObserved EncodingMonitor.State.empty result.2.2 = true := by
   have htraceNodup :=
-    cappedDetailedGameWithEncodingTrace_signingEpochs_nodup_of_winning adversary result
+    cappedDetailedGameWithEncodingTrace_signingLeafIndices_nodup_of_winning adversary result
       hmem hevent
   have hactionNodup :=
-    cappedDetailedGameWithEncodingTrace_validSignEpochs_nodup_of_winning adversary result
+    cappedDetailedGameWithEncodingTrace_validSignLeafIndices_nodup_of_winning adversary result
       hmem hevent
   unfold cappedDetailedGameWithEncodingTrace at hmem
   rw [mem_support_bind_iff] at hmem
@@ -961,15 +961,15 @@ theorem cappedDetailedGameWithEncodingTrace_postSigningFreshForgedCollision_moni
   obtain ⟨entry, hentry, hfreshForged, hentryForgedFresh,
     signature, hsignature, hsignedFresh⟩ := hcollision
   obtain ⟨collisionSignature, signedOutput, forgedOutput,
-    hcollisionSignature, hepoch, _hforgedInitiallyFresh, hsigned,
+    hcollisionSignature, hleafIndex, _hforgedInitiallyFresh, hsigned,
     hforgedFinal, _hdistinct, hdigest⟩ := hfreshForged
   have hsignatureEq : collisionSignature = signature := by
     rw [hsignature] at hcollisionSignature
     exact (Option.some.inj hcollisionSignature).symm
   subst collisionSignature
-  have hepoch' : entry.request.epoch = forgery.epoch := by
-    simpa using hepoch
-  let forgedInput := Concrete.CacheView.encodingInput secretKey.parameter forgery.epoch
+  have hleafIndex' : entry.request.leafIndex = forgery.leafIndex := by
+    simpa using hleafIndex
+  let forgedInput := Concrete.CacheView.encodingInput secretKey.parameter forgery.leafIndex
     (forgery.message, forgery.signature.randomness)
   have hforgedValid : TargetSum.ValidDigest (truncateHash forgedOutput) := by
     refine ⟨encoding, ?_⟩
@@ -991,17 +991,17 @@ theorem cappedDetailedGameWithEncodingTrace_postSigningFreshForgedCollision_moni
       obtain ⟨before, middle, after, hactionsBase⟩ :=
         hpostSigning htraceNodup entry hentry signature signedOutput forgedInput
           forgedOutput hsignature hsignedFresh hsigned
-          (by simp [forgedInput, hepoch']) hentryForgedFresh hadversaryForged
+          (by simp [forgedInput, hleafIndex']) hentryForgedFresh hadversaryForged
       have hactions :
           appendVerificationEncodingObservation secretKey forgery adversaryState.1
               finalCache encodingTrace =
-            before ++ [.sign entry.request.epoch signedOutput] ++ middle ++
-              [.query entry.request.epoch forgedOutput] ++ after := by
+            before ++ [.sign entry.request.leafIndex signedOutput] ++ middle ++
+              [.query entry.request.leafIndex forgedOutput] ++ after := by
         simpa [appendVerificationEncodingObservation, forgedInput,
           hadversaryForged] using hactionsBase
       rw [hactions]
       exact CappedEncodingMonitor.runObserved_empty_eq_true_of_sign_before_query_of_valid
-        entry.request.epoch signedOutput forgedOutput before middle after hsignedValid
+        entry.request.leafIndex signedOutput forgedOutput before middle after hsignedValid
         hforgedValid hdigest
         (by simpa [hactions] using hactionNodup)
   | none =>
@@ -1014,18 +1014,18 @@ theorem cappedDetailedGameWithEncodingTrace_postSigningFreshForgedCollision_moni
       have hactions :
           appendVerificationEncodingObservation secretKey forgery adversaryState.1
               finalCache encodingTrace =
-            before ++ [.sign entry.request.epoch signedOutput] ++ middle ++
-              [.query entry.request.epoch forgedOutput] ++ [] := by
+            before ++ [.sign entry.request.leafIndex signedOutput] ++ middle ++
+              [.query entry.request.leafIndex forgedOutput] ++ [] := by
         have hactionsBase' : encodingTrace =
-            before ++ [.sign entry.request.epoch signedOutput] ++ middle := by
+            before ++ [.sign entry.request.leafIndex signedOutput] ++ middle := by
           simpa using hactionsBase
         change finalCache forgedInput = some forgedOutput at hforgedFinal
         rw [hactionsBase']
         simp [appendVerificationEncodingObservation, forgedInput,
-          hadversaryForged, hforgedFinal, ← hepoch', List.append_assoc]
+          hadversaryForged, hforgedFinal, ← hleafIndex', List.append_assoc]
       rw [hactions]
       exact CappedEncodingMonitor.runObserved_empty_eq_true_of_sign_before_query_of_valid
-        entry.request.epoch signedOutput forgedOutput before middle [] hsignedValid
+        entry.request.leafIndex signedOutput forgedOutput before middle [] hsignedValid
         hforgedValid hdigest
         (by simpa [hactions] using hactionNodup)
 

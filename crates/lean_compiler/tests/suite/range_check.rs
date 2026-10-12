@@ -7,7 +7,7 @@
 //! end-of-run resolution of the two touched cells.
 
 use lean_compiler::{compile, parse};
-use lean_vm::cpu::{prove, verify};
+use leanvm_core::cpu::{Fault, prove, verify};
 use primitives::field::{F64, F192, g_pow};
 
 use crate::common::mix;
@@ -34,7 +34,7 @@ def main():
 ";
     let program = compile(&parse(src).expect("parse"));
     let want = [F192::from(g_pow(12)), F192::from(g_pow(5))];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     // 2 DEREFs per range check (4 checks) + 2 publishing stores.
     assert_eq!(mix(src, want)[3], 10, "DEREF count");
     verify(&program, &want, &proof).expect("range-checked program verifies");
@@ -47,8 +47,8 @@ def main():
 }
 
 /// A check whose two touched cells (`m[300]` and the complement's `m[99]`) are
-/// never written by the program: the deferred end-of-run fill fixes them (and
-/// the DEREF rows) to ZERO, and the bus still balances.
+/// never written by the program: their `DEREF`s only link them to fresh cells,
+/// all of which stay ZERO, and the bus still balances.
 #[test]
 fn range_check_unwritten_cells() {
     let src = "\
@@ -62,13 +62,13 @@ def main():
 ";
     let program = compile(&parse(src).expect("parse"));
     let want = [F192::from(g_pow(300)), F192::from(g_pow(300))];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
-    verify(&program, &want, &proof).expect("deferred-fill program verifies");
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
+    verify(&program, &want, &proof).expect("unwritten touches verify");
 }
 
 /// The largest allowed bound, `2^16` = the minimum prover memory, end to end:
 /// the complement cell is `g^65535`, the last cell of that memory, so an
-/// off-by-one in the bound check or in the deferred fill shows up here.
+/// off-by-one in the bound check or in the memory size shows up here.
 #[test]
 fn range_check_max_bound() {
     let src = "\
@@ -82,14 +82,14 @@ def main():
 ";
     let program = compile(&parse(src).expect("parse"));
     let want = [F192::from(g_pow(5)); 2];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("max-bound range check verifies");
 }
 
 /// Range checks inside a `mul_range` body: the check runs once per iteration in
 /// a fresh helper frame (its own `g^{k-1}` constant cell each time), and the
 /// touched low cells mix already-written ones (`m[0]`, `m[1]`: the public
-/// input) with deferred ones.
+/// input) with unwritten ones.
 #[test]
 fn range_check_in_loop() {
     let src = "\
@@ -103,7 +103,7 @@ def main():
 ";
     let program = compile(&parse(src).expect("parse"));
     let want = [F192::from(F64(5)), F192::from(F64(7))];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     // 6 iterations × 2 range-check DEREFs, plus call/publish plumbing.
     assert!(mix(src, want)[3] >= 12, "at least the 12 range-check DEREFs");
     verify(&program, &want, &proof).expect("loop range checks verify");
@@ -113,21 +113,27 @@ def main():
 /// element, and its DEREF fails witness generation: the honest-execution
 /// surface of a failing range check.
 #[test]
-#[should_panic(expected = "failed range check")]
 fn range_check_at_bound_rejected() {
     let src = "def main():\n    x = GEN ** 8\n    assert log x < 8\n    return\n";
     let program = compile(&parse(src).expect("parse"));
-    program.execute([F192::ZERO, F192::ZERO]);
+    let err = program
+        .execute([F192::ZERO, F192::ZERO])
+        .err()
+        .expect("the run must fail");
+    assert!(matches!(err.fault, Fault::WildPointer { .. }), "{err}");
 }
 
 /// A value that is no small g-power at all (5 = x^2 + 1) fails at the first
 /// DEREF, the same way.
 #[test]
-#[should_panic(expected = "failed range check")]
 fn range_check_non_g_power_rejected() {
     let src = "def main():\n    x = 5\n    assert log x < 8\n    return\n";
     let program = compile(&parse(src).expect("parse"));
-    program.execute([F192::ZERO, F192::ZERO]);
+    let err = program
+        .execute([F192::ZERO, F192::ZERO])
+        .err()
+        .expect("the run must fail");
+    assert!(matches!(err.fault, Fault::WildPointer { .. }), "{err}");
 }
 
 /// Bound 0 names the empty set: rejected at compile time.
@@ -179,7 +185,7 @@ def main():
     let mut program = compile(&parse(src).expect("parse"));
     program.set_witness("n", vec![vec![F192::from(g_pow(6))]]);
     let want = [F192::from(g_pow(5)), F192::from(g_pow(6))];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("runtime-bound range check verifies");
 }
 
@@ -187,7 +193,6 @@ def main():
 /// back-solves to a huge-exponent element whose DEREF fails, exactly as for a
 /// compile-time bound at its boundary.
 #[test]
-#[should_panic(expected = "failed range check")]
 fn range_check_runtime_bound_at_bound_rejected() {
     let src = "\
 def main():
@@ -199,7 +204,11 @@ def main():
 ";
     let mut program = compile(&parse(src).expect("parse"));
     program.set_witness("n", vec![vec![F192::from(g_pow(5))]]);
-    program.execute([F192::ZERO, F192::ZERO]);
+    let err = program
+        .execute([F192::ZERO, F192::ZERO])
+        .err()
+        .expect("the run must fail");
+    assert!(matches!(err.fault, Fault::WildPointer { .. }), "{err}");
 }
 
 /// A bound that folds at parse time but is not a power of `GEN` stays a parse

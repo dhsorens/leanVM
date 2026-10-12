@@ -271,27 +271,27 @@ theorem encodingObservation?_eq_of_globalSigningCachesAgree
   rcases input with (uniformOrHash | request)
   · rcases uniformOrHash with n | hashInput
     · rfl
-    · cases hepoch : encodingInputEpoch? secretKey.parameter hashInput with
-      | none => simp [encodingObservation?, hepoch]
-      | some epoch =>
+    · cases hleafIndex : encodingInputLeafIndex? secretKey.parameter hashInput with
+      | none => simp [encodingObservation?, hleafIndex]
+      | some leafIndex =>
           obtain ⟨payload, hpayload⟩ :=
-            exists_encodingInput_of_encodingInputEpoch?_eq_some
-              secretKey.parameter hashInput epoch hepoch
+            exists_encodingInput_of_encodingInputLeafIndex?_eq_some
+              secretKey.parameter hashInput leafIndex hleafIndex
           subst hashInput
           have hcache := hinitial _
-            ⟨epoch, payload.1, payload.2, rfl⟩
+            ⟨leafIndex, payload.1, payload.2, rfl⟩
           simp [encodingObservation?, hcache]
   · cases output with
     | none => rfl
     | some signature =>
         let hashInput := Concrete.CacheView.encodingInput
-          secretKey.parameter request.epoch
+          secretKey.parameter request.leafIndex
           (request.message, signature.randomness)
         have hinitialCache : initialLeft hashInput = initialRight hashInput :=
-          hinitial hashInput ⟨request.epoch, request.message,
+          hinitial hashInput ⟨request.leafIndex, request.message,
             signature.randomness, rfl⟩
         have hfinalCache : finalLeft hashInput = finalRight hashInput :=
-          hfinal hashInput ⟨request.epoch, request.message,
+          hfinal hashInput ⟨request.leafIndex, request.message,
             signature.randomness, rfl⟩
         simp [encodingObservation?, hashInput, hinitialCache, hfinalCache]
 
@@ -476,26 +476,26 @@ theorem appendVerificationEncodingObservation_eq_of_globalSigningCachesAgree
       appendVerificationEncodingObservation rightSecret forgery
         initialRight finalRight trace := by
   let input := Concrete.CacheView.encodingInput leftSecret.parameter
-    forgery.epoch (forgery.message, forgery.signature.randomness)
+    forgery.leafIndex (forgery.message, forgery.signature.randomness)
   let rightInput := Concrete.CacheView.encodingInput rightSecret.parameter
-    forgery.epoch (forgery.message, forgery.signature.randomness)
+    forgery.leafIndex (forgery.message, forgery.signature.randomness)
   have hinput : input = rightInput := by simp [input, rightInput, hparameter]
   have hinitialCache : initialLeft input = initialRight input :=
-    hinitial input ⟨forgery.epoch, forgery.message,
+    hinitial input ⟨forgery.leafIndex, forgery.message,
       forgery.signature.randomness, rfl⟩
   have hfinalCache : finalLeft input = finalRight input :=
-    hfinal input ⟨forgery.epoch, forgery.message,
+    hfinal input ⟨forgery.leafIndex, forgery.message,
       forgery.signature.randomness, rfl⟩
   unfold appendVerificationEncodingObservation
   change (if initialLeft input = none then
       match finalLeft input with
       | none => trace
-      | some output => trace ++ [.query forgery.epoch output]
+      | some output => trace ++ [.query forgery.leafIndex output]
     else trace) =
     (if initialRight rightInput = none then
       match finalRight rightInput with
       | none => trace
-      | some output => trace ++ [.query forgery.epoch output]
+      | some output => trace ++ [.query forgery.leafIndex output]
     else trace)
   rw [← hinput, hinitialCache, hfinalCache]
 
@@ -508,7 +508,7 @@ noncomputable def sourceGlobalExactTracedDetailedExecution
       (Concrete.materializePrecomputation keyView.cache keyView.secretKey))
       (adversary.main keyView.publicKey)).run ((((keyView.cache, []), []), []))
   let verified ← (simulateQ sourceSigningTracedVerifierImpl
-    (Concrete.scheme.verify keyView.publicKey handled.1.epoch
+    (Concrete.scheme.verify keyView.publicKey handled.1.leafIndex
       handled.1.message handled.1.signature)).run
         (sourceExactSigningProjection handled.2)
   let finalEncodingTrace := appendVerificationEncodingObservation
@@ -551,7 +551,7 @@ theorem sourceGlobalExactTracedDetailedExecution_projection
   let finish : Forgery × SourceTracedState →
       ProbComp ((Forgery × Bool) × SourceTracedState) := fun handled => do
     let verified ← (simulateQ sourceDirectTracedVerifierImpl
-      (Concrete.scheme.verify keyView.publicKey handled.1.epoch
+      (Concrete.scheme.verify keyView.publicKey handled.1.leafIndex
         handled.1.message handled.1.signature)).run handled.2
     pure ((handled.1, verified.1), verified.2)
   have hprojection := cappedBothTracedMappedAdversaryImpl_actionProjection

@@ -7,22 +7,22 @@ namespace XmssSecurity.Seeded
 set_option backward.isDefEq.respectTransparency false
 set_option maxRecDepth 4096
 
-abbrev ChainSecrets := Epoch → ChainIndex → Digest
+abbrev ChainSecrets := LeafIndex → ChainIndex → Digest
 
 def chainOutputHalves : ChainOutputs ≃ (ChainSecrets × ChainSecrets) where
-  toFun outputs := (fun epoch chain => (Rom.hashOutputEquivDigestPair (outputs epoch chain)).1,
+  toFun outputs := (fun leafIndex chain => (Rom.hashOutputEquivDigestPair (outputs leafIndex chain)).1,
     outputSecrets outputs)
-  invFun halves := fun epoch chain =>
-    Rom.hashOutputEquivDigestPair.symm (halves.1 epoch chain, halves.2 epoch chain)
+  invFun halves := fun leafIndex chain =>
+    Rom.hashOutputEquivDigestPair.symm (halves.1 leafIndex chain, halves.2 leafIndex chain)
   left_inv outputs := by
-    funext epoch chain
-    exact Rom.hashOutputEquivDigestPair.symm_apply_apply (outputs epoch chain)
+    funext leafIndex chain
+    exact Rom.hashOutputEquivDigestPair.symm_apply_apply (outputs leafIndex chain)
   right_inv halves := by
-    apply Prod.ext <;> funext epoch chain
+    apply Prod.ext <;> funext leafIndex chain
     · exact congrArg Prod.fst (Rom.hashOutputEquivDigestPair.apply_symm_apply
-        (halves.1 epoch chain, halves.2 epoch chain))
+        (halves.1 leafIndex chain, halves.2 leafIndex chain))
     · exact congrArg Prod.snd (Rom.hashOutputEquivDigestPair.apply_symm_apply
-        (halves.1 epoch chain, halves.2 epoch chain))
+        (halves.1 leafIndex chain, halves.2 leafIndex chain))
 
 theorem outputSecrets_from_halves (high low : ChainSecrets) :
     outputSecrets (chainOutputHalves.symm (high, low)) = low :=

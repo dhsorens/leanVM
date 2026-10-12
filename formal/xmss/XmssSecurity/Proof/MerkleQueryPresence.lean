@@ -7,7 +7,7 @@ open OracleComp OracleSpec
 namespace XmssSecurity.Concrete.CacheReplay
 
 theorem treeNode_merkle_query_cached_in_largerCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (targetLevel : MerkleLevel) (targetNode : MerkleNode)
     (levels : Nat) (node : MerkleNode)
     (hlevels : levels ≤ treeHeight) (hvalid : TreeSubtreeValid levels node)
@@ -120,7 +120,7 @@ theorem treeNode_merkle_query_cached_in_largerCache
           exact ⟨output, hrightLe hcached⟩
 
 theorem rootTree_merkle_query_cached
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (targetLevel : MerkleLevel) (targetNode : MerkleNode)
     (hnode : targetNode.val < 2 ^ (treeHeight - (targetLevel.val + 1)))
     (root : Digest) (cache largerCache : QueryCache HashSpec)

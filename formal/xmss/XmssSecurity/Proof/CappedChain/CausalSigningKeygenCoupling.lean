@@ -41,20 +41,20 @@ theorem Concrete.keygen_signedChainValues_run_eq_pure
     (hkeyResult : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (encoding : Encoding) :
+    (leafIndex : LeafIndex) (encoding : Encoding) :
     (simulateQ randomOracle
-      (Concrete.signedChainValues keyResult.1.2 epoch encoding)).run
+      (Concrete.signedChainValues keyResult.1.2 leafIndex encoding)).run
         largerCache =
       pure (Concrete.CacheReplay.signedChainValues largerCache
-        keyResult.1.2 epoch encoding, largerCache) := by
+        keyResult.1.2 leafIndex encoding, largerCache) := by
   let values : ChainIndex → Digest := fun chain =>
     keygenChainValueTable keyResult.2 keyResult.1.2 chain
-      (epoch, encoding chain)
+      (leafIndex, encoding chain)
   have hrun : ∀ chain,
       (simulateQ randomOracle
-        (Concrete.chainWalk keyResult.1.2.parameter epoch chain 0
+        (Concrete.chainWalk keyResult.1.2.parameter leafIndex chain 0
           (encoding chain).val
-          (keyResult.1.2.chainStart epoch chain))).run largerCache =
+          (keyResult.1.2.chainStart leafIndex chain))).run largerCache =
         pure (values chain, largerCache) := by
     intro chain
     exact simulate_chainWalk_run_eq_pure_of_table_matches largerCache
@@ -63,16 +63,16 @@ theorem Concrete.keygen_signedChainValues_run_eq_pure
       (keygenChainValueTable_seedsMatch keyResult.2 keyResult.1.2 chain)
       ((Concrete.keygenChainValueTable_edgesMatch
         keyResult hkeyResult chain).mono hle)
-      epoch (encoding chain).val (encoding chain).isLt
+      leafIndex (encoding chain).val (encoding chain).isLt
   have hsequence := simulate_sequenceFin_run_eq_pure
-    (fun chain => Concrete.chainWalk keyResult.1.2.parameter epoch chain 0
-      (encoding chain).val (keyResult.1.2.chainStart epoch chain))
+    (fun chain => Concrete.chainWalk keyResult.1.2.parameter leafIndex chain 0
+      (encoding chain).val (keyResult.1.2.chainStart leafIndex chain))
     largerCache values hrun
   have hvalues : values = Concrete.CacheReplay.signedChainValues
-      largerCache keyResult.1.2 epoch encoding := by
+      largerCache keyResult.1.2 leafIndex encoding := by
     funext chain
     exact Concrete.keygen_chainWalk_eq_of_cache_le keyResult hkeyResult
-      largerCache hle epoch chain (encoding chain).val
+      largerCache hle leafIndex chain (encoding chain).val
         (Nat.le_pred_of_lt (encoding chain).isLt)
   simpa [Concrete.signedChainValues, hvalues] using hsequence
 
@@ -80,28 +80,28 @@ theorem TreeCacheStable.authenticationPath_run_eq_pure
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
     (hstable : TreeCacheStable secretKey.parameter secretKey.chainStart cache)
     (largerCache : QueryCache HashSpec) (hle : cache ≤ largerCache)
-    (epoch : Epoch) :
+    (leafIndex : LeafIndex) :
     (simulateQ randomOracle
-      (Concrete.authenticationPath secretKey epoch)).run largerCache =
-      pure (Concrete.CacheReplay.authenticationPath largerCache secretKey epoch,
+      (Concrete.authenticationPath secretKey leafIndex)).run largerCache =
+      pure (Concrete.CacheReplay.authenticationPath largerCache secretKey leafIndex,
         largerCache) := by
   have hrun : ∀ level,
       (simulateQ randomOracle
         (Concrete.treeNode secretKey.parameter secretKey.chainStart level.val
-          (Concrete.authenticationPathNode epoch level) :
+          (Concrete.authenticationPathNode leafIndex level) :
           OracleComp HashSpec Digest)).run largerCache =
         pure (Concrete.CacheReplay.treeNode cache secretKey.parameter
           secretKey.chainStart level.val
-            (Concrete.authenticationPathNode epoch level), largerCache) := by
+            (Concrete.authenticationPathNode leafIndex level), largerCache) := by
     intro level
-    exact hstable level.val (Concrete.authenticationPathNode epoch level)
-      (by omega) (authenticationPathNode_subtreeValid epoch level)
+    exact hstable level.val (Concrete.authenticationPathNode leafIndex level)
+      (by omega) (authenticationPathNode_subtreeValid leafIndex level)
         largerCache hle
   have hsequence := simulate_sequenceFin_run_eq_pure
     (fun level => Concrete.treeNode secretKey.parameter secretKey.chainStart
-      level.val (Concrete.authenticationPathNode epoch level)) largerCache
-    (Concrete.CacheReplay.authenticationPath cache secretKey epoch) hrun
-  rw [hstable.authenticationPath_eq secretKey cache largerCache hle epoch]
+      level.val (Concrete.authenticationPathNode leafIndex level)) largerCache
+    (Concrete.CacheReplay.authenticationPath cache secretKey leafIndex) hrun
+  rw [hstable.authenticationPath_eq secretKey cache largerCache hle leafIndex]
     at hsequence
   simpa [Concrete.authenticationPath] using hsequence
 
@@ -112,20 +112,20 @@ theorem Concrete.keygen_signWithEncoding_run_eq_pure
     (hstable : TreeCacheStable keyResult.1.2.parameter
       keyResult.1.2.chainStart keyResult.2)
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (randomness : Randomness) (encoding : Encoding) :
+    (leafIndex : LeafIndex) (randomness : Randomness) (encoding : Encoding) :
     (simulateQ randomOracle
-      (Concrete.signWithEncoding keyResult.1.2 epoch randomness encoding)).run
+      (Concrete.signWithEncoding keyResult.1.2 leafIndex randomness encoding)).run
         largerCache =
       pure (Concrete.CacheReplay.signWithEncoding largerCache keyResult.1.2
-        epoch randomness encoding, largerCache) := by
+        leafIndex randomness encoding, largerCache) := by
   unfold Concrete.signWithEncoding
   rw [simulateQ_bind, StateT.run_bind,
     Concrete.keygen_signedChainValues_run_eq_pure keyResult hkeyResult
-      largerCache hle epoch encoding]
+      largerCache hle leafIndex encoding]
   simp only [pure_bind]
   rw [simulateQ_bind, StateT.run_bind,
     hstable.authenticationPath_run_eq_pure keyResult.1.2 keyResult.2
-      largerCache hle epoch]
+      largerCache hle leafIndex]
   simp [Concrete.CacheReplay.signWithEncoding]
 
 theorem Concrete.precomputedSignAttempt_materialized_run_eq_signAttempt
@@ -135,14 +135,14 @@ theorem Concrete.precomputedSignAttempt_materialized_run_eq_signAttempt
     (hstable : TreeCacheStable keyResult.1.2.parameter
       keyResult.1.2.chainStart keyResult.2)
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (message : Message) (randomness : Randomness) :
+    (leafIndex : LeafIndex) (message : Message) (randomness : Randomness) :
     evalDist ((simulateQ randomOracle
       (Concrete.precomputedSignAttempt
         (Concrete.materializePrecomputation keyResult.2 keyResult.1.2)
-          epoch message randomness : OracleComp HashSpec (Option Signature))).run
+          leafIndex message randomness : OracleComp HashSpec (Option Signature))).run
         largerCache) =
       evalDist ((simulateQ randomOracle
-        (Concrete.signAttempt keyResult.1.2 epoch message randomness :
+        (Concrete.signAttempt keyResult.1.2 leafIndex message randomness :
           OracleComp HashSpec (Option Signature))).run largerCache) := by
   have hmaterialized :=
     Concrete.oldKeygen_support_materializedPrecomputedKeygen keyResult hkeyResult
@@ -155,7 +155,7 @@ theorem Concrete.precomputedSignAttempt_materialized_run_eq_signAttempt
   apply evalDist_bind_congr
   intro digestResult hdigestResult
   have hdigestLe := Concrete.CacheReplay.randomOracle_cache_le
-    (Concrete.encodingHash keyResult.1.2.parameter epoch message randomness)
+    (Concrete.encodingHash keyResult.1.2.parameter leafIndex message randomness)
       largerCache digestResult (by
         simpa [Concrete.materializePrecomputation] using hdigestResult)
   cases hdecode : TargetSum.decodeDigest digestResult.1 with
@@ -166,15 +166,15 @@ theorem Concrete.precomputedSignAttempt_materialized_run_eq_signAttempt
     rw [simulateQ_map, StateT.run_map]
     rw [Concrete.keygen_signWithEncoding_run_eq_pure keyResult hkeyResult
       hstable digestResult.2 (hle.trans hdigestLe)
-      epoch randomness encoding]
+      leafIndex randomness encoding]
     simp only [Functor.map]
     have hsignature := hconsistent digestResult.2 (hle.trans hdigestLe)
-      epoch randomness encoding
+      leafIndex randomness encoding
     change Concrete.precomputedSignWithEncoding
       (Concrete.materializePrecomputation keyResult.2 keyResult.1.2)
-        epoch randomness encoding =
+        leafIndex randomness encoding =
       Concrete.CacheReplay.signWithEncoding digestResult.2 keyResult.1.2
-        epoch randomness encoding at hsignature
+        leafIndex randomness encoding at hsignature
     simp only [Concrete.materializePrecomputation,
       Concrete.precomputedSecretKey] at hsignature
     rw [hsignature]
@@ -190,13 +190,13 @@ theorem Concrete.evalDist_precomputedSignBoundedAttempts_materialized_eq
     (hstable : TreeCacheStable keyResult.1.2.parameter
       keyResult.1.2.chainStart keyResult.2)
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (message : Message) :
+    (leafIndex : LeafIndex) (message : Message) :
     evalDist ((simulateQ romImpl
       (Concrete.precomputedSignBoundedAttempts attempts
         (Concrete.materializePrecomputation keyResult.2 keyResult.1.2)
-          epoch message)).run largerCache) =
+          leafIndex message)).run largerCache) =
       evalDist ((simulateQ romImpl
-        (Concrete.signBoundedAttempts attempts keyResult.1.2 epoch message)).run
+        (Concrete.signBoundedAttempts attempts keyResult.1.2 leafIndex message)).run
           largerCache) := by
   induction attempts generalizing largerCache with
   | zero => rfl
@@ -209,25 +209,25 @@ theorem Concrete.evalDist_precomputedSignBoundedAttempts_materialized_eq
         evalDist ((simulateQ randomOracle
               (Concrete.precomputedSignAttempt
                 (Concrete.materializePrecomputation keyResult.2 keyResult.1.2)
-                  epoch message randomness :
+                  leafIndex message randomness :
                     OracleComp HashSpec (Option Signature))).run largerCache >>=
             Concrete.precomputedSignBoundedAttemptsContinuation attempts
               (Concrete.materializePrecomputation keyResult.2 keyResult.1.2)
-                epoch message) =
+                leafIndex message) =
             evalDist ((simulateQ randomOracle
-              (Concrete.signAttempt keyResult.1.2 epoch message randomness :
+              (Concrete.signAttempt keyResult.1.2 leafIndex message randomness :
                 OracleComp HashSpec (Option Signature))).run largerCache >>=
               Concrete.precomputedSignBoundedAttemptsContinuation attempts
                 (Concrete.materializePrecomputation keyResult.2 keyResult.1.2)
-                  epoch message) := by
+                  leafIndex message) := by
           rw [evalDist_bind, evalDist_bind,
             Concrete.precomputedSignAttempt_materialized_run_eq_signAttempt
-              keyResult hkeyResult hstable largerCache hle epoch message randomness]
+              keyResult hkeyResult hstable largerCache hle leafIndex message randomness]
         _ = evalDist ((simulateQ randomOracle
-              (Concrete.signAttempt keyResult.1.2 epoch message randomness :
+              (Concrete.signAttempt keyResult.1.2 leafIndex message randomness :
                 OracleComp HashSpec (Option Signature))).run largerCache >>=
               Concrete.signBoundedAttemptsContinuation attempts keyResult.1.2
-                epoch message) := by
+                leafIndex message) := by
           apply evalDist_bind_congr
           intro result hresult
           cases hoption : result.1 with
@@ -237,7 +237,7 @@ theorem Concrete.evalDist_precomputedSignBoundedAttempts_materialized_eq
               rw [hoption]
               apply ih result.2
               exact hle.trans (Concrete.CacheReplay.randomOracle_cache_le
-                (Concrete.signAttempt keyResult.1.2 epoch message randomness :
+                (Concrete.signAttempt keyResult.1.2 leafIndex message randomness :
                   OracleComp HashSpec (Option Signature)) largerCache result hresult)
           | some signature =>
               simp only [Concrete.precomputedSignBoundedAttemptsContinuation,
@@ -251,16 +251,16 @@ theorem Concrete.evalDist_precomputedCappedSign_materialized_eq_cappedSign
     (hstable : TreeCacheStable keyResult.1.2.parameter
       keyResult.1.2.chainStart keyResult.2)
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (message : Message) :
+    (leafIndex : LeafIndex) (message : Message) :
     evalDist ((simulateQ romImpl
       (Concrete.precomputedCappedSign
         (Concrete.materializePrecomputation keyResult.2 keyResult.1.2)
-          epoch message)).run largerCache) =
+          leafIndex message)).run largerCache) =
       evalDist ((simulateQ romImpl
-        (Concrete.cappedSign keyResult.1.2 epoch message)).run
+        (Concrete.cappedSign keyResult.1.2 leafIndex message)).run
           largerCache) := by
   rw [Concrete.precomputedCappedSign, Concrete.cappedSign_eq]
   exact Concrete.evalDist_precomputedSignBoundedAttempts_materialized_eq
-    signingAttemptLimit keyResult hkeyResult hstable largerCache hle epoch message
+    signingAttemptLimit keyResult hkeyResult hstable largerCache hle leafIndex message
 
 end XmssSecurity.CappedChain

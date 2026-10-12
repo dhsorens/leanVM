@@ -227,7 +227,7 @@ def HasFreshChainValue {α : Type} (step : ChainIndex → Nat → α → α)
     (encoding : Encoding) (forgedValue secret : ChainIndex → α) : Prop :=
   ∃ i, IsFreshChainValueAt step encoding forgedValue secret i
 
-/-- A fresh-epoch WOTS opening either reveals an honest hidden chain value or creates a suffix collision. -/
+/-- A fresh-leaf-index WOTS opening either reveals an honest hidden chain value or creates a suffix collision. -/
 theorem freshChainValue_or_suffixCollision {α : Type}
     (step : ChainIndex → Nat → α → α) (encoding : Encoding)
     (forgedValue secret : ChainIndex → α)

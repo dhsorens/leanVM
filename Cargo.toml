@@ -1,32 +1,10 @@
-[package]
-name = "leanvm"
-version.workspace = true
-edition.workspace = true
-
-[[bin]]
-name = "leanvm"
-path = "src/main.rs"
-
-[lints]
-workspace = true
-
-[dependencies]
-primitives.workspace = true
-rec_aggregation.workspace = true
-lean_vm.workspace = true
-lean_da.workspace = true
-xmss.workspace = true
-sphincs.workspace = true
-zk_alloc.workspace = true
-rand.workspace = true
-clap = { version = "4", features = ["derive"] }
+[workspace]
+members = ["crates/*", "bins/*"]
+resolver = "3"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-
-[workspace]
-members = ["crates/*"]
 
 # Numeric kernels legitimately index by loop variable and take many arguments.
 [workspace.lints.clippy]
@@ -34,23 +12,25 @@ needless_range_loop = "allow"
 too_many_arguments = "allow"
 
 [workspace.dependencies]
+bench = { path = "crates/bench" }
+leanvm = { path = "crates/leanvm" }
 primitives = { path = "crates/primitives" }
 fiat_shamir = { path = "crates/fiat_shamir" }
 pcs = { path = "crates/pcs" }
 flock = { path = "crates/flock" }
-lean_vm = { path = "crates/lean_vm" }
+leanvm_core = { path = "crates/leanvm_core" }
 lean_compiler = { path = "crates/lean_compiler" }
 lean_da = { path = "crates/lean_da" }
 rec_aggregation = { path = "crates/rec_aggregation" }
 xmss = { path = "crates/xmss" }
 sphincs = { path = "crates/sphincs" }
-zk_alloc = { path = "crates/zk_alloc" }
 parallel = { path = "crates/parallel" }
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
 ethereum_ssz = "0.10"
 rand = "0.9"
+tikv-jemallocator = "0.7"
 tracing = "0.1.26"
 tracing-forest = { version = "0.3.0", features = ["ansi", "smallvec"] }
 tracing-subscriber = { version = "0.3.23", features = ["std", "env-filter"] }

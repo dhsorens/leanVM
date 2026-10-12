@@ -20,7 +20,7 @@ def publicParameterBits : Nat := 128
 def randomnessBits : Nat := 192
 /-- Encoding attempts per signature, `A_max`. -/
 def signingAttemptLimit : Nat := 2 ^ 32
-/-- The Merkle tree height `h`; the lifetime is `L = 2^h` epochs. -/
+/-- The Merkle tree height `h`; the lifetime is `L = 2^h` leaf indices. -/
 def treeHeight : Nat := 32
 def lifetime : Nat := 2 ^ treeHeight
 def winternitzBits : Nat := 3
@@ -35,8 +35,8 @@ abbrev HashOutput := BitVec hashOutputBits
 abbrev Message := BitVec messageBits
 abbrev PublicParameter := BitVec publicParameterBits
 abbrev Randomness := BitVec randomnessBits
-/-- `ep < L`. -/
-abbrev Epoch := Fin lifetime
+/-- `idx < L`. -/
+abbrev LeafIndex := Fin lifetime
 abbrev ChainIndex := Fin numChains
 abbrev Digit := Fin chainLength
 /-- A chain step; the tweak carries `2^w * i + step`. -/
@@ -63,8 +63,8 @@ deriving DecidableEq
 /-- Cached chain starts, chain values and Merkle nodes, together with the public parameter. -/
 structure SecretKey where
   parameter : PublicParameter
-  chainStart : Epoch → ChainIndex → Digest
-  chainValue : Epoch → ChainIndex → Digit → Digest
+  chainStart : LeafIndex → ChainIndex → Digest
+  chainValue : LeafIndex → ChainIndex → Digit → Digest
   treeValue : MerkleHeight → MerkleNode → Digest
 
 /-- `sigma = (rho, sigma_OTS, path_ep)`: the encoding randomness, the `v` chain values and the `h` authentication nodes. -/
@@ -83,35 +83,35 @@ def bytesLE (byteCount : Nat) (value : BitVec (8 * byteCount)) : List UInt8 :=
 structure TweakFields where
   tag : BitVec 8
   position : BitVec 32
-  epoch : BitVec 32
+  leafIndex : BitVec 32
 deriving DecidableEq
 
 /-- The protocol domain separator. -/
 def protocolDomainSep : UInt8 := 0
 
-/-- The specification's 16 tweak bytes `protocol_domain_sep || tag || 0 || 0 || position || 0^4 || epoch`, each field serialized least significant byte first. -/
+/-- The specification's 16 tweak bytes `protocol_domain_sep || tag || 0 || 0 || position || 0^4 || leafIndex`, each field serialized least significant byte first. -/
 def fieldBytes (fields : TweakFields) : List UInt8 :=
   [protocolDomainSep] ++ bytesLE 1 fields.tag ++ [0, 0] ++ bytesLE 4 fields.position ++
-    List.replicate 4 0 ++ bytesLE 4 fields.epoch
+    List.replicate 4 0 ++ bytesLE 4 fields.leafIndex
 
 /-- Convert the specification's three integer fields to their fixed widths. -/
-def tweakFields (tag position epoch : Nat) : TweakFields :=
-  ⟨BitVec.ofNat 8 tag, BitVec.ofNat 32 position, BitVec.ofNat 32 epoch⟩
+def tweakFields (tag position leafIndex : Nat) : TweakFields :=
+  ⟨BitVec.ofNat 8 tag, BitVec.ofNat 32 position, BitVec.ofNat 32 leafIndex⟩
 
 /-- The verification hash domains, tweak types `1` to `4`. -/
 inductive HashDomain where
-  | chain (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
-  | leaf (epoch : Epoch)
+  | chain (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
+  | leaf (leafIndex : LeafIndex)
   | merkle (level : MerkleLevel) (node : MerkleNode)
-  | encoding (epoch : Epoch)
+  | encoding (leafIndex : LeafIndex)
 deriving DecidableEq
 
 /-- Serialize a typed hash domain into the fields of a tweak. -/
 def hashDomainFields : HashDomain → TweakFields
-  | .chain epoch chain step => tweakFields 1 (chainLength * chain + step) epoch
-  | .leaf epoch => tweakFields 2 0 epoch
+  | .chain leafIndex chain step => tweakFields 1 (chainLength * chain + step) leafIndex
+  | .leaf leafIndex => tweakFields 2 0 leafIndex
   | .merkle level node => tweakFields 3 (level.val + 1) node
-  | .encoding epoch => tweakFields 4 0 epoch
+  | .encoding leafIndex => tweakFields 4 0 leafIndex
 
 /-- The exact 16 bytes supplied by the specification as a hash tweak. -/
 def tweakBytes (domain : HashDomain) : List UInt8 :=
@@ -122,20 +122,20 @@ def tweakableHashInput (parameter : PublicParameter) (domain : HashDomain)
     (message : HashInput) : HashInput :=
   tweakBytes domain ++ bytesLE 16 parameter ++ message
 
-/-- `tweak(12, trial, epoch) || P || S || m`. -/
+/-- `tweak(7, trial, leafIndex) || P || S || m`. -/
 def randomizerHashInput (parameter : PublicParameter) (seed : MasterSeed)
-    (epoch : Epoch) (message : Message) (trial : BitVec 32) : HashInput :=
-  fieldBytes ⟨12#8, trial, BitVec.ofNat 32 epoch.val⟩ ++
+    (leafIndex : LeafIndex) (message : Message) (trial : BitVec 32) : HashInput :=
+  fieldBytes ⟨7#8, trial, BitVec.ofNat 32 leafIndex.val⟩ ++
     bytesLE 16 parameter ++ bytesLE 32 seed ++ bytesLE 32 message
 
 inductive KeygenDomain where
   | parameter
-  | chain (epoch : Epoch) (chain : ChainIndex)
+  | chain (leafIndex : LeafIndex) (chain : ChainIndex)
 deriving DecidableEq
 
 def keygenDomainFields : KeygenDomain → TweakFields
-  | .parameter => tweakFields 10 0 0
-  | .chain epoch chain => tweakFields 0 chain epoch
+  | .parameter => tweakFields 5 0 0
+  | .chain leafIndex chain => tweakFields 0 chain leafIndex
 
 /-- `tweak || P || S`; parameter derivation uses `P = 0`. -/
 def keygenHashInput (parameter : PublicParameter) (domain : KeygenDomain)
@@ -232,20 +232,20 @@ def tweakableHash
   let output ← oracleHash (tweakableHashInput parameter domain payload)
   return truncateHash output
 
-/-- The digest `D` of `IncEnc(P, m, rho, ep)`. -/
-def encodingHash (parameter : PublicParameter) (epoch : Epoch)
+/-- The digest `D` of `IncEnc(P, m, rho, idx)`. -/
+def encodingHash (parameter : PublicParameter) (leafIndex : LeafIndex)
     (message : Message) (randomness : Randomness) : m Digest :=
-  tweakableHash parameter (.encoding epoch) (encodingPayload message randomness)
+  tweakableHash parameter (.encoding leafIndex) (encodingPayload message randomness)
 
-/-- One chain step, under `tweak_chain(ep, i, step + 1)`. -/
-def chainHash (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+/-- One chain step, under `tweak_chain(idx, i, step + 1)`. -/
+def chainHash (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (value : Digest) : m Digest :=
-  tweakableHash parameter (.chain epoch chain step) (bytesLE 16 value)
+  tweakableHash parameter (.chain leafIndex chain step) (bytesLE 16 value)
 
-/-- `X_{0,ep}`, the hash of the `v` public values. -/
-def leafHash (parameter : PublicParameter) (epoch : Epoch)
+/-- `X_{0,idx}`, the hash of the `v` public values. -/
+def leafHash (parameter : PublicParameter) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) : m Digest :=
-  tweakableHash parameter (.leaf epoch) (leafPayload endpoints)
+  tweakableHash parameter (.leaf leafIndex) (leafPayload endpoints)
 
 /-- `X_{level+1,node}` from its two children. -/
 def nodeHash (parameter : PublicParameter) (level : MerkleLevel) (node : MerkleNode)
@@ -258,82 +258,82 @@ def nodeHash (parameter : PublicParameter) (level : MerkleLevel) (node : MerkleN
 def signaturePath (signature : Signature) (level : Nat) : Digest :=
   if hlevel : level < treeHeight then signature.authPath ⟨level, hlevel⟩ else 0
 
-/-- `Chain_{i,ep}(P, start, steps, value)`: the step onto position `start + steps + 1` carries tweak position `2^w * i + start + steps`. -/
-def chainWalk (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex) :
+/-- `Chain_{i,idx}(P, start, steps, value)`: the step onto position `start + steps + 1` carries tweak position `2^w * i + start + steps`. -/
+def chainWalk (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex) :
     Nat → Nat → Digest → m Digest
   | _, 0, value => pure value
   | position, steps + 1, value => do
-      let previous ← chainWalk parameter epoch chain position steps value
+      let previous ← chainWalk parameter leafIndex chain position steps value
       if hposition : position + steps < chainLength - 1 then
-        chainHash parameter epoch chain ⟨position + steps, hposition⟩ previous
+        chainHash parameter leafIndex chain ⟨position + steps, hposition⟩ previous
       else
         pure 0
 
 /-- The verifier's half of a chain: walk the remaining `2^w - 1 - x_i` steps. -/
-def recoverChain (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+def recoverChain (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (digit : Digit) (value : Digest) : m Digest :=
-  chainWalk parameter epoch chain digit.val (chainLength - 1 - digit.val) value
+  chainWalk parameter leafIndex chain digit.val (chainLength - 1 - digit.val) value
 
-/-- `pk'_{ep,i}` for every chain. -/
-def recoverEndpoints (parameter : PublicParameter) (epoch : Epoch)
+/-- `pk'_{idx,i}` for every chain. -/
+def recoverEndpoints (parameter : PublicParameter) (leafIndex : LeafIndex)
     (encoding : Encoding) (signature : Signature) :
     m (ChainIndex → Digest) :=
   sequenceFin fun chain =>
-    recoverChain parameter epoch chain (encoding chain) (signature.chainValue chain)
+    recoverChain parameter leafIndex chain (encoding chain) (signature.chainValue chain)
 
-/-- The index of the Merkle node on the path of `epoch` one level above `level`. -/
-def nodeIndex (epoch : Epoch) (level : Nat) : MerkleNode :=
-  ⟨epoch.val / 2 ^ (level + 1), by
-    have hle := Nat.div_le_self epoch.val (2 ^ (level + 1))
-    exact hle.trans_lt epoch.isLt⟩
+/-- The index of the Merkle node on the path of `leafIndex` one level above `level`. -/
+def nodeIndex (leafIndex : LeafIndex) (level : Nat) : MerkleNode :=
+  ⟨leafIndex.val / 2 ^ (level + 1), by
+    have hle := Nat.div_le_self leafIndex.val (2 ^ (level + 1))
+    exact hle.trans_lt leafIndex.isLt⟩
 
-/-- `Z_{level+1}` from `Z_level` and `A_level`, in the order bit `level` of the epoch dictates. -/
-def authenticationNodeHash (parameter : PublicParameter) (epoch : Epoch)
+/-- `Z_{level+1}` from `Z_level` and `A_level`, in the order bit `level` of the leaf index dictates. -/
+def authenticationNodeHash (parameter : PublicParameter) (leafIndex : LeafIndex)
     (level : Nat) (current sibling : Digest) : m Digest :=
   if hlevel : level < treeHeight then
-    if epoch.val.testBit level then
-      nodeHash parameter ⟨level, hlevel⟩ (nodeIndex epoch level) sibling current
+    if leafIndex.val.testBit level then
+      nodeHash parameter ⟨level, hlevel⟩ (nodeIndex leafIndex level) sibling current
     else
-      nodeHash parameter ⟨level, hlevel⟩ (nodeIndex epoch level) current sibling
+      nodeHash parameter ⟨level, hlevel⟩ (nodeIndex leafIndex level) current sibling
   else
     pure 0
 
 /-- `Z_levels`, folded up from the leaf `Z_0`. -/
-def authenticationRoot (parameter : PublicParameter) (epoch : Epoch)
+def authenticationRoot (parameter : PublicParameter) (leafIndex : LeafIndex)
     (signature : Signature) : Nat → Digest → m Digest
   | 0, leaf => pure leaf
   | levels + 1, leaf => do
-      let current ← authenticationRoot parameter epoch signature levels leaf
-      authenticationNodeHash parameter epoch levels current (signaturePath signature levels)
+      let current ← authenticationRoot parameter leafIndex signature levels leaf
+      authenticationNodeHash parameter leafIndex levels current (signaturePath signature levels)
 
 /-- Accept exactly when `Z_h = root`. -/
 def verifyAfterLeaf
-    (publicKey : PublicKey) (epoch : Epoch) (signature : Signature) (leaf : Digest) : m Bool := do
-  let root ← authenticationRoot publicKey.parameter epoch signature treeHeight leaf
+    (publicKey : PublicKey) (leafIndex : LeafIndex) (signature : Signature) (leaf : Digest) : m Bool := do
+  let root ← authenticationRoot publicKey.parameter leafIndex signature treeHeight leaf
   return decide (root = publicKey.root)
 
-/-- `Ver(pk, ep, m, sigma)`. -/
-def verify (publicKey : PublicKey) (epoch : Epoch)
+/-- `Ver(pk, idx, m, sigma)`. -/
+def verify (publicKey : PublicKey) (leafIndex : LeafIndex)
     (message : Message) (signature : Signature) : m Bool := do
-  let digest ← encodingHash publicKey.parameter epoch message signature.randomness
+  let digest ← encodingHash publicKey.parameter leafIndex message signature.randomness
   let some encoding := TargetSum.decodeDigest digest | return false
-  let endpoints ← recoverEndpoints publicKey.parameter epoch encoding signature
-  let leaf ← leafHash publicKey.parameter epoch endpoints
-  verifyAfterLeaf publicKey epoch signature leaf
+  let endpoints ← recoverEndpoints publicKey.parameter leafIndex encoding signature
+  let leaf ← leafHash publicKey.parameter leafIndex endpoints
+  verifyAfterLeaf publicKey leafIndex signature leaf
 
 /-! ### Precomputed chains and tree -/
 
-/-- `pk_{ep,i} = Chain(P, 0, 2^w - 1, sk_{ep,i})` for every chain. -/
-def oneTimePublicKey (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) : m (ChainIndex → Digest) :=
+/-- `pk_{idx,i} = Chain(P, 0, 2^w - 1, sk_{idx,i})` for every chain. -/
+def oneTimePublicKey (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) : m (ChainIndex → Digest) :=
   sequenceFin fun chain =>
-    chainWalk parameter epoch chain 0 (chainLength - 1) (secret epoch chain)
+    chainWalk parameter leafIndex chain 0 (chainLength - 1) (secret leafIndex chain)
 
-/-- `X_{0,ep}` from the secrets. -/
-def leafAt (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) : m Digest := do
-  let endpoints ← oneTimePublicKey parameter secret epoch
-  leafHash parameter epoch endpoints
+/-- `X_{0,idx}` from the secrets. -/
+def leafAt (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) : m Digest := do
+  let endpoints ← oneTimePublicKey parameter secret leafIndex
+  leafHash parameter leafIndex endpoints
 
 /-- A natural read as a node index. -/
 def merkleNodeOfNat (value : Nat) : MerkleNode :=
@@ -345,7 +345,7 @@ def childNode (node : MerkleNode) (right : Bool) : MerkleNode :=
   merkleNodeOfNat (2 * node.val + if right then 1 else 0)
 
 /-- `X_{levels,node}`, the Merkle tree over the one-time leaves. -/
-def treeNode (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+def treeNode (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     Nat → MerkleNode → m Digest
   | 0, node => leafAt parameter secret node
   | levels + 1, node => do
@@ -366,13 +366,13 @@ def replayHash (cache : QueryCache HashSpec) : QueryImpl HashSpec Id :=
 
 /-- Compute the stored chain values and Merkle nodes by replaying the key-generation query log. -/
 def precomputedSecretKey (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (cache : QueryCache HashSpec) :
+    (secret : LeafIndex → ChainIndex → Digest) (cache : QueryCache HashSpec) :
     SecretKey where
   parameter := parameter
   chainStart := secret
-  chainValue := fun epoch chain digit =>
+  chainValue := fun leafIndex chain digit =>
     evalWithAnswerFn (replayHash cache)
-      (chainWalk parameter epoch chain 0 digit.val (secret epoch chain) :
+      (chainWalk parameter leafIndex chain 0 digit.val (secret leafIndex chain) :
         OracleComp HashSpec Digest)
   treeValue := fun height node =>
     evalWithAnswerFn (replayHash cache)
@@ -380,23 +380,23 @@ def precomputedSecretKey (parameter : PublicParameter)
 
 /-! ### Signing -/
 
-/-- `floor(ep / 2^level) xor 1`, the sibling on the path. -/
-def authenticationPathNode (epoch : Epoch) (level : MerkleLevel) : MerkleNode :=
-  merkleNodeOfNat (Nat.xor (epoch.val / 2 ^ level.val) 1)
+/-- `floor(idx / 2^level) xor 1`, the sibling on the path. -/
+def authenticationPathNode (leafIndex : LeafIndex) (level : MerkleLevel) : MerkleNode :=
+  merkleNodeOfNat (Nat.xor (leafIndex.val / 2 ^ level.val) 1)
 
 /-- The signature once the encoding is found. -/
-def precomputedSignWithEncoding (secretKey : SecretKey) (epoch : Epoch)
+def precomputedSignWithEncoding (secretKey : SecretKey) (leafIndex : LeafIndex)
     (randomness : Randomness) (encoding : Encoding) : Signature :=
   { randomness := randomness
-    chainValue := fun chain => secretKey.chainValue epoch chain (encoding chain)
-    authPath := fun level => secretKey.treeValue level.castSucc (authenticationPathNode epoch level) }
+    chainValue := fun chain => secretKey.chainValue leafIndex chain (encoding chain)
+    authPath := fun level => secretKey.treeValue level.castSucc (authenticationPathNode leafIndex level) }
 
 /-- One attempt: hash once, and sign if the digest encodes. -/
-def precomputedSignAttempt (secretKey : SecretKey) (epoch : Epoch)
+def precomputedSignAttempt (secretKey : SecretKey) (leafIndex : LeafIndex)
     (message : Message) (randomness : Randomness) : m (Option Signature) := do
-  let digest ← encodingHash secretKey.parameter epoch message randomness
+  let digest ← encodingHash secretKey.parameter leafIndex message randomness
   let some encoding := TargetSum.decodeDigest digest | return none
-  return some (precomputedSignWithEncoding secretKey epoch randomness encoding)
+  return some (precomputedSignWithEncoding secretKey leafIndex randomness encoding)
 
 attribute [irreducible] verifyAfterLeaf treeNode
 
@@ -407,9 +407,9 @@ variable {m : Type → Type} [Monad m] [HasQuery HashSpec m]
 def deriveKey (parameter : PublicParameter) (domain : KeygenDomain) (seed : MasterSeed) : m Digest := do
   return truncateHash (← Concrete.oracleHash (keygenHashInput parameter domain seed))
 
-def deriveRandomizer (parameter : PublicParameter) (seed : MasterSeed) (epoch : Epoch)
+def deriveRandomizer (parameter : PublicParameter) (seed : MasterSeed) (leafIndex : LeafIndex)
     (message : Message) (trial : BitVec 32) : m Randomness := do
-  return (← Concrete.oracleHash (randomizerHashInput parameter seed epoch message trial)).extractLsb' 0 randomnessBits
+  return (← Concrete.oracleHash (randomizerHashInput parameter seed leafIndex message trial)).extractLsb' 0 randomnessBits
 
 noncomputable def sampleMasterSeed : ProbComp MasterSeed :=
   letI := SampleableType.ofFintype MasterSeed
@@ -424,24 +424,24 @@ structure SecretKey where
 
 def keygenFromSeed (seed : MasterSeed) : OracleComp HashSpec (PublicKey × SecretKey) := do
   let parameter ← deriveKey 0 .parameter seed
-  let secret ← Concrete.sequenceFin fun epoch => Concrete.sequenceFin fun chain =>
-    deriveKey parameter (.chain epoch chain) seed
+  let secret ← Concrete.sequenceFin fun leafIndex => Concrete.sequenceFin fun chain =>
+    deriveKey parameter (.chain leafIndex chain) seed
   let result ← (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
     OracleComp HashSpec Digest).withQueryLog
   let precomputed := Concrete.precomputedSecretKey parameter secret (hashCacheOfLog result.2)
   return (⟨result.1, parameter⟩, ⟨seed, precomputed⟩)
 
 /-- Derive trials in increasing order, stopping at the first admissible encoding. -/
-def signFrom (secretKey : SecretKey) (epoch : Epoch) (message : Message) : Nat → Nat → m (Option Signature)
+def signFrom (secretKey : SecretKey) (leafIndex : LeafIndex) (message : Message) : Nat → Nat → m (Option Signature)
   | 0, _ => pure none
   | attempts + 1, trial => do
-      let randomness ← deriveRandomizer secretKey.precomputed.parameter secretKey.seed epoch message (BitVec.ofNat 32 trial)
-      match ← Concrete.precomputedSignAttempt secretKey.precomputed epoch message randomness with
+      let randomness ← deriveRandomizer secretKey.precomputed.parameter secretKey.seed leafIndex message (BitVec.ofNat 32 trial)
+      match ← Concrete.precomputedSignAttempt secretKey.precomputed leafIndex message randomness with
       | some signature => return some signature
-      | none => signFrom secretKey epoch message attempts (trial + 1)
+      | none => signFrom secretKey leafIndex message attempts (trial + 1)
 
-def sign (secretKey : SecretKey) (epoch : Epoch) (message : Message) : m (Option Signature) :=
-  signFrom secretKey epoch message signingAttemptLimit 0
+def sign (secretKey : SecretKey) (leafIndex : LeafIndex) (message : Message) : m (Option Signature) :=
+  signFrom secretKey leafIndex message signingAttemptLimit 0
 
 end Seeded
 

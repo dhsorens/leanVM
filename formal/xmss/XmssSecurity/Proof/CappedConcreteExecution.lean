@@ -11,7 +11,7 @@ theorem capped_detailed_execution_verification_consistent
     (hmem : execution ∈ support
       (detailedGameWithCache Concrete.scheme adversary)) :
     execution.1.verified = Concrete.verifyFromCache execution.2 execution.1.publicKey
-      execution.1.forgery.epoch execution.1.forgery.message execution.1.forgery.signature := by
+      execution.1.forgery.leafIndex execution.1.forgery.message execution.1.forgery.signature := by
   unfold detailedGameWithCache detailedGameCore at hmem
   rw [simulateQ_bind, StateT.run_bind, mem_support_bind_iff] at hmem
   obtain ⟨⟨⟨publicKey, secretKey⟩, keyCache⟩, _hkeygen, hrest⟩ := hmem
@@ -26,18 +26,18 @@ theorem capped_detailed_execution_verification_consistent
   simp only
   have hroute :
       simulateQ romImpl
-          (Concrete.scheme.verify publicKey forgery.epoch forgery.message
+          (Concrete.scheme.verify publicKey forgery.leafIndex forgery.message
             forgery.signature) =
         simulateQ randomOracle
-          (Concrete.verify publicKey forgery.epoch forgery.message forgery.signature :
+          (Concrete.verify publicKey forgery.leafIndex forgery.message forgery.signature :
             OracleComp HashSpec Bool) := by
     simp only [Concrete.scheme, romImpl]
     exact QueryImpl.simulateQ_add_liftM_right (unifFwdImpl HashSpec)
       (randomOracle : QueryImpl HashSpec (StateT (QueryCache HashSpec) ProbComp))
-      (Concrete.verify publicKey forgery.epoch forgery.message forgery.signature :
+      (Concrete.verify publicKey forgery.leafIndex forgery.message forgery.signature :
         OracleComp HashSpec Bool)
   rw [hroute] at hverify
-  exact (Concrete.CacheReplay.verifyFromCache_eq_of_mem_support publicKey forgery.epoch
+  exact (Concrete.CacheReplay.verifyFromCache_eq_of_mem_support publicKey forgery.leafIndex
     forgery.message forgery.signature adversaryCache finalCache verified hverify).symm
 
 set_option linter.constructorNameAsVariable false in
@@ -129,9 +129,9 @@ theorem capped_detailed_execution_consistent_of_signing
       ∃ encoding,
         TargetSum.decodeDigest
           (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-            request.epoch (request.message, signature.randomness)) = some encoding ∧
+            request.leafIndex (request.message, signature.randomness)) = some encoding ∧
         signature = Concrete.CacheReplay.signWithEncoding execution.2 execution.1.secretKey
-          request.epoch signature.randomness encoding) :
+          request.leafIndex signature.randomness encoding) :
     ConcreteOutcomeConsistent execution.2 execution.1 :=
   ⟨capped_detailed_execution_key_consistent adversary execution hmem,
     capped_detailed_execution_verification_consistent adversary execution hmem, hsigning⟩

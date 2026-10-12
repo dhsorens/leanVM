@@ -12,7 +12,7 @@ noncomputable def globalChainTableHighViewOfMaterial
 
 noncomputable def globalChainRandomnessOfMaterial
     (parameter : PublicParameter) (material : GlobalChainTrajectoryMaterial) :
-    (Epoch → ChainIndex → Digest) × GlobalChainEdgeOutputTable :=
+    (LeafIndex → ChainIndex → Digest) × GlobalChainEdgeOutputTable :=
   globalChainKeygenRandomnessOfView
     (globalChainTableHighViewOfMaterial parameter material)
 
@@ -25,8 +25,8 @@ theorem globalChainRandomnessOfMaterial_secret
     material hmaterial
   change (globalChainTableMaterialEquiv
     (globalChainTrajectoryMaterialTable material)).1 = material.1
-  funext epoch chain
-  exact (hseeds epoch chain).symm
+  funext leafIndex chain
+  exact (hseeds leafIndex chain).symm
 
 theorem globalChainRandomnessOfMaterial_output_cached
     (parameter : PublicParameter) (material : GlobalChainTrajectoryMaterial)

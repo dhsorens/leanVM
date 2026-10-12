@@ -5,16 +5,16 @@ open OracleComp OracleSpec
 namespace XmssSecurity
 
 theorem Concrete.precomputedSignBoundedAttempts_success_origin
-    (attempts : Nat) (secretKey : SecretKey) (epoch : Epoch) (message : Message)
+    (attempts : Nat) (secretKey : SecretKey) (leafIndex : LeafIndex) (message : Message)
     (initialCache finalCache : QueryCache HashSpec) (signature : Signature)
     (hmem : (some signature, finalCache) ∈ support
       ((simulateQ romImpl
-        (Concrete.precomputedSignBoundedAttempts attempts secretKey epoch message)).run
+        (Concrete.precomputedSignBoundedAttempts attempts secretKey leafIndex message)).run
           initialCache)) :
     ∃ randomness attemptCache resultCache,
       (some signature, resultCache) ∈ support
         ((simulateQ randomOracle
-          (Concrete.precomputedSignAttempt secretKey epoch message randomness :
+          (Concrete.precomputedSignAttempt secretKey leafIndex message randomness :
             OracleComp HashSpec (Option Signature))).run attemptCache) ∧
       resultCache ≤ finalCache := by
   induction attempts generalizing initialCache finalCache signature with
@@ -32,17 +32,17 @@ theorem Concrete.precomputedSignBoundedAttempts_success_origin
       obtain ⟨⟨result, resultCache⟩, hattempt, hcontinue⟩ := hrest
       have hroute :
           simulateQ romImpl
-              (liftM (Concrete.precomputedSignAttempt secretKey epoch message randomness :
+              (liftM (Concrete.precomputedSignAttempt secretKey leafIndex message randomness :
                 OracleComp HashSpec (Option Signature))) =
             simulateQ randomOracle
-              (Concrete.precomputedSignAttempt secretKey epoch message randomness :
+              (Concrete.precomputedSignAttempt secretKey leafIndex message randomness :
                 OracleComp HashSpec (Option Signature)) := by
         change simulateQ (unifFwdImpl HashSpec + randomOracle)
-            (liftM (Concrete.precomputedSignAttempt secretKey epoch message randomness :
+            (liftM (Concrete.precomputedSignAttempt secretKey leafIndex message randomness :
               OracleComp HashSpec (Option Signature))) = _
         exact QueryImpl.simulateQ_add_liftM_right (unifFwdImpl HashSpec)
           (randomOracle : QueryImpl HashSpec (StateT (QueryCache HashSpec) ProbComp))
-          (Concrete.precomputedSignAttempt secretKey epoch message randomness :
+          (Concrete.precomputedSignAttempt secretKey leafIndex message randomness :
             OracleComp HashSpec (Option Signature))
       rw [hroute] at hattempt
       cases result with
@@ -65,20 +65,20 @@ theorem Concrete.precomputedSignBoundedAttempts_success_replay
     (hkeygenLe : keygenCache ≤ largerCache)
     (hmem : (some signature, resultCache) ∈ support
       ((simulateQ romImpl
-        (Concrete.precomputedSignBoundedAttempts attempts secretKey request.epoch
+        (Concrete.precomputedSignBoundedAttempts attempts secretKey request.leafIndex
           request.message)).run initialCache))
     (hle : resultCache ≤ largerCache) :
     ∃ encoding,
       TargetSum.decodeDigest
-        (Concrete.CacheView.encodingHash largerCache secretKey.parameter request.epoch
+        (Concrete.CacheView.encodingHash largerCache secretKey.parameter request.leafIndex
           (request.message, signature.randomness)) = some encoding ∧
       signature = Concrete.CacheReplay.signWithEncoding largerCache secretKey
-        request.epoch signature.randomness encoding := by
+        request.leafIndex signature.randomness encoding := by
   obtain ⟨randomness, attemptCache, finalAttemptCache, hattempt, hattemptLe⟩ :=
     Concrete.precomputedSignBoundedAttempts_success_origin attempts secretKey
-      request.epoch request.message initialCache resultCache signature hmem
+      request.leafIndex request.message initialCache resultCache signature hmem
   have heval := Concrete.CacheReplay.eval_answerFn_largerCache_eq_of_mem_support
-    (Concrete.precomputedSignAttempt secretKey request.epoch request.message randomness :
+    (Concrete.precomputedSignAttempt secretKey request.leafIndex request.message randomness :
       OracleComp HashSpec (Option Signature)) attemptCache finalAttemptCache largerCache
       (some signature) hattempt (hattemptLe.trans hle)
   unfold Concrete.precomputedSignAttempt at heval
@@ -93,7 +93,7 @@ theorem Concrete.precomputedSignBoundedAttempts_success_replay
     · rw [← hrandomness]
       exact hdecode
     · rw [← hrandomness, ← heval]
-      exact hconsistent largerCache hkeygenLe request.epoch randomness encoding
+      exact hconsistent largerCache hkeygenLe request.leafIndex randomness encoding
   · simp at heval
 
 theorem Concrete.precomputedCappedSign_success_replay
@@ -104,15 +104,15 @@ theorem Concrete.precomputedCappedSign_success_replay
     (hkeygenLe : keygenCache ≤ largerCache)
     (hmem : (some signature, resultCache) ∈ support
       ((simulateQ romImpl
-        (Concrete.precomputedCappedSign secretKey request.epoch
+        (Concrete.precomputedCappedSign secretKey request.leafIndex
           request.message)).run initialCache))
     (hle : resultCache ≤ largerCache) :
     ∃ encoding,
       TargetSum.decodeDigest
-        (Concrete.CacheView.encodingHash largerCache secretKey.parameter request.epoch
+        (Concrete.CacheView.encodingHash largerCache secretKey.parameter request.leafIndex
           (request.message, signature.randomness)) = some encoding ∧
       signature = Concrete.CacheReplay.signWithEncoding largerCache secretKey
-        request.epoch signature.randomness encoding := by
+        request.leafIndex signature.randomness encoding := by
   rw [Concrete.precomputedCappedSign] at hmem
   exact Concrete.precomputedSignBoundedAttempts_success_replay signingAttemptLimit
     secretKey request keygenCache initialCache resultCache largerCache signature

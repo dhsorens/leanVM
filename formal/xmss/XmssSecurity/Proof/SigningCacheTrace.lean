@@ -39,7 +39,7 @@ def SigningCacheEntry.EncodingInputPrehit
   ∃ signature output,
     entry.signature = some signature ∧
     entry.initialCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness)) = some output
 
 def SigningCacheEntry.PreexistingEncodingCollision
@@ -47,10 +47,10 @@ def SigningCacheEntry.PreexistingEncodingCollision
   ∃ signature signedOutput oldInput oldOutput,
     entry.signature = some signature ∧
     entry.finalCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness)) = some signedOutput ∧
     entry.initialCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch oldInput) =
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex oldInput) =
         some oldOutput ∧
     oldInput ≠ (entry.request.message, signature.randomness) ∧
     truncateHash signedOutput = truncateHash oldOutput
@@ -60,13 +60,13 @@ def SigningCacheEntry.FreshSigningEncodingCollision
   ∃ signature signedOutput oldInput oldOutput,
     entry.signature = some signature ∧
     entry.initialCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness)) = none ∧
     entry.finalCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness)) = some signedOutput ∧
     entry.initialCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch oldInput) =
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex oldInput) =
         some oldOutput ∧
     oldInput ≠ (entry.request.message, signature.randomness) ∧
     truncateHash signedOutput = truncateHash oldOutput
@@ -76,19 +76,19 @@ def SigningCacheEntry.FreshForgedEncodingCollision
     (finalCache : QueryCache HashSpec) (entry : SigningCacheEntry) : Prop :=
   ∃ signature signedOutput forgedOutput,
     entry.signature = some signature ∧
-    entry.request.epoch = forgery.epoch ∧
+    entry.request.leafIndex = forgery.leafIndex ∧
     entry.initialCache
-      (Concrete.CacheView.encodingInput secretKey.parameter forgery.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness)) = none ∧
     entry.finalCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness)) = some signedOutput ∧
     finalCache
-      (Concrete.CacheView.encodingInput secretKey.parameter forgery.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness)) = some forgedOutput ∧
-    Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+    Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness) ≠
-      Concrete.CacheView.encodingInput secretKey.parameter forgery.epoch
+      Concrete.CacheView.encodingInput secretKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness) ∧
     truncateHash signedOutput = truncateHash forgedOutput
 
@@ -97,18 +97,18 @@ def SigningCacheEntry.PostSigningFreshForgedEncodingCollision
     (finalCache : QueryCache HashSpec) (entry : SigningCacheEntry) : Prop :=
   entry.FreshForgedEncodingCollision secretKey forgery finalCache ∧
     entry.finalCache
-      (Concrete.CacheView.encodingInput secretKey.parameter forgery.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness)) = none ∧
     ∃ signature, entry.signature = some signature ∧
       entry.initialCache
-        (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+        (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
           (entry.request.message, signature.randomness)) = none
 
 def SigningCacheEntry.SuccessfulEncodingCached
     (secretKey : SecretKey) (entry : SigningCacheEntry) : Prop :=
   ∀ signature, entry.signature = some signature →
     ∃ output, entry.finalCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness)) = some output
 
 def SigningCacheTrace.SuccessfulEncodingsCached
@@ -123,7 +123,7 @@ theorem SigningCacheEntry.preexistingEncodingCollision_cases
   obtain ⟨signature, signedOutput, oldInput, oldOutput, hsignature,
     hsigned, hold, hne, hdigest⟩ := hevent
   cases hinitial : entry.initialCache
-      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.epoch
+      (Concrete.CacheView.encodingInput secretKey.parameter entry.request.leafIndex
         (entry.request.message, signature.randomness)) with
   | none =>
       exact Or.inr ⟨signature, signedOutput, oldInput, oldOutput, hsignature,

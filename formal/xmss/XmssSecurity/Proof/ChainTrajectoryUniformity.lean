@@ -14,14 +14,14 @@ theorem Vector.back_push {n : Nat} (values : Vector α n) (value : α) :
   exact Vector.back_eq_of_push_eq (Vector.push_pop_back (values.push value)).symm
 
 def Concrete.chainTrajectory
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position : Nat) : (steps : Nat) → Digest →
       OracleComp HashSpec (Vector Digest (steps + 1))
   | 0, value => pure (Vector.ofFn fun _ => value)
   | steps + 1, value => do
-      let values ← chainTrajectory parameter epoch chain position steps value
+      let values ← chainTrajectory parameter leafIndex chain position steps value
       if hvalid : position + steps < chainLength - 1 then
-        let next ← Concrete.chainHash parameter epoch chain
+        let next ← Concrete.chainHash parameter leafIndex chain
           ⟨position + steps, hvalid⟩ values.back
         return values.push next
       else
@@ -29,18 +29,18 @@ def Concrete.chainTrajectory
 
 @[simp]
 theorem Concrete.chainTrajectory_zero
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position : Nat) (value : Digest) :
-    Concrete.chainTrajectory parameter epoch chain position 0 value =
+    Concrete.chainTrajectory parameter leafIndex chain position 0 value =
       pure (Vector.ofFn fun _ => value) := rfl
 
 theorem Concrete.chainTrajectory_succ
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position steps : Nat) (value : Digest) :
-    Concrete.chainTrajectory parameter epoch chain position (steps + 1) value = (do
-      let values ← Concrete.chainTrajectory parameter epoch chain position steps value
+    Concrete.chainTrajectory parameter leafIndex chain position (steps + 1) value = (do
+      let values ← Concrete.chainTrajectory parameter leafIndex chain position steps value
       if hvalid : position + steps < chainLength - 1 then
-        let next ← Concrete.chainHash parameter epoch chain
+        let next ← Concrete.chainHash parameter leafIndex chain
           ⟨position + steps, hvalid⟩ values.back
         return values.push next
       else
@@ -49,11 +49,11 @@ theorem Concrete.chainTrajectory_succ
 @[simp]
 theorem Concrete.chainTrajectory_back
     (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (epoch : Epoch) (chain : ChainIndex) (position steps : Nat)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (position steps : Nat)
     (value : Digest) :
     (evalWithAnswerFn (Concrete.CacheReplay.answerFn cache)
-      (Concrete.chainTrajectory parameter epoch chain position steps value)).back =
-      Wots.walk (Concrete.CacheView.chainStep cache parameter epoch chain)
+      (Concrete.chainTrajectory parameter leafIndex chain position steps value)).back =
+      Wots.walk (Concrete.CacheView.chainStep cache parameter leafIndex chain)
         position steps value := by
   induction steps with
   | zero =>
@@ -67,11 +67,11 @@ theorem Concrete.chainTrajectory_back
 
 theorem Concrete.chainTrajectory_getElem
     (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (epoch : Epoch) (chain : ChainIndex) (position steps offset : Nat)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (position steps offset : Nat)
     (value : Digest) (hoffset : offset < steps + 1) :
     (evalWithAnswerFn (Concrete.CacheReplay.answerFn cache)
-      (Concrete.chainTrajectory parameter epoch chain position steps value))[offset] =
-      Wots.walk (Concrete.CacheView.chainStep cache parameter epoch chain)
+      (Concrete.chainTrajectory parameter leafIndex chain position steps value))[offset] =
+      Wots.walk (Concrete.CacheView.chainStep cache parameter leafIndex chain)
         position offset value := by
   induction steps generalizing offset with
   | zero =>
@@ -102,12 +102,12 @@ theorem Concrete.chainTrajectory_getElem
           simp [Wots.walk, Concrete.CacheView.chainStep, hvalid]
 
 theorem Concrete.chainTrajectory_queryBound_zero_of_avoids
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position steps : Nat) (value : Digest) (targetDomain : HashDomain)
     (havoid : ∀ offset, offset < steps →
       ∀ hvalid : position + offset < chainLength - 1,
-        HashDomain.chain epoch chain ⟨position + offset, hvalid⟩ ≠ targetDomain) :
-    (Concrete.chainTrajectory parameter epoch chain position steps value).IsQueryBoundP
+        HashDomain.chain leafIndex chain ⟨position + offset, hvalid⟩ ≠ targetDomain) :
+    (Concrete.chainTrajectory parameter leafIndex chain position steps value).IsQueryBoundP
       (AtHashAddress parameter targetDomain) 0 := by
   induction steps with
   | zero => simp [Concrete.chainTrajectory]
@@ -119,7 +119,7 @@ theorem Concrete.chainTrajectory_queryBound_zero_of_avoids
       split
       · exact OracleComp.isQueryBoundP_bind (m := 0)
           (Concrete.tweakableHash_queryBound_atOtherAddress parameter targetDomain
-            (.chain epoch chain ⟨position + steps, by assumption⟩)
+            (.chain leafIndex chain ⟨position + steps, by assumption⟩)
             (Concrete.digestBytes values.back) (havoid steps (by omega) _))
           (fun next _ => OracleComp.isQueryBoundP_pure
             (p := AtHashAddress parameter targetDomain) (values.push next) 0)

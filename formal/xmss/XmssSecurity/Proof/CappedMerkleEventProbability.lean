@@ -13,22 +13,22 @@ theorem detailed_execution_verified_merkle_query_cached_as
     (encoding : Encoding) (hverified : execution.1.verified = true)
     (hdecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch
+        execution.1.forgery.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
         some encoding)
     (level : MerkleLevel) :
     ∃ output, execution.2
       (Concrete.CacheView.nodeInput execution.1.secretKey.parameter
-        execution.1.forgery.epoch level
+        execution.1.forgery.leafIndex level
         (Merkle.ascend
           (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter
-            execution.1.forgery.epoch)
+            execution.1.forgery.leafIndex)
           (Concrete.signaturePath execution.1.forgery.signature) 0 level.val
           (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter
-            execution.1.forgery.epoch
+            execution.1.forgery.leafIndex
             (recoveredEndpoints
               (fun chain => Concrete.CacheView.chainStep execution.2
-                execution.1.secretKey.parameter execution.1.forgery.epoch chain)
+                execution.1.secretKey.parameter execution.1.forgery.leafIndex chain)
               encoding execution.1.forgery.signature.chainValue)))
         (Concrete.signaturePath execution.1.forgery.signature level.val)) = some output := by
   have hparameter :=
@@ -49,66 +49,66 @@ theorem detailed_execution_verified_merkle_query_cached_as
   subst verified
   have hroute :
       simulateQ romImpl
-          (Concrete.scheme.verify publicKey forgery.epoch forgery.message forgery.signature) =
+          (Concrete.scheme.verify publicKey forgery.leafIndex forgery.message forgery.signature) =
         simulateQ (randomOracle : QueryImpl HashSpec (StateT (QueryCache HashSpec) ProbComp))
-          (Concrete.verify publicKey forgery.epoch forgery.message forgery.signature :
+          (Concrete.verify publicKey forgery.leafIndex forgery.message forgery.signature :
             OracleComp HashSpec Bool) := by
     simp only [Concrete.scheme, romImpl]
     change simulateQ (unifFwdImpl HashSpec +
       (randomOracle : QueryImpl HashSpec (StateT (QueryCache HashSpec) ProbComp)))
-      (liftM (Concrete.verify publicKey forgery.epoch forgery.message forgery.signature :
+      (liftM (Concrete.verify publicKey forgery.leafIndex forgery.message forgery.signature :
         OracleComp HashSpec Bool)) = _
     exact QueryImpl.simulateQ_add_liftM_right (unifFwdImpl HashSpec)
       (randomOracle : QueryImpl HashSpec (StateT (QueryCache HashSpec) ProbComp))
-      (Concrete.verify publicKey forgery.epoch forgery.message forgery.signature :
+      (Concrete.verify publicKey forgery.leafIndex forgery.message forgery.signature :
         OracleComp HashSpec Bool)
   rw [hroute] at hverify
   have hdecodePublic : TargetSum.decodeDigest
-      (Concrete.CacheView.encodingHash finalCache publicKey.parameter forgery.epoch
+      (Concrete.CacheView.encodingHash finalCache publicKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness)) = some encoding := by
     rw [hparameter]
     exact hdecode
   rw [← hparameter]
   exact Concrete.CacheReplay.verify_true_merkle_query_cached_as_in_largerCache publicKey
-    forgery.epoch forgery.message forgery.signature encoding level adversaryCache finalCache
+    forgery.leafIndex forgery.message forgery.signature encoding level adversaryCache finalCache
     finalCache hverify hdecodePublic le_rfl
 
-def orderedNodePair (epoch : Epoch) (level : Nat) (current sibling : Digest) : Digest × Digest :=
-  if epoch.val.testBit level then (sibling, current) else (current, sibling)
+def orderedNodePair (leafIndex : LeafIndex) (level : Nat) (current sibling : Digest) : Digest × Digest :=
+  if leafIndex.val.testBit level then (sibling, current) else (current, sibling)
 
 @[simp]
-theorem nodeInput_eq_merkleInput_ordered (parameter : PublicParameter) (epoch : Epoch)
+theorem nodeInput_eq_merkleInput_ordered (parameter : PublicParameter) (leafIndex : LeafIndex)
     (level : MerkleLevel) (current sibling : Digest) :
-    Concrete.CacheView.nodeInput parameter epoch level current sibling =
+    Concrete.CacheView.nodeInput parameter leafIndex level current sibling =
       Concrete.CacheView.merkleInput parameter level
-        (Concrete.CacheView.nodeIndex epoch level.val)
-        (orderedNodePair epoch level.val current sibling).1
-        (orderedNodePair epoch level.val current sibling).2 := by
-  by_cases hbit : epoch.val.testBit level.val = true
+        (Concrete.CacheView.nodeIndex leafIndex level.val)
+        (orderedNodePair leafIndex level.val current sibling).1
+        (orderedNodePair leafIndex level.val current sibling).2 := by
+  by_cases hbit : leafIndex.val.testBit level.val = true
   · simp [Concrete.CacheView.nodeInput, Concrete.CacheView.merkleInput,
       Concrete.CacheView.authenticationNodePayload, orderedNodePair, hbit]
   · have hbitFalse := Bool.eq_false_of_not_eq_true hbit
     simp [Concrete.CacheView.nodeInput, Concrete.CacheView.merkleInput,
       Concrete.CacheView.authenticationNodePayload, orderedNodePair, hbitFalse]
 
-theorem orderedNodePair_injective (epoch : Epoch) (level : Nat) :
+theorem orderedNodePair_injective (leafIndex : LeafIndex) (level : Nat) :
     Function.Injective fun pair : Digest × Digest =>
-      orderedNodePair epoch level pair.1 pair.2 := by
+      orderedNodePair leafIndex level pair.1 pair.2 := by
   intro left right heq
-  by_cases hbit : epoch.val.testBit level = true
+  by_cases hbit : leafIndex.val.testBit level = true
   · simp [orderedNodePair, hbit] at heq
     exact Prod.ext heq.2 heq.1
   · have hbitFalse := Bool.eq_false_of_not_eq_true hbit
     simpa [orderedNodePair, hbitFalse] using heq
 
-theorem nodeIndex_valid_at_level (epoch : Epoch) (level : MerkleLevel) :
-    (Concrete.CacheView.nodeIndex epoch level.val).val <
+theorem nodeIndex_valid_at_level (leafIndex : LeafIndex) (level : MerkleLevel) :
+    (Concrete.CacheView.nodeIndex leafIndex level.val).val <
       2 ^ (treeHeight - (level.val + 1)) := by
   have hsum : (treeHeight - (level.val + 1)) + (level.val + 1) = treeHeight := by
     omega
   apply (Nat.div_lt_iff_lt_mul (by positivity : 0 < 2 ^ (level.val + 1))).2
   calc
-    epoch.val < 2 ^ treeHeight := epoch.isLt
+    leafIndex.val < 2 ^ treeHeight := leafIndex.isLt
     _ = 2 ^ (treeHeight - (level.val + 1)) * 2 ^ (level.val + 1) := by
       rw [← Nat.pow_add, hsum]
 
@@ -153,22 +153,22 @@ theorem keygenMerkleTargetInput_merkleInput (secretKey : SecretKey)
 attribute [irreducible] keygenMerkleTargetInput
 
 theorem ordered_honestNodePair_eq_children
-    (cache : QueryCache HashSpec) (secretKey : SecretKey) (epoch : Epoch)
+    (cache : QueryCache HashSpec) (secretKey : SecretKey) (leafIndex : LeafIndex)
     (level : MerkleLevel) :
-    orderedNodePair epoch level.val
+    orderedNodePair leafIndex level.val
         (Concrete.CacheReplay.treeNode cache secretKey.parameter secretKey.chainStart
-          level.val (Concrete.CacheReplay.pathNode epoch level.val))
+          level.val (Concrete.CacheReplay.pathNode leafIndex level.val))
         (Concrete.CacheReplay.treeNode cache secretKey.parameter secretKey.chainStart
-          level.val (Concrete.authenticationPathNode epoch level)) =
+          level.val (Concrete.authenticationPathNode leafIndex level)) =
       (Concrete.CacheReplay.treeNode cache secretKey.parameter secretKey.chainStart
           level.val
-          (Concrete.childNode (Concrete.CacheView.nodeIndex epoch level.val) false),
+          (Concrete.childNode (Concrete.CacheView.nodeIndex leafIndex level.val) false),
         Concrete.CacheReplay.treeNode cache secretKey.parameter secretKey.chainStart
           level.val
-          (Concrete.childNode (Concrete.CacheView.nodeIndex epoch level.val) true)) := by
+          (Concrete.childNode (Concrete.CacheView.nodeIndex leafIndex level.val) true)) := by
   rw [Concrete.CacheReplay.nodeIndex_eq_pathNode_succ]
-  have hchildren := Concrete.CacheReplay.pathNode_children epoch level.val level.isLt
-  by_cases hbit : epoch.val.testBit level.val = true
+  have hchildren := Concrete.CacheReplay.pathNode_children leafIndex level.val level.isLt
+  by_cases hbit : leafIndex.val.testBit level.val = true
   · simp only [hbit, ↓reduceIte] at hchildren
     rcases hchildren with ⟨hleft, hright⟩
     simp [orderedNodePair, hbit, hleft, hright]
@@ -179,34 +179,34 @@ theorem ordered_honestNodePair_eq_children
 
 theorem adaptiveFreshDigestCollisionWith_of_merkleCollision
     (secretKey : SecretKey) (initialCache finalCache : QueryCache HashSpec)
-    (epoch : Epoch) (level : MerkleLevel)
+    (leafIndex : LeafIndex) (level : MerkleLevel)
     (forgedCurrent forgedSibling honestCurrent honestSibling : Digest)
     (forgedOutput honestOutput : HashOutput)
     (hforgedFinal : finalCache
-      (Concrete.CacheView.nodeInput secretKey.parameter epoch level
+      (Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
         forgedCurrent forgedSibling) = some forgedOutput)
     (hforgedInitial : initialCache
-      (Concrete.CacheView.nodeInput secretKey.parameter epoch level
+      (Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
         forgedCurrent forgedSibling) = none)
     (hhonestInitial : initialCache
-      (Concrete.CacheView.nodeInput secretKey.parameter epoch level
+      (Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
         honestCurrent honestSibling) = some honestOutput)
     (hcollision : Concrete.CacheView.digestAt finalCache
-        (Concrete.CacheView.nodeInput secretKey.parameter epoch level
+        (Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
           forgedCurrent forgedSibling) =
       Concrete.CacheView.digestAt finalCache
-        (Concrete.CacheView.nodeInput secretKey.parameter epoch level
+        (Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
           honestCurrent honestSibling))
-    (hhonest : orderedNodePair epoch level.val honestCurrent honestSibling =
+    (hhonest : orderedNodePair leafIndex level.val honestCurrent honestSibling =
       (Concrete.CacheReplay.treeNode initialCache secretKey.parameter secretKey.chainStart
           level.val
-          (Concrete.childNode (Concrete.CacheView.nodeIndex epoch level.val) false),
+          (Concrete.childNode (Concrete.CacheView.nodeIndex leafIndex level.val) false),
         Concrete.CacheReplay.treeNode initialCache secretKey.parameter secretKey.chainStart
           level.val
-          (Concrete.childNode (Concrete.CacheView.nodeIndex epoch level.val) true))) :
+          (Concrete.childNode (Concrete.CacheView.nodeIndex leafIndex level.val) true))) :
     Rom.AdaptiveFreshDigestCollisionWith initialCache finalCache
       (keygenMerkleTargetInput secretKey initialCache) := by
-  let forgedInput := Concrete.CacheView.nodeInput secretKey.parameter epoch level
+  let forgedInput := Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
     forgedCurrent forgedSibling
   have hhonestLeft := congrArg Prod.fst hhonest
   have hhonestRight := congrArg Prod.snd hhonest
@@ -216,12 +216,12 @@ theorem adaptiveFreshDigestCollisionWith_of_merkleCollision
   have hcollision' := hcollision
   rw [nodeInput_eq_merkleInput_ordered, nodeInput_eq_merkleInput_ordered] at hcollision'
   refine ⟨forgedInput, forgedOutput, honestOutput, hforgedFinal, hforgedInitial, ?_, ?_⟩
-  · rw [show forgedInput = Concrete.CacheView.nodeInput secretKey.parameter epoch level
+  · rw [show forgedInput = Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
       forgedCurrent forgedSibling by rfl]
     rw [nodeInput_eq_merkleInput_ordered, keygenMerkleTargetInput_merkleInput,
       ← hhonestLeft, ← hhonestRight]
     exact hhonestInitial'
-  · rw [show forgedInput = Concrete.CacheView.nodeInput secretKey.parameter epoch level
+  · rw [show forgedInput = Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
       forgedCurrent forgedSibling by rfl]
     rw [nodeInput_eq_merkleInput_ordered, keygenMerkleTargetInput_merkleInput,
       ← hhonestLeft, ← hhonestRight]
@@ -238,24 +238,24 @@ theorem merkleCollision_afterKeygen_orientation
         (detailedGameAfterKeygen Concrete.scheme adversary keyResult.1.1 keyResult.1.2)).run
           keyResult.2))
     (secretKey : SecretKey) (hsecret : secretKey = keyResult.1.2)
-    (epoch : Epoch) (level : MerkleLevel)
+    (leafIndex : LeafIndex) (level : MerkleLevel)
     (forgedCurrent forgedSibling honestCurrent honestSibling : Digest)
     (forgedOutput : HashOutput)
     (hforgedCached : execution.2
-      (Concrete.CacheView.nodeInput secretKey.parameter epoch level
+      (Concrete.CacheView.nodeInput secretKey.parameter leafIndex level
         forgedCurrent forgedSibling) = some forgedOutput)
     (hne : (forgedCurrent, forgedSibling) ≠ (honestCurrent, honestSibling))
-    (heq : Concrete.CacheView.nodeHash execution.2 secretKey.parameter epoch level.val
+    (heq : Concrete.CacheView.nodeHash execution.2 secretKey.parameter leafIndex level.val
         forgedCurrent forgedSibling =
-      Concrete.CacheView.nodeHash execution.2 secretKey.parameter epoch level.val
+      Concrete.CacheView.nodeHash execution.2 secretKey.parameter leafIndex level.val
         honestCurrent honestSibling)
-    (hhonest : orderedNodePair epoch level.val honestCurrent honestSibling =
+    (hhonest : orderedNodePair leafIndex level.val honestCurrent honestSibling =
       (Concrete.CacheReplay.treeNode execution.2 secretKey.parameter secretKey.chainStart
           level.val
-          (Concrete.childNode (Concrete.CacheView.nodeIndex epoch level.val) false),
+          (Concrete.childNode (Concrete.CacheView.nodeIndex leafIndex level.val) false),
         Concrete.CacheReplay.treeNode execution.2 secretKey.parameter secretKey.chainStart
           level.val
-          (Concrete.childNode (Concrete.CacheView.nodeIndex epoch level.val) true))) :
+          (Concrete.childNode (Concrete.CacheView.nodeIndex leafIndex level.val) true))) :
     Rom.AdaptiveFreshDigestCollisionWith keyResult.2 execution.2
       (keygenMerkleTargetInput keyResult.1.2 keyResult.2) := by
   subst secretKey
@@ -265,22 +265,22 @@ theorem merkleCollision_afterKeygen_orientation
   have hkeygen' : keyResult ∈ support
       ((simulateQ romImpl Concrete.precomputedKeygen).run ∅) := by
     simpa only [Concrete.scheme] using hkeygen
-  let node := Concrete.CacheView.nodeIndex epoch level.val
-  have horderedNe : orderedNodePair epoch level.val forgedCurrent forgedSibling ≠
-      orderedNodePair epoch level.val honestCurrent honestSibling := by
+  let node := Concrete.CacheView.nodeIndex leafIndex level.val
+  have horderedNe : orderedNodePair leafIndex level.val forgedCurrent forgedSibling ≠
+      orderedNodePair leafIndex level.val honestCurrent honestSibling := by
     intro hordered
-    exact hne (orderedNodePair_injective epoch level.val hordered)
+    exact hne (orderedNodePair_injective leafIndex level.val hordered)
   have hforgedInitial :=
     Concrete.precomputedKeygen_cache_merkleInput_eq_none_of_ne_in_largerCache keyResult
-      hkeygen' execution.2 hafterCacheLe level node (nodeIndex_valid_at_level epoch level)
-      (orderedNodePair epoch level.val forgedCurrent forgedSibling).1
-      (orderedNodePair epoch level.val forgedCurrent forgedSibling).2 (by
+      hkeygen' execution.2 hafterCacheLe level node (nodeIndex_valid_at_level leafIndex level)
+      (orderedNodePair leafIndex level.val forgedCurrent forgedSibling).1
+      (orderedNodePair leafIndex level.val forgedCurrent forgedSibling).2 (by
         rw [← hhonest]
         exact horderedNe)
   rw [← nodeInput_eq_merkleInput_ordered] at hforgedInitial
   obtain ⟨honestOutput, hhonestCached⟩ :=
     Concrete.precomputedKeygen_cache_has_merkleInput_in_largerCache keyResult hkeygen'
-      execution.2 hafterCacheLe level node (nodeIndex_valid_at_level epoch level)
+      execution.2 hafterCacheLe level node (nodeIndex_valid_at_level leafIndex level)
   dsimp only [node] at hhonestCached
   have hhonestLeft := congrArg Prod.fst hhonest
   have hhonestRight := congrArg Prod.snd hhonest
@@ -290,18 +290,18 @@ theorem merkleCollision_afterKeygen_orientation
   rw [Concrete.CacheView.nodeHash_eq _ _ _ _ _ _ level.isLt,
     Concrete.CacheView.nodeHash_eq _ _ _ _ _ _ level.isLt] at hcollision
   have hstable := Concrete.precomputedKeygen_merkleChildren_eq_of_cache_le keyResult hkeygen'
-    execution.2 hafterCacheLe level node (nodeIndex_valid_at_level epoch level)
-  have hhonestInitial : orderedNodePair epoch level.val honestCurrent honestSibling =
+    execution.2 hafterCacheLe level node (nodeIndex_valid_at_level leafIndex level)
+  have hhonestInitial : orderedNodePair leafIndex level.val honestCurrent honestSibling =
       (Concrete.CacheReplay.treeNode keyResult.2 keyResult.1.2.parameter
           keyResult.1.2.chainStart level.val
-          (Concrete.childNode (Concrete.CacheView.nodeIndex epoch level.val) false),
+          (Concrete.childNode (Concrete.CacheView.nodeIndex leafIndex level.val) false),
         Concrete.CacheReplay.treeNode keyResult.2 keyResult.1.2.parameter
           keyResult.1.2.chainStart level.val
-          (Concrete.childNode (Concrete.CacheView.nodeIndex epoch level.val) true)) := by
+          (Concrete.childNode (Concrete.CacheView.nodeIndex leafIndex level.val) true)) := by
     dsimp only [node] at hstable
     exact hhonest.trans hstable.symm
   exact adaptiveFreshDigestCollisionWith_of_merkleCollision keyResult.1.2 keyResult.2
-    execution.2 epoch level forgedCurrent forgedSibling honestCurrent honestSibling
+    execution.2 leafIndex level forgedCurrent forgedSibling honestCurrent honestSibling
     forgedOutput honestOutput hforgedCached hforgedInitial hhonestCached hcollision
     hhonestInitial
 
@@ -316,78 +316,78 @@ theorem merkle_path_collision_afterKeygen_orientation
         (detailedGameAfterKeygen Concrete.scheme adversary keyResult.1.1 keyResult.1.2)).run
           keyResult.2))
     (hverified : execution.1.verified = true)
-    (epoch : Epoch) (hepoch : epoch = execution.1.forgery.epoch)
+    (leafIndex : LeafIndex) (hleafIndex : leafIndex = execution.1.forgery.leafIndex)
     (forgedEncoding : Encoding)
     (hforgedDecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch
+        execution.1.forgery.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
         some forgedEncoding)
     (honestPath : Nat → Digest) (honestLeaf : Digest) (level : MerkleLevel)
     (hevent : Merkle.IsXmssPathCollisionAt
-      (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter epoch)
+      (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter leafIndex)
       (Concrete.signaturePath execution.1.forgery.signature) honestPath
-      (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter epoch
+      (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter leafIndex
         (recoveredEndpoints
           (fun chain => Concrete.CacheView.chainStep execution.2
-            execution.1.secretKey.parameter epoch chain)
+            execution.1.secretKey.parameter leafIndex chain)
           forgedEncoding execution.1.forgery.signature.chainValue))
       honestLeaf level)
     (hhonestCurrent : Merkle.ascend
-        (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter epoch)
+        (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter leafIndex)
         honestPath 0 level.val honestLeaf =
       Concrete.CacheReplay.treeNode execution.2 execution.1.secretKey.parameter
         execution.1.secretKey.chainStart level.val
-        (Concrete.CacheReplay.pathNode epoch level.val))
+        (Concrete.CacheReplay.pathNode leafIndex level.val))
     (hhonestSibling : honestPath level.val =
       Concrete.CacheReplay.treeNode execution.2 execution.1.secretKey.parameter
         execution.1.secretKey.chainStart level.val
-        (Concrete.authenticationPathNode epoch level)) :
+        (Concrete.authenticationPathNode leafIndex level)) :
     Rom.AdaptiveFreshDigestCollisionWith keyResult.2 execution.2
       (keygenMerkleTargetInput keyResult.1.2 keyResult.2) := by
-  subst epoch
+  subst leafIndex
   let forgedCurrent := Merkle.ascend
     (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter
-      execution.1.forgery.epoch)
+      execution.1.forgery.leafIndex)
     (Concrete.signaturePath execution.1.forgery.signature) 0 level.val
     (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter
-      execution.1.forgery.epoch
+      execution.1.forgery.leafIndex
       (recoveredEndpoints
         (fun chain => Concrete.CacheView.chainStep execution.2
-          execution.1.secretKey.parameter execution.1.forgery.epoch chain)
+          execution.1.secretKey.parameter execution.1.forgery.leafIndex chain)
         forgedEncoding execution.1.forgery.signature.chainValue))
   let forgedSibling :=
     Concrete.signaturePath execution.1.forgery.signature level.val
   let honestCurrent := Merkle.ascend
     (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter
-      execution.1.forgery.epoch) honestPath 0 level.val honestLeaf
+      execution.1.forgery.leafIndex) honestPath 0 level.val honestLeaf
   let honestSibling := honestPath level.val
   change (forgedCurrent, forgedSibling) ≠ (honestCurrent, honestSibling) ∧
     Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch level.val forgedCurrent forgedSibling =
+        execution.1.forgery.leafIndex level.val forgedCurrent forgedSibling =
       Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch level.val honestCurrent honestSibling at hevent
+        execution.1.forgery.leafIndex level.val honestCurrent honestSibling at hevent
   obtain ⟨hne, heq⟩ := hevent
-  have hhonest : orderedNodePair execution.1.forgery.epoch level.val
+  have hhonest : orderedNodePair execution.1.forgery.leafIndex level.val
       honestCurrent honestSibling =
       (Concrete.CacheReplay.treeNode execution.2
           execution.1.secretKey.parameter execution.1.secretKey.chainStart level.val
           (Concrete.childNode
-            (Concrete.CacheView.nodeIndex execution.1.forgery.epoch level.val) false),
+            (Concrete.CacheView.nodeIndex execution.1.forgery.leafIndex level.val) false),
         Concrete.CacheReplay.treeNode execution.2
           execution.1.secretKey.parameter execution.1.secretKey.chainStart level.val
           (Concrete.childNode
-            (Concrete.CacheView.nodeIndex execution.1.forgery.epoch level.val) true)) := by
+            (Concrete.CacheView.nodeIndex execution.1.forgery.leafIndex level.val) true)) := by
     rw [show honestCurrent = Concrete.CacheReplay.treeNode execution.2
         execution.1.secretKey.parameter execution.1.secretKey.chainStart level.val
-        (Concrete.CacheReplay.pathNode execution.1.forgery.epoch level.val) by
+        (Concrete.CacheReplay.pathNode execution.1.forgery.leafIndex level.val) by
           exact hhonestCurrent,
       show honestSibling = Concrete.CacheReplay.treeNode execution.2
         execution.1.secretKey.parameter execution.1.secretKey.chainStart level.val
-        (Concrete.authenticationPathNode execution.1.forgery.epoch level) by
+        (Concrete.authenticationPathNode execution.1.forgery.leafIndex level) by
           exact hhonestSibling]
     exact ordered_honestNodePair_eq_children execution.2 execution.1.secretKey
-      execution.1.forgery.epoch level
+      execution.1.forgery.leafIndex level
   have hgame := CappedLeaf.afterKeygen_execution_mem_detailedGame adversary
     keyResult hkeygen execution hafter
   obtain ⟨forgedOutput, hforgedCached⟩ :=
@@ -395,12 +395,12 @@ theorem merkle_path_collision_afterKeygen_orientation
       forgedEncoding hverified hforgedDecode level
   change execution.2
       (Concrete.CacheView.nodeInput execution.1.secretKey.parameter
-        execution.1.forgery.epoch level forgedCurrent forgedSibling) =
+        execution.1.forgery.leafIndex level forgedCurrent forgedSibling) =
       some forgedOutput at hforgedCached
   have hkeys := CappedLeaf.detailedGameAfterKeygen_keys_eq adversary keyResult.1.1
     keyResult.1.2 keyResult.2 execution hafter
   exact merkleCollision_afterKeygen_orientation adversary keyResult hkeygen execution
-    hafter execution.1.secretKey hkeys.2 execution.1.forgery.epoch level
+    hafter execution.1.secretKey hkeys.2 execution.1.forgery.leafIndex level
     forgedCurrent forgedSibling honestCurrent honestSibling forgedOutput
     hforgedCached hne heq hhonest
 
@@ -419,17 +419,17 @@ theorem same_merkle_witness_afterKeygen_orientation
     (signedEncoding forgedEncoding : Encoding)
     (hsignedDecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        request.epoch (request.message, signature.randomness)) = some signedEncoding)
+        request.leafIndex (request.message, signature.randomness)) = some signedEncoding)
     (hforgedDecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        request.epoch
+        request.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
         some forgedEncoding)
     (hreturned : SigningTranscript.Returned execution.1.signingLog request signature)
-    (hepoch : request.epoch = execution.1.forgery.epoch)
+    (hleafIndex : request.leafIndex = execution.1.forgery.leafIndex)
     (level : MerkleLevel)
-    (hevent : Concrete.SameEpochBadEventOccurs execution.2
-      execution.1.secretKey.parameter request.epoch request.message
+    (hevent : Concrete.SameLeafIndexBadEventOccurs execution.2
+      execution.1.secretKey.parameter request.leafIndex request.message
       execution.1.forgery.message signedEncoding forgedEncoding signature
       execution.1.forgery.signature
       (TargetSum.decodeDigest_eq_some_iff.mp hsignedDecode).2 (.merkle level)) :
@@ -438,42 +438,42 @@ theorem same_merkle_witness_afterKeygen_orientation
   have hgame := CappedLeaf.afterKeygen_execution_mem_detailedGame adversary keyResult hkeygen execution hafter
   have hsignature := CappedLeaf.detailed_execution_returned_signature_eq adversary execution hgame
     request signature signedEncoding hsignedDecode hreturned
-  have hdecodeEpoch := congrArg (fun epoch => TargetSum.decodeDigest
-    (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter epoch
-      (execution.1.forgery.message, execution.1.forgery.signature.randomness))) hepoch
+  have hdecodeLeafIndex := congrArg (fun leafIndex => TargetSum.decodeDigest
+    (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter leafIndex
+      (execution.1.forgery.message, execution.1.forgery.signature.randomness))) hleafIndex
   have hforgedDecode' : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch
+        execution.1.forgery.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
-        some forgedEncoding := hdecodeEpoch.symm.trans hforgedDecode
+        some forgedEncoding := hdecodeLeafIndex.symm.trans hforgedDecode
   change Merkle.IsXmssPathCollisionAt
-    (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter request.epoch)
+    (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter request.leafIndex)
     (Concrete.signaturePath execution.1.forgery.signature)
     (Concrete.signaturePath signature)
-    (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter request.epoch
+    (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter request.leafIndex
       (recoveredEndpoints
         (fun chain => Concrete.CacheView.chainStep execution.2
-          execution.1.secretKey.parameter request.epoch chain)
+          execution.1.secretKey.parameter request.leafIndex chain)
         forgedEncoding execution.1.forgery.signature.chainValue))
-    (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter request.epoch
+    (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter request.leafIndex
       (recoveredEndpoints
         (fun chain => Concrete.CacheView.chainStep execution.2
-          execution.1.secretKey.parameter request.epoch chain)
+          execution.1.secretKey.parameter request.leafIndex chain)
         signedEncoding signature.chainValue)) level at hevent
   refine merkle_path_collision_afterKeygen_orientation adversary keyResult hkeygen
-    execution hafter hverified request.epoch hepoch forgedEncoding hforgedDecode'
+    execution hafter hverified request.leafIndex hleafIndex forgedEncoding hforgedDecode'
       (Concrete.signaturePath signature)
       (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter
-        request.epoch
+        request.leafIndex
         (recoveredEndpoints
           (fun chain => Concrete.CacheView.chainStep execution.2
-            execution.1.secretKey.parameter request.epoch chain)
+            execution.1.secretKey.parameter request.leafIndex chain)
           signedEncoding signature.chainValue)) level hevent ?_ ?_
   ·
     rw [hsignature,
       Concrete.CacheReplay.leafHash_recovered_signWithEncoding]
     exact Concrete.CacheReplay.authenticationPath_ascends_to_treeNode execution.2
-      execution.1.secretKey request.epoch signature.randomness signedEncoding level.val
+      execution.1.secretKey request.leafIndex signature.randomness signedEncoding level.val
       level.isLt.le
   · rw [hsignature]
     simp [Concrete.signaturePath, Concrete.CacheReplay.signWithEncoding,
@@ -493,59 +493,59 @@ theorem fresh_merkle_witness_afterKeygen_orientation
     (forgedEncoding : Encoding)
     (hforgedDecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch
+        execution.1.forgery.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
         some forgedEncoding)
     (level : MerkleLevel)
-    (hevent : Concrete.FreshEpochBadEventOccurs execution.2
-      execution.1.secretKey.parameter execution.1.forgery.epoch forgedEncoding
+    (hevent : Concrete.FreshLeafIndexBadEventOccurs execution.2
+      execution.1.secretKey.parameter execution.1.forgery.leafIndex forgedEncoding
       execution.1.forgery.signature
-      (execution.1.secretKey.chainStart execution.1.forgery.epoch)
+      (execution.1.secretKey.chainStart execution.1.forgery.leafIndex)
       (Concrete.signaturePath
         (Concrete.CacheReplay.signWithEncoding execution.2 execution.1.secretKey
-          execution.1.forgery.epoch execution.1.forgery.signature.randomness forgedEncoding))
+          execution.1.forgery.leafIndex execution.1.forgery.signature.randomness forgedEncoding))
       (TargetSum.decodeDigest_eq_some_iff.mp hforgedDecode).2 (.merkle level)) :
     Rom.AdaptiveFreshDigestCollisionWith keyResult.2 execution.2
       (keygenMerkleTargetInput keyResult.1.2 keyResult.2) := by
   let honestSignature := Concrete.CacheReplay.signWithEncoding execution.2
-    execution.1.secretKey execution.1.forgery.epoch
+    execution.1.secretKey execution.1.forgery.leafIndex
     execution.1.forgery.signature.randomness forgedEncoding
   change Merkle.IsXmssPathCollisionAt
     (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter
-      execution.1.forgery.epoch)
+      execution.1.forgery.leafIndex)
     (Concrete.signaturePath execution.1.forgery.signature)
     (Concrete.signaturePath honestSignature)
     (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter
-      execution.1.forgery.epoch
+      execution.1.forgery.leafIndex
       (recoveredEndpoints
         (fun chain => Concrete.CacheView.chainStep execution.2
-          execution.1.secretKey.parameter execution.1.forgery.epoch chain)
+          execution.1.secretKey.parameter execution.1.forgery.leafIndex chain)
         forgedEncoding execution.1.forgery.signature.chainValue))
     (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter
-      execution.1.forgery.epoch
+      execution.1.forgery.leafIndex
       (fun chain => Wots.publicChain
         (Concrete.CacheView.chainStep execution.2 execution.1.secretKey.parameter
-          execution.1.forgery.epoch chain)
-        (execution.1.secretKey.chainStart execution.1.forgery.epoch chain))) level at hevent
+          execution.1.forgery.leafIndex chain)
+        (execution.1.secretKey.chainStart execution.1.forgery.leafIndex chain))) level at hevent
   refine merkle_path_collision_afterKeygen_orientation adversary keyResult hkeygen
-    execution hafter hverified execution.1.forgery.epoch rfl forgedEncoding
+    execution hafter hverified execution.1.forgery.leafIndex rfl forgedEncoding
       hforgedDecode (Concrete.signaturePath honestSignature)
       (Concrete.CacheView.leafHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch
+        execution.1.forgery.leafIndex
         (fun chain => Wots.publicChain
           (Concrete.CacheView.chainStep execution.2 execution.1.secretKey.parameter
-            execution.1.forgery.epoch chain)
-          (execution.1.secretKey.chainStart execution.1.forgery.epoch chain))) level
+            execution.1.forgery.leafIndex chain)
+          (execution.1.secretKey.chainStart execution.1.forgery.leafIndex chain))) level
       hevent ?_ ?_
   ·
     change Merkle.ascend
       (Concrete.CacheView.nodeHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch)
+        execution.1.forgery.leafIndex)
       (Concrete.signaturePath honestSignature) 0 level.val
       (Concrete.CacheReplay.leafAt execution.2 execution.1.secretKey.parameter
-        execution.1.secretKey.chainStart execution.1.forgery.epoch) = _
+        execution.1.secretKey.chainStart execution.1.forgery.leafIndex) = _
     exact Concrete.CacheReplay.authenticationPath_ascends_to_treeNode execution.2
-      execution.1.secretKey execution.1.forgery.epoch
+      execution.1.secretKey execution.1.forgery.leafIndex
       execution.1.forgery.signature.randomness forgedEncoding level.val level.isLt.le
   · simp [honestSignature, Concrete.signaturePath,
       Concrete.CacheReplay.signWithEncoding, Concrete.CacheReplay.authenticationPath,
@@ -567,10 +567,10 @@ theorem merkle_event_afterKeygen_orientation
       (keygenMerkleTargetInput keyResult.1.2 keyResult.2) := by
   rcases hevent.2 with hsame | hfresh
   · obtain ⟨request, signature, signedEncoding, forgedEncoding, hsignedDecode,
-      hforgedDecode, hreturned, hepoch, hmerkle⟩ := hsame
+      hforgedDecode, hreturned, hleafIndex, hmerkle⟩ := hsame
     exact same_merkle_witness_afterKeygen_orientation adversary keyResult hkeygen execution
       hafter hevent.1 request signature signedEncoding forgedEncoding hsignedDecode
-      hforgedDecode hreturned hepoch level hmerkle
+      hforgedDecode hreturned hleafIndex level hmerkle
   · obtain ⟨forgedEncoding, hforgedValid, _hunsigned, hforgedDecode, hmerkle⟩ := hfresh
     exact fresh_merkle_witness_afterKeygen_orientation adversary keyResult hkeygen execution
       hafter hevent.1 forgedEncoding hforgedDecode level hmerkle

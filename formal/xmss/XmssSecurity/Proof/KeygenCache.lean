@@ -55,10 +55,10 @@ theorem Concrete.keygen_cache_unique_leafAddress
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (targetEpoch : Epoch) (left right : HashInput)
+    (targetLeafIndex : LeafIndex) (left right : HashInput)
     (leftOutput rightOutput : HashOutput)
-    (hleftP : AtHashAddress keyResult.1.2.parameter (.leaf targetEpoch) left)
-    (hrightP : AtHashAddress keyResult.1.2.parameter (.leaf targetEpoch) right)
+    (hleftP : AtHashAddress keyResult.1.2.parameter (.leaf targetLeafIndex) left)
+    (hrightP : AtHashAddress keyResult.1.2.parameter (.leaf targetLeafIndex) right)
     (hleft : keyResult.2 left = some leftOutput)
     (hright : keyResult.2 right = some rightOutput) :
     left = right := by
@@ -66,19 +66,19 @@ theorem Concrete.keygen_cache_unique_leafAddress
     Concrete.keygen_support_rootTree keyResult hmem
   rw [hkey] at hleftP hrightP
   exact Concrete.CacheReplay.rootTree_cache_unique_leafAddress parameter secret root
-    keyResult.2 hroot targetEpoch left right leftOutput rightOutput
+    keyResult.2 hroot targetLeafIndex left right leftOutput rightOutput
     hleftP hrightP hleft hright
 
 theorem Concrete.keygen_cache_unique_chainAddress
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (targetEpoch : Epoch) (targetChain : ChainIndex) (targetStep : ChainStep)
+    (targetLeafIndex : LeafIndex) (targetChain : ChainIndex) (targetStep : ChainStep)
     (left right : HashInput) (leftOutput rightOutput : HashOutput)
     (hleftP : AtHashAddress keyResult.1.2.parameter
-      (.chain targetEpoch targetChain targetStep) left)
+      (.chain targetLeafIndex targetChain targetStep) left)
     (hrightP : AtHashAddress keyResult.1.2.parameter
-      (.chain targetEpoch targetChain targetStep) right)
+      (.chain targetLeafIndex targetChain targetStep) right)
     (hleft : keyResult.2 left = some leftOutput)
     (hright : keyResult.2 right = some rightOutput) :
     left = right := by
@@ -86,7 +86,7 @@ theorem Concrete.keygen_cache_unique_chainAddress
     Concrete.keygen_support_rootTree keyResult hmem
   rw [hkey] at hleftP hrightP
   exact Concrete.CacheReplay.rootTree_cache_unique_chainAddress parameter secret root
-    keyResult.2 hroot targetEpoch targetChain targetStep left right leftOutput rightOutput
+    keyResult.2 hroot targetLeafIndex targetChain targetStep left right leftOutput rightOutput
     hleftP hrightP hleft hright
 
 theorem Concrete.keygen_cache_unique_merkleAddress
@@ -114,9 +114,9 @@ theorem Concrete.keygen_cache_none_encodingInput
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (targetEpoch : Epoch) (targetInput : Message × Randomness) :
+    (targetLeafIndex : LeafIndex) (targetInput : Message × Randomness) :
     keyResult.2
-      (Concrete.CacheView.encodingInput keyResult.1.2.parameter targetEpoch targetInput) =
+      (Concrete.CacheView.encodingInput keyResult.1.2.parameter targetLeafIndex targetInput) =
         none := by
   obtain ⟨parameter, secret, root, hkey, hroot⟩ :=
     Concrete.keygen_support_rootTree keyResult hmem
@@ -124,15 +124,15 @@ theorem Concrete.keygen_cache_none_encodingInput
   apply Concrete.CacheReplay.cache_none_of_zero_query_bound
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest)
-    (Concrete.CacheView.encodingInput parameter targetEpoch targetInput)
+    (Concrete.CacheView.encodingInput parameter targetLeafIndex targetInput)
     ∅ keyResult.2 root
-  · exact (Concrete.treeNode_queryBound_zero_encodingAddress parameter secret targetEpoch
+  · exact (Concrete.treeNode_queryBound_zero_encodingAddress parameter secret targetLeafIndex
       treeHeight Concrete.rootNode).of_imp (by
         intro input hinput
         subst input
         rw [Concrete.CacheView.encodingInput]
         exact atHashAddress_tweakableHashInput_iff parameter
-          (.encoding targetEpoch) (.encoding targetEpoch) _ |>.2 rfl)
+          (.encoding targetLeafIndex) (.encoding targetLeafIndex) _ |>.2 rfl)
   · simp
   · exact hroot
 

@@ -4,18 +4,18 @@ namespace XmssSecurity
 
 abbrev FullChainTrajectory := Vector Digest (chainLength - 1 + 1)
 
-noncomputable def allEpochs : List Epoch :=
+noncomputable def allLeafIndices : List LeafIndex :=
   Finset.univ.toList
 
-theorem allEpochs_nodup : allEpochs.Nodup := by
+theorem allLeafIndices_nodup : allLeafIndices.Nodup := by
   exact Finset.nodup_toList Finset.univ
 
-theorem mem_allEpochs (epoch : Epoch) : epoch ∈ allEpochs := by
-  simp [allEpochs]
+theorem mem_allLeafIndices (leafIndex : LeafIndex) : leafIndex ∈ allLeafIndices := by
+  simp [allLeafIndices]
 
-theorem allEpochs_length : allEpochs.length = lifetime := by
-  simp [allEpochs, Epoch]
+theorem allLeafIndices_length : allLeafIndices.length = lifetime := by
+  simp [allLeafIndices, LeafIndex]
 
-attribute [irreducible] allEpochs
+attribute [irreducible] allLeafIndices
 
 end XmssSecurity

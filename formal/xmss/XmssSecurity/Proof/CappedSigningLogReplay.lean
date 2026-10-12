@@ -93,7 +93,7 @@ theorem cappedMappedAdversary_signingLog_consistent
             rw [hsignature] at hsign
             change (some signature, signCache) ∈ support
               ((simulateQ romImpl
-                (Concrete.precomputedCappedSign secretKey request.epoch
+                (Concrete.precomputedCappedSign secretKey request.leafIndex
                   request.message)).run initialCache) at hsign
             apply Concrete.precomputedCappedSign_success_replay secretKey request
               keygenCache initialCache signCache largerCache signature hconsistent hkeygenLe

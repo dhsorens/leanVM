@@ -22,17 +22,17 @@ noncomputable local instance : SampleableType TrialTape := trialTapeSampleableTy
 
 noncomputable def sampleTrialTape : ProbComp TrialTape := $ᵗ TrialTape
 
-def trialLoop (secretKey : XmssSecurity.SecretKey) (epoch : Epoch) (message : Message) : Nat → Nat → OracleComp TrialWorld TrialResult
+def trialLoop (secretKey : XmssSecurity.SecretKey) (leafIndex : LeafIndex) (message : Message) : Nat → Nat → OracleComp TrialWorld TrialResult
   | 0, _ => pure none
   | attempts + 1, trial => do
       let output ← liftM (TrialWorld.query (.inr (BitVec.ofNat 32 trial)))
       let randomness := output.extractLsb' 0 randomnessBits
       let attempt ← baseLift (liftM
-        (Concrete.precomputedSignAttempt secretKey epoch message randomness : OracleComp HashSpec (Option Signature)) :
+        (Concrete.precomputedSignAttempt secretKey leafIndex message randomness : OracleComp HashSpec (Option Signature)) :
           OracleComp OracleWorld (Option Signature))
       match attempt with
       | some signature => return some signature
-      | none => trialLoop secretKey epoch message attempts (trial + 1)
+      | none => trialLoop secretKey leafIndex message attempts (trial + 1)
 
 def earlierTrials (trial : Nat) : Set Trial := {value | value.toNat < trial}
 
@@ -45,9 +45,9 @@ theorem earlierTrials_succ (trial : Nat) (htrial : trial < 2 ^ 32) :
   rw [heq]
   omega
 
-theorem freshRequests_trialLoop (secretKey : XmssSecurity.SecretKey) (epoch : Epoch) (message : Message)
+theorem freshRequests_trialLoop (secretKey : XmssSecurity.SecretKey) (leafIndex : LeafIndex) (message : Message)
     (attempts trial : Nat) (hbound : trial + attempts ≤ 2 ^ 32) :
-    FreshRequests (earlierTrials trial) (trialLoop secretKey epoch message attempts trial) := by
+    FreshRequests (earlierTrials trial) (trialLoop secretKey leafIndex message attempts trial) := by
   induction attempts generalizing trial with
   | zero => exact .pure _
   | succ attempts ih =>
@@ -61,7 +61,7 @@ theorem freshRequests_trialLoop (secretKey : XmssSecurity.SecretKey) (epoch : Ep
       intro output
       dsimp only
       apply freshRequests_base_bind (base := OracleWorld) (Request := Trial) (Answer := HashOutput) _
-        (liftM (Concrete.precomputedSignAttempt secretKey epoch message (output.extractLsb' 0 randomnessBits) : OracleComp HashSpec _) :
+        (liftM (Concrete.precomputedSignAttempt secretKey leafIndex message (output.extractLsb' 0 randomnessBits) : OracleComp HashSpec _) :
           OracleComp OracleWorld _)
       intro attempt
       cases attempt with

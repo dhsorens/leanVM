@@ -228,10 +228,10 @@ theorem relTriple_coupledGlobalChainKeygen_withBaseHigh
     · exact globalTreeValuesReplay_eq_root parameter leftMaterial.1
         rightMaterialBaseHigh.1.1.1 leftTree.2 rightTree.2 leftTree.1
           hleftReplay (hvalues ▸ hrightReplay)
-    · intro epoch
+    · intro leafIndex
       exact globalTreeValuesReplay_eq_authenticationPath parameter
         leftMaterial.1 rightMaterialBaseHigh.1.1.1 leftTree.2 rightTree.2
-          leftTree.1 hleftReplay (hvalues ▸ hrightReplay) epoch
+          leftTree.1 hleftReplay (hvalues ▸ hrightReplay) leafIndex
   · exact hhighFinal
   · exact hmatches.mono hcacheLe
 
@@ -437,35 +437,35 @@ noncomputable def globalFilteredCausalKeygenState
 
 @[simp]
 theorem globalChainInputProbe?_encodingInput
-    (parameter : PublicParameter) (epoch : Epoch)
+    (parameter : PublicParameter) (leafIndex : LeafIndex)
     (input : Message × Randomness) :
     globalChainInputProbe? parameter
-      (Concrete.CacheView.encodingInput parameter epoch input) = none := by
+      (Concrete.CacheView.encodingInput parameter leafIndex input) = none := by
   unfold globalChainInputProbe?
   split
   · rename_i hexists
     obtain ⟨data, hdata⟩ := hexists
     have hchain : AtHashAddress parameter
         (.chain data.1 data.2.1 data.2.2.1)
-        (Concrete.CacheView.encodingInput parameter epoch input) := by
+        (Concrete.CacheView.encodingInput parameter leafIndex input) := by
       rw [hdata]
       simp [Concrete.CacheView.chainInput]
-    have hencoding : AtHashAddress parameter (.encoding epoch)
-        (Concrete.CacheView.encodingInput parameter epoch input) := by
+    have hencoding : AtHashAddress parameter (.encoding leafIndex)
+        (Concrete.CacheView.encodingInput parameter leafIndex input) := by
       simp [Concrete.CacheView.encodingInput]
     have hdomain := atHashAddress_unique parameter
-      (.chain data.1 data.2.1 data.2.2.1) (.encoding epoch)
-      (Concrete.CacheView.encodingInput parameter epoch input) hchain
+      (.chain data.1 data.2.1 data.2.2.1) (.encoding leafIndex)
+      (Concrete.CacheView.encodingInput parameter leafIndex input) hchain
         hencoding
     simp at hdomain
   · rfl
 
 @[simp]
 theorem globalChainInputProbe?_leafInput
-    (parameter : PublicParameter) (epoch : Epoch)
+    (parameter : PublicParameter) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) :
     globalChainInputProbe? parameter
-      (Concrete.CacheView.leafInput parameter epoch endpoints) = none := by
+      (Concrete.CacheView.leafInput parameter leafIndex endpoints) = none := by
   unfold globalChainInputProbe?
   split
   · rename_i hexists
@@ -801,14 +801,14 @@ theorem relTriple_globalEncodingHash_run_filtered
     (hagrees : HashCachesAgreeOn
       (GlobalSigningComparableHashInput parameter) left right)
     (hfiltered : FilteredCacheExtensionRelation leftBase left right)
-    (epoch : Epoch) (message : Message) (randomness : Randomness) :
+    (leafIndex : LeafIndex) (message : Message) (randomness : Randomness) :
     RelTriple
       ((simulateQ randomOracle
-        (Concrete.encodingHash parameter epoch message randomness)).run left)
+        (Concrete.encodingHash parameter leafIndex message randomness)).run left)
       ((simulateQ randomOracle
-        (Concrete.encodingHash parameter epoch message randomness)).run right)
+        (Concrete.encodingHash parameter leafIndex message randomness)).run right)
       (GlobalFilteredResultRelation Digest parameter leftBase left right) := by
-  let input := Concrete.CacheView.encodingInput parameter epoch
+  let input := Concrete.CacheView.encodingInput parameter leafIndex
     (message, randomness)
   change RelTriple
     ((fun result : HashOutput × QueryCache HashSpec =>
@@ -819,7 +819,7 @@ theorem relTriple_globalEncodingHash_run_filtered
   apply relTriple_map
   apply relTriple_post_mono
     (relTriple_globalRawHash_run_filtered parameter leftBase left right hagrees
-      hfiltered input ⟨epoch, message, randomness, rfl⟩)
+      hfiltered input ⟨leafIndex, message, randomness, rfl⟩)
   intro leftResult rightResult hresult
   exact ⟨congrArg truncateHash hresult.output_eq, hresult.caches_agree,
     hresult.left_le, hresult.right_le, hresult.filtered⟩
@@ -857,28 +857,28 @@ theorem programmedGlobal_filteredKeygen_stateRelation
     _hrightReplay⟩ := hrel.1.1.2
   refine ⟨?_, ?_, le_rfl, rfl, ?_⟩
   · intro input hinput
-    obtain ⟨epoch, message, randomness, rfl⟩ := hinput
+    obtain ⟨leafIndex, message, randomness, rfl⟩ := hinput
     have hleftNone := Concrete.keygen_cache_none_encodingInput
-      left.keyResult hleftKey epoch (message, randomness)
+      left.keyResult hleftKey leafIndex (message, randomness)
     change left.cache (Concrete.CacheView.encodingInput
-      left.secretKey.parameter epoch (message, randomness)) = none at hleftNone
+      left.secretKey.parameter leafIndex (message, randomness)) = none at hleftNone
     have hnotMerkle : ¬ MerkleHashInput right.1.1.secretKey.parameter
-        (Concrete.CacheView.encodingInput left.secretKey.parameter epoch
+        (Concrete.CacheView.encodingInput left.secretKey.parameter leafIndex
           (message, randomness)) := by
       rintro ⟨level, node, hmerkle⟩
       have hmerkleCanonical : AtHashAddress
           right.1.1.secretKey.parameter (.merkle level node)
-          (Concrete.CacheView.encodingInput right.1.1.secretKey.parameter epoch
+          (Concrete.CacheView.encodingInput right.1.1.secretKey.parameter leafIndex
             (message, randomness)) := by
         simpa only [hparameter] using hmerkle
       have hencoding : AtHashAddress right.1.1.secretKey.parameter
-          (.encoding epoch)
-          (Concrete.CacheView.encodingInput right.1.1.secretKey.parameter epoch
+          (.encoding leafIndex)
+          (Concrete.CacheView.encodingInput right.1.1.secretKey.parameter leafIndex
             (message, randomness)) := by
         simp [Concrete.CacheView.encodingInput]
       have hdomain := atHashAddress_unique right.1.1.secretKey.parameter
-        (.merkle level node) (.encoding epoch)
-        (Concrete.CacheView.encodingInput right.1.1.secretKey.parameter epoch
+        (.merkle level node) (.encoding leafIndex)
+        (Concrete.CacheView.encodingInput right.1.1.secretKey.parameter leafIndex
           (message, randomness)) hmerkleCanonical hencoding
       simp at hdomain
     simpa [globalFilteredCausalKeygenState, hnotMerkle] using hleftNone
@@ -969,28 +969,28 @@ theorem Concrete.keygen_signWithEncoding_eq_base
     (hstable : TreeCacheStable keyResult.1.2.parameter
       keyResult.1.2.chainStart keyResult.2)
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (randomness : Randomness) (encoding : Encoding) :
+    (leafIndex : LeafIndex) (randomness : Randomness) (encoding : Encoding) :
     Concrete.CacheReplay.signWithEncoding largerCache keyResult.1.2
-        epoch randomness encoding =
+        leafIndex randomness encoding =
       Concrete.CacheReplay.signWithEncoding keyResult.2 keyResult.1.2
-        epoch randomness encoding := by
+        leafIndex randomness encoding := by
   unfold Concrete.CacheReplay.signWithEncoding
   congr 1
   · funext chain
     calc
       Concrete.CacheReplay.signedChainValues largerCache keyResult.1.2
-          epoch encoding chain =
+          leafIndex encoding chain =
         keygenChainValueTable keyResult.2 keyResult.1.2 chain
-          (epoch, encoding chain) :=
+          (leafIndex, encoding chain) :=
         Concrete.CacheReplay.signWithEncoding_chainValue_eq_keygenChainValueTable
-          keyResult hkeyResult largerCache hle epoch randomness encoding chain
+          keyResult hkeyResult largerCache hle leafIndex randomness encoding chain
       _ = Concrete.CacheReplay.signedChainValues keyResult.2 keyResult.1.2
-          epoch encoding chain :=
+          leafIndex encoding chain :=
         (Concrete.CacheReplay.signWithEncoding_chainValue_eq_keygenChainValueTable
-          keyResult hkeyResult keyResult.2 le_rfl epoch randomness encoding
+          keyResult hkeyResult keyResult.2 le_rfl leafIndex randomness encoding
             chain).symm
   · exact (TreeCacheStable.authenticationPath_eq keyResult.1.2 keyResult.2
-      hstable largerCache hle epoch).symm
+      hstable largerCache hle leafIndex).symm
 
 noncomputable def globalFilteredCausalSigningAttempt
     (keyView : ProgrammedGlobalChainKeygenView)
@@ -1001,7 +1001,7 @@ noncomputable def globalFilteredCausalSigningAttempt
     Concrete.signingRandomness
   let encoded ← RevealProbeOracleSimulation.liftProbComp
     ((simulateQ randomOracle
-      (Concrete.encodingHash keyView.secretKey.parameter request.epoch
+      (Concrete.encodingHash keyView.secretKey.parameter request.leafIndex
         request.message randomness)).run state.cache)
   let encodedState := { state with cache := encoded.2 }
   match TargetSum.decodeDigest encoded.1 with
@@ -1009,7 +1009,7 @@ noncomputable def globalFilteredCausalSigningAttempt
   | some encoding => do
       let result ← (revealGlobalSignatureChains request encoding allChains
         (Concrete.CacheReplay.signWithEncoding keyView.cache keyView.secretKey
-          request.epoch randomness encoding)).run encodedState
+          request.leafIndex randomness encoding)).run encodedState
       pure (some result.1, result.2)
 
 noncomputable def globalFilteredCausalSignBoundedAttempts : Nat →
@@ -1107,7 +1107,7 @@ theorem relTriple_programmed_globalFilteredCausalSigningAttempt
     RelTriple
       ((simulateQ romImpl
         (Concrete.sign left.secretKey
-          request.epoch request.message)).run leftCache)
+          request.leafIndex request.message)).run leftCache)
       ((simulateQ (RevealProbeOracleSimulation.eagerTraceImpl right.1.2)
         (globalFilteredCausalSigningAttempt right.1.1 request
           rightState)).run)
@@ -1145,7 +1145,7 @@ theorem relTriple_programmed_globalFilteredCausalSigningAttempt
   apply relTriple_bind
     (relTriple_globalEncodingHash_run_filtered
       left.secretKey.parameter left.cache leftCache rightState.cache
-        hstate.1 hstate.2.1 request.epoch request.message leftRandomness)
+        hstate.1 hstate.2.1 request.leafIndex request.message leftRandomness)
   intro leftEncoded rightEncoded hencoded
   have hdigestEq : leftEncoded.1 = rightEncoded.1 := hencoded.output_eq
   rw [← hdigestEq]
@@ -1163,15 +1163,15 @@ theorem relTriple_programmed_globalFilteredCausalSigningAttempt
   | some encoding =>
       have hleftRun :
           (simulateQ randomOracle
-            (Concrete.signWithEncoding left.secretKey request.epoch
+            (Concrete.signWithEncoding left.secretKey request.leafIndex
               leftRandomness encoding)).run leftEncoded.2 =
             pure (Concrete.CacheReplay.signWithEncoding leftEncoded.2
-              left.secretKey request.epoch leftRandomness encoding,
+              left.secretKey request.leafIndex leftRandomness encoding,
                 leftEncoded.2) := by
         simpa [ProgrammedGlobalChainKeygenView.keyResult] using
           (Concrete.keygen_signWithEncoding_run_eq_pure left.keyResult hleftKey
             hrel.1.toStable.2.1 leftEncoded.2
-            (hstate.2.2.1.trans hencoded.left_le) request.epoch
+            (hstate.2.2.1.trans hencoded.left_le) request.leafIndex
               leftRandomness encoding)
       rw [simulateQ_bind, StateT.run_bind, hleftRun]
       simp only [pure_bind, Function.comp_apply, simulateQ_pure,
@@ -1185,11 +1185,11 @@ theorem relTriple_programmed_globalFilteredCausalSigningAttempt
       let encodedState : GlobalCausalHashState :=
         { rightState with cache := rightEncoded.2 }
       let rightSignature := Concrete.CacheReplay.signWithEncoding
-        right.1.1.cache right.1.1.secretKey request.epoch leftRandomness
+        right.1.1.cache right.1.1.secretKey request.leafIndex leftRandomness
           encoding
       have hleftStable := Concrete.keygen_signWithEncoding_eq_base
         left.keyResult hleftKey hrel.1.toStable.2.1 leftEncoded.2
-          (hstate.2.2.1.trans hencoded.left_le) request.epoch
+          (hstate.2.2.1.trans hencoded.left_le) request.leafIndex
             leftRandomness encoding
       have hbase := keygenViews_signWithEncoding_eq_globalReveal
         left right.1 hrel.1.toStable hleftSupport hrightSupport left.cache
@@ -1197,7 +1197,7 @@ theorem relTriple_programmed_globalFilteredCausalSigningAttempt
             encodedState
       have hsignature :
           Concrete.CacheReplay.signWithEncoding leftEncoded.2 left.secretKey
-              request.epoch leftRandomness encoding =
+              request.leafIndex leftRandomness encoding =
             (globalSignatureRevealResult right.1.2 request encoding allChains
               rightSignature encodedState).1 := hleftStable.trans hbase
       have hcachesFinal : HashCachesAgreeOn
@@ -1241,7 +1241,7 @@ theorem relTriple_programmed_globalFilteredCausalSignBoundedAttempts
     RelTriple
       ((simulateQ romImpl
         (Concrete.signBoundedAttempts attempts left.secretKey
-          request.epoch request.message)).run leftCache)
+          request.leafIndex request.message)).run leftCache)
       ((simulateQ (RevealProbeOracleSimulation.eagerTraceImpl right.1.2)
         (globalFilteredCausalSignBoundedAttempts attempts right.1.1 request
           rightState)).run)
@@ -1255,7 +1255,7 @@ theorem relTriple_programmed_globalFilteredCausalSignBoundedAttempts
       exact ⟨rfl, hstate⟩
   | succ attempts ih =>
       rw [Concrete.signBoundedAttempts_run_succ_eq_sign_bind attempts
-        left.publicKey left.secretKey request.epoch request.message leftCache]
+        left.publicKey left.secretKey request.leafIndex request.message leftCache]
       rw [simulate_eagerTrace_globalFilteredCausalSignBoundedAttempts_succ]
       apply relTriple_bind
         (relTriple_programmed_globalFilteredCausalSigningAttempt left right
@@ -1298,7 +1298,7 @@ theorem relTriple_programmed_globalFilteredCausalSigningQuery
       ((simulateQ romImpl
         (Concrete.scheme.sign
           (Concrete.materializePrecomputation left.cache left.secretKey)
-          request.epoch request.message)).run leftCache)
+          request.leafIndex request.message)).run leftCache)
       ((simulateQ (RevealProbeOracleSimulation.eagerTraceImpl right.1.2)
         (globalFilteredCausalSigningQuery right.1.1 request
           rightState)).run)
@@ -1309,7 +1309,7 @@ theorem relTriple_programmed_globalFilteredCausalSigningQuery
   apply relTriple_of_evalDist_eq_left
     (Concrete.evalDist_precomputedCappedSign_materialized_eq_cappedSign
       left.keyResult hleftKey hrel.1.2.1 leftCache hstate.2.2.1
-        request.epoch request.message)
+        request.leafIndex request.message)
   rw [Concrete.cappedSign_eq]
   exact relTriple_programmed_globalFilteredCausalSignBoundedAttempts
     signingAttemptLimit left right hrel hleftSupport hrightSupport leftCache
@@ -1325,7 +1325,7 @@ theorem globalChainTableEdgeInput_not_signingComparable
     (edge : GlobalChainEdgeIndex) :
     ¬ GlobalSigningComparableHashInput parameter
       (globalChainTableEdgeInput parameter table edge) := by
-  rintro ⟨epoch, message, randomness, hencoding⟩
+  rintro ⟨leafIndex, message, randomness, hencoding⟩
   have hprobe : globalChainInputProbe? parameter
       (Concrete.CacheView.chainInput parameter edge.2.1 edge.1 edge.2.2
         (table (edge.1, edge.2.1, chainStepDigit edge.2.2))) =

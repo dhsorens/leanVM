@@ -8,8 +8,8 @@ variable {Index : Type} [Fintype Index] [DecidableEq Index]
 
 inductive Query (Index : Type) where
   | uniform (n : Nat)
-  | encodingQuery (epoch : Epoch)
-  | encodingSignAttempt (epoch : Epoch)
+  | encodingQuery (leafIndex : LeafIndex)
+  | encodingSignAttempt (leafIndex : LeafIndex)
   | probe (index : Index) (target : Digest)
   | reveal (index : Index)
 deriving DecidableEq
@@ -26,13 +26,13 @@ def World (Index : Type) : OracleSpec (Query Index) :=
 def uniformQuery (n : Nat) : OracleComp (World Index) (Fin (n + 1)) :=
   liftM ((World Index).query (.uniform n))
 
-def encodingQuery (epoch : Epoch) :
+def encodingQuery (leafIndex : LeafIndex) :
     OracleComp (World Index) HashOutput :=
-  liftM ((World Index).query (.encodingQuery epoch))
+  liftM ((World Index).query (.encodingQuery leafIndex))
 
-def encodingSignAttemptQuery (epoch : Epoch) :
+def encodingSignAttemptQuery (leafIndex : LeafIndex) :
     OracleComp (World Index) HashOutput :=
-  liftM ((World Index).query (.encodingSignAttempt epoch))
+  liftM ((World Index).query (.encodingSignAttempt leafIndex))
 
 def probeQuery (index : Index) (target : Digest) :
     OracleComp (World Index) Unit :=

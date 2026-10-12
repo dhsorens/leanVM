@@ -65,16 +65,16 @@ noncomputable def hazardEnforcementImpl :
     | .uniform n => do
         let output ← uniformQuery n
         pure (output, fuel)
-    | .encodingQuery epoch =>
+    | .encodingQuery leafIndex =>
         match fuel with
         | 0 => do
             let output ← liftProbComp uniformHashOutput
             pure (output, 0)
         | remaining + 1 => do
-            let output ← encodingQuery epoch
+            let output ← encodingQuery leafIndex
             pure (output, remaining)
-    | .encodingSignAttempt epoch => do
-        let output ← encodingSignAttemptQuery epoch
+    | .encodingSignAttempt leafIndex => do
+        let output ← encodingSignAttemptQuery leafIndex
         pure (output, fuel)
     | .probe index target =>
         match fuel with
@@ -127,7 +127,7 @@ theorem simulate_hazardEnforcementImpl_run_isHazardQueryBoundP
           · simp [IsHazardQuery]
           · intro output
             simpa [IsHazardQuery] using ih output fuel
-      | encodingQuery epoch =>
+      | encodingQuery leafIndex =>
           cases fuel with
           | zero =>
               change (liftProbComp uniformHashOutput >>= fun output =>
@@ -138,7 +138,7 @@ theorem simulate_hazardEnforcementImpl_run_isHazardQueryBoundP
               intro output _
               exact ih output 0
           | succ remaining =>
-              change (encodingQuery epoch >>= fun output =>
+              change (encodingQuery leafIndex >>= fun output =>
                 (simulateQ hazardEnforcementImpl (next output)).run remaining)
                   |>.IsQueryBoundP IsHazardQuery (remaining + 1)
               rw [encodingQuery, OracleComp.isQueryBoundP_query_bind_iff]
@@ -146,8 +146,8 @@ theorem simulate_hazardEnforcementImpl_run_isHazardQueryBoundP
               · simp [IsHazardQuery]
               · intro output
                 simpa [IsHazardQuery] using ih output remaining
-      | encodingSignAttempt epoch =>
-          change (encodingSignAttemptQuery epoch >>= fun output =>
+      | encodingSignAttempt leafIndex =>
+          change (encodingSignAttemptQuery leafIndex >>= fun output =>
             (simulateQ hazardEnforcementImpl (next output)).run fuel)
               |>.IsQueryBoundP IsHazardQuery fuel
           rw [encodingSignAttemptQuery,
@@ -191,13 +191,13 @@ theorem enforceHazardBound_isHazardQueryBoundP
 
 def enforceHazardTrace : Nat → ActionTrace Index → ActionTrace Index
   | _, [] => []
-  | fuel, .encoding (.sign epoch output) :: trace =>
-      .encoding (.sign epoch output) :: enforceHazardTrace fuel trace
+  | fuel, .encoding (.sign leafIndex output) :: trace =>
+      .encoding (.sign leafIndex output) :: enforceHazardTrace fuel trace
   | fuel, .chain (.reveal index value) :: trace =>
       .chain (.reveal index value) :: enforceHazardTrace fuel trace
   | 0, .encoding (.query _ _) :: trace => enforceHazardTrace 0 trace
-  | fuel + 1, .encoding (.query epoch output) :: trace =>
-      .encoding (.query epoch output) :: enforceHazardTrace fuel trace
+  | fuel + 1, .encoding (.query leafIndex output) :: trace =>
+      .encoding (.query leafIndex output) :: enforceHazardTrace fuel trace
   | 0, .chain (.probe _ _) :: trace => enforceHazardTrace 0 trace
   | fuel + 1, .chain (.probe index target) :: trace =>
       .chain (.probe index target) :: enforceHazardTrace fuel trace
@@ -213,11 +213,11 @@ theorem enforceHazardTrace_eq_self_of_count_le
       cases action with
       | encoding action =>
           cases action with
-          | sign epoch output =>
+          | sign leafIndex output =>
               simp only [hazardCount] at hcount
               simp only [enforceHazardTrace, List.cons.injEq, true_and]
               exact ih fuel hcount
-          | query epoch output =>
+          | query leafIndex output =>
               cases fuel with
               | zero => simp [hazardCount] at hcount
               | succ fuel =>
@@ -250,9 +250,9 @@ theorem enforceHazardTrace_append
       cases action with
       | encoding action =>
           cases action with
-          | sign epoch output =>
+          | sign leafIndex output =>
               simp [hazardCount, enforceHazardTrace, ih]
-          | query epoch output =>
+          | query leafIndex output =>
               cases fuel with
               | zero => simp [hazardCount, enforceHazardTrace, ih]
               | succ fuel => simp [hazardCount, enforceHazardTrace, ih]
@@ -328,7 +328,7 @@ theorem simulate_eagerTrace_hazardEnforcementImpl_query
       simp [StateT.run, uniformQuery, eagerTraceImpl, eagerImpl,
         traceFragment, QueryImpl.withTraceAppend_apply, WriterT.run_tell,
         hazardCount, enforceHazardTrace]
-  | encodingQuery epoch =>
+  | encodingQuery leafIndex =>
       cases fuel with
       | zero =>
           simp [StateT.run, eagerTraceImpl, eagerImpl, traceFragment,
@@ -343,7 +343,7 @@ theorem simulate_eagerTrace_hazardEnforcementImpl_query
           simp [StateT.run, encodingQuery, eagerTraceImpl, eagerImpl,
             traceFragment, QueryImpl.withTraceAppend_apply, WriterT.run_tell,
             hazardCount, enforceHazardTrace]
-  | encodingSignAttempt epoch =>
+  | encodingSignAttempt leafIndex =>
       simp [StateT.run, encodingSignAttemptQuery, eagerTraceImpl,
         eagerImpl, traceFragment, QueryImpl.withTraceAppend_apply,
         WriterT.run_tell, hazardCount, enforceHazardTrace]

@@ -7,7 +7,7 @@ namespace XmssSecurity
 
 noncomputable def keygenChainTargetInput (secretKey : SecretKey)
     (cache : QueryCache HashSpec) (input : HashInput) : HashInput :=
-  if h : ∃ address : Epoch × ChainIndex × ChainStep, ∃ value,
+  if h : ∃ address : LeafIndex × ChainIndex × ChainStep, ∃ value,
       input = Concrete.CacheView.chainInput secretKey.parameter address.1
         address.2.1 address.2.2 value then
     let address := h.choose
@@ -19,13 +19,13 @@ noncomputable def keygenChainTargetInput (secretKey : SecretKey)
 
 @[simp]
 theorem keygenChainTargetInput_chainInput (secretKey : SecretKey)
-    (cache : QueryCache HashSpec) (epoch : Epoch) (chain : ChainIndex)
+    (cache : QueryCache HashSpec) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (value : Digest) :
     keygenChainTargetInput secretKey cache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step value) =
-      Concrete.CacheView.chainInput secretKey.parameter epoch chain step
-        (Wots.walk (Concrete.CacheView.chainStep cache secretKey.parameter epoch chain)
-          0 step.val (secretKey.chainStart epoch chain)) := by
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step value) =
+      Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step
+        (Wots.walk (Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain)
+          0 step.val (secretKey.chainStart leafIndex chain)) := by
   unfold keygenChainTargetInput
   split
   · rename_i h
@@ -33,12 +33,12 @@ theorem keygenChainTargetInput_chainInput (secretKey : SecretKey)
     have hdomain := domain_eq_of_tweakableHashInput_eq secretKey.parameter
       (hinput.trans rfl)
     simp only [HashDomain.chain.injEq] at hdomain
-    rcases hdomain with ⟨hepoch, hchain, hstep⟩
+    rcases hdomain with ⟨hleafIndex, hchain, hstep⟩
     dsimp only
-    rw [← hepoch, ← hchain, ← hstep]
+    rw [← hleafIndex, ← hchain, ← hstep]
   · rename_i h
     exfalso
-    exact h ⟨(epoch, chain, step), value, rfl⟩
+    exact h ⟨(leafIndex, chain, step), value, rfl⟩
 
 attribute [irreducible] keygenChainTargetInput
 

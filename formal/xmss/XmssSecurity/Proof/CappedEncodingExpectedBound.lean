@@ -7,12 +7,12 @@ namespace XmssSecurity.CappedEncodingMonitor
 
 def IsEncodingHashQuery (parameter : PublicParameter) :
     OracleWorld.Domain → Prop
-  | .inr input => (encodingInputEpoch? parameter input).isSome
+  | .inr input => (encodingInputLeafIndex? parameter input).isSome
   | _ => False
 
 theorem IsEncodingHashQuery_inr (parameter : PublicParameter) (input : HashInput) :
     IsEncodingHashQuery parameter (.inr input) =
-      (encodingInputEpoch? parameter input).isSome := rfl
+      (encodingInputLeafIndex? parameter input).isSome := rfl
 
 noncomputable instance (parameter : PublicParameter) :
     DecidablePred (IsEncodingHashQuery parameter) :=

@@ -163,7 +163,7 @@ noncomputable def revealGlobalSignatureChains
   | [], signature => pure signature
   | chain :: chains, signature => fun state => do
       let index : GlobalChainValueIndex :=
-        (chain, request.epoch, encoding chain)
+        (chain, request.leafIndex, encoding chain)
       let value ← RevealProbeOracleSimulation.revealQuery index
       (revealGlobalSignatureChains request encoding chains
         (replaceSignatureChainValue signature chain value)).run
@@ -177,7 +177,7 @@ def globalSignatureRevealResult
   | [], signature, state => (signature, state)
   | chain :: chains, signature, state =>
       let index : GlobalChainValueIndex :=
-        (chain, request.epoch, encoding chain)
+        (chain, request.leafIndex, encoding chain)
       globalSignatureRevealResult table request encoding chains
         (replaceSignatureChainValue signature chain (table index))
         (state.recordReveal index (table index))
@@ -190,7 +190,7 @@ def globalSignatureRevealTrace
   | [] => []
   | chain :: chains =>
       let index : GlobalChainValueIndex :=
-        (chain, request.epoch, encoding chain)
+        (chain, request.leafIndex, encoding chain)
       .reveal index (table index) ::
         globalSignatureRevealTrace table request encoding chains
 
@@ -213,11 +213,11 @@ theorem simulate_eagerTrace_revealGlobalSignatureChains
       rw [revealGlobalSignatureChains]
       change (simulateQ (RevealProbeOracleSimulation.eagerTraceImpl table) (do
           let value ← RevealProbeOracleSimulation.revealQuery
-            (chain, request.epoch, encoding chain)
+            (chain, request.leafIndex, encoding chain)
           (revealGlobalSignatureChains request encoding chains
             (replaceSignatureChainValue signature chain value)).run
               (state.recordReveal
-                (chain, request.epoch, encoding chain) value))).run = _
+                (chain, request.leafIndex, encoding chain) value))).run = _
       rw [simulateQ_bind, WriterT.run_bind',
         RevealProbeOracleSimulation.simulate_eagerTrace_revealQuery]
       simp only [pure_bind]
@@ -239,7 +239,7 @@ theorem globalSignatureRevealResult_chainValue_of_not_mem
       rw [globalSignatureRevealResult]
       rw [ih _ _ hnotmem.2]
       exact replaceSignatureChainValue_other signature chain candidate
-        (table (chain, request.epoch, encoding chain))
+        (table (chain, request.leafIndex, encoding chain))
         hnotmem.1
 
 theorem globalSignatureRevealResult_chainValue_of_mem
@@ -250,7 +250,7 @@ theorem globalSignatureRevealResult_chainValue_of_mem
     (hnodup : chains.Nodup) (hmem : candidate ∈ chains) :
     (globalSignatureRevealResult table request encoding chains signature
       state).1.chainValue candidate =
-        table (candidate, request.epoch, encoding candidate) := by
+        table (candidate, request.leafIndex, encoding candidate) := by
   induction chains generalizing signature state with
   | nil => simp at hmem
   | cons chain chains ih =>
@@ -272,7 +272,7 @@ theorem globalSignatureRevealResult_allChains_chainValue
     (chain : ChainIndex) :
     (globalSignatureRevealResult table request encoding allChains signature
       state).1.chainValue chain =
-        table (chain, request.epoch, encoding chain) := by
+        table (chain, request.leafIndex, encoding chain) := by
   apply globalSignatureRevealResult_chainValue_of_mem
   · exact allChains_nodup
   · simp [allChains]
@@ -297,7 +297,7 @@ theorem revealGlobalSignatureChains_run_isProbeQueryBoundP
   | cons chain chains ih =>
       rw [revealGlobalSignatureChains]
       let index : GlobalChainValueIndex :=
-        (chain, request.epoch, encoding chain)
+        (chain, request.leafIndex, encoding chain)
       apply OracleComp.isQueryBoundP_bind (n := 0) (m := 0)
         (RevealProbeOracleSimulation.revealQuery_isProbeQueryBoundP index 0)
       intro value _hvalue
@@ -451,10 +451,10 @@ theorem keygenViews_signWithEncoding_eq_globalReveal
     (request : SignRequest) (randomness : Randomness) (encoding : Encoding)
     (rightState : GlobalCausalHashState) :
     Concrete.CacheReplay.signWithEncoding leftCache left.secretKey
-        request.epoch randomness encoding =
+        request.leafIndex randomness encoding =
       (globalSignatureRevealResult right.2 request encoding allChains
         (Concrete.CacheReplay.signWithEncoding rightCache right.1.secretKey
-          request.epoch randomness encoding) rightState).1 := by
+          request.leafIndex randomness encoding) rightState).1 := by
   have hleftKey := trajectoryProgrammedGlobalChainKeygen_support_keyResult
     left hleftSupport
   have hrightKey := trajectoryProgrammedGlobalChainKeygen_support_keyResult
@@ -475,44 +475,44 @@ theorem keygenViews_signWithEncoding_eq_globalReveal
     rw [globalSignatureRevealResult_allChains_chainValue]
     have hchain :=
       Concrete.CacheReplay.signWithEncoding_chainValue_eq_keygenChainValueTable
-        left.keyResult hleftKey leftCache hleftLe request.epoch randomness
+        left.keyResult hleftKey leftCache hleftLe request.leafIndex randomness
           encoding chain
     rw [show (Concrete.CacheReplay.signWithEncoding leftCache left.secretKey
-        request.epoch randomness encoding).chainValue chain =
+        request.leafIndex randomness encoding).chainValue chain =
       keygenChainValueTable left.cache left.secretKey chain
-        (request.epoch, encoding chain) by
+        (request.leafIndex, encoding chain) by
           simpa [ProgrammedGlobalChainKeygenView.keyResult] using hchain]
     change globalKeygenChainValueTable left.cache left.secretKey
-      (chain, request.epoch, encoding chain) = _
+      (chain, request.leafIndex, encoding chain) = _
     rw [trajectoryProgrammedGlobalChainKeygen_support_table left hleftSupport,
       hrel.1.1]
   · funext level
     calc
       (Concrete.CacheReplay.signWithEncoding leftCache left.secretKey
-          request.epoch randomness encoding).authPath level =
+          request.leafIndex randomness encoding).authPath level =
         Concrete.CacheReplay.authenticationPath left.cache left.secretKey
-          request.epoch level := by
+          request.leafIndex level := by
             rw [Concrete.CacheReplay.signWithEncoding]
             exact congrFun (hrel.2.1.authenticationPath_eq left.secretKey
-              left.cache leftCache hleftLe request.epoch).symm level
+              left.cache leftCache hleftLe request.leafIndex).symm level
       _ = Concrete.CacheReplay.authenticationPath right.1.cache
-          right.1.secretKey request.epoch level :=
-            congrFun (hrel.1.2.2 request.epoch) level
+          right.1.secretKey request.leafIndex level :=
+            congrFun (hrel.1.2.2 request.leafIndex) level
       _ = (globalSignatureRevealResult right.2 request encoding allChains
           (Concrete.CacheReplay.signWithEncoding rightCache right.1.secretKey
-            request.epoch randomness encoding) rightState).1.authPath level := by
+            request.leafIndex randomness encoding) rightState).1.authPath level := by
         rw [globalSignatureRevealResult_authPath]
         change Concrete.CacheReplay.authenticationPath right.1.cache
-            right.1.secretKey request.epoch level =
+            right.1.secretKey request.leafIndex level =
           Concrete.CacheReplay.authenticationPath rightCache
-            right.1.secretKey request.epoch level
+            right.1.secretKey request.leafIndex level
         exact congrFun (hrel.2.2.authenticationPath_eq right.1.secretKey
-          right.1.cache rightCache hrightLe request.epoch) level
+          right.1.cache rightCache hrightLe request.leafIndex) level
 
 def GlobalSigningComparableHashInput
     (parameter : PublicParameter) (input : HashInput) : Prop :=
-  ∃ epoch message randomness,
-    input = Concrete.CacheView.encodingInput parameter epoch
+  ∃ leafIndex message randomness,
+    input = Concrete.CacheView.encodingInput parameter leafIndex
       (message, randomness)
 
 def GlobalSigningRevealsAgree
@@ -562,11 +562,11 @@ theorem GlobalSigningRevealsAgree.globalSignatureRevealResult
         (XmssSecurity.CappedChain.globalSignatureRevealResult table request
           encoding chains
           (replaceSignatureChainValue signature chain
-            (table (chain, request.epoch, encoding chain)))
-          (state.recordReveal (chain, request.epoch, encoding chain)
-            (table (chain, request.epoch, encoding chain)))).2
+            (table (chain, request.leafIndex, encoding chain)))
+          (state.recordReveal (chain, request.leafIndex, encoding chain)
+            (table (chain, request.leafIndex, encoding chain)))).2
       apply ih
-      exact hagrees.recordReveal (chain, request.epoch, encoding chain)
+      exact hagrees.recordReveal (chain, request.leafIndex, encoding chain)
 
 
 
@@ -598,19 +598,19 @@ def ProgrammedGlobalChainKeygenFullCacheRelation
 
 
 theorem Concrete.CacheView.encodingInput_ne_leafInput
-    (parameter : PublicParameter) (encodingEpoch epoch : Epoch)
+    (parameter : PublicParameter) (encodingLeafIndex leafIndex : LeafIndex)
     (message : Message) (randomness : Randomness)
     (endpoints : ChainIndex → Digest) :
-    Concrete.CacheView.encodingInput parameter encodingEpoch
+    Concrete.CacheView.encodingInput parameter encodingLeafIndex
         (message, randomness) ≠
-      Concrete.CacheView.leafInput parameter epoch endpoints := by
+      Concrete.CacheView.leafInput parameter leafIndex endpoints := by
   intro heq
   have hdomain := domain_eq_of_tweakableHashInput_eq parameter heq
   simp at hdomain
 
 def GlobalTreeSigningCacheRelation
     (parameter : PublicParameter)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec) : Prop :=
   ∃ leftEndpoints rightEndpoints,
     GlobalTreeCacheCorrespondence parameter leftEndpoints rightEndpoints

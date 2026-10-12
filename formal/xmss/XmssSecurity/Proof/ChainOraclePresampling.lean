@@ -13,20 +13,20 @@ open OracleComp.ProgramLogic.Relational
 namespace XmssSecurity.Concrete.CacheReplay
 
 theorem chainWalk_query_cached_in_largerCache
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position steps : Nat) (value : Digest) (offset : Nat)
     (hoffset : offset < steps)
     (hposition : position + offset < chainLength - 1)
     (initialCache resultCache largerCache : QueryCache HashSpec) (digest : Digest)
     (hmem : (digest, resultCache) ∈ support
       ((simulateQ randomOracle
-        (Concrete.chainWalk parameter epoch chain position steps value :
+        (Concrete.chainWalk parameter leafIndex chain position steps value :
           OracleComp HashSpec Digest)).run initialCache))
     (hle : resultCache ≤ largerCache) :
     ∃ output, largerCache
-      (Concrete.CacheView.chainInput parameter epoch chain
+      (Concrete.CacheView.chainInput parameter leafIndex chain
         ⟨position + offset, hposition⟩
-        (Wots.walk (Concrete.CacheView.chainStep largerCache parameter epoch chain)
+        (Wots.walk (Concrete.CacheView.chainStep largerCache parameter leafIndex chain)
           position offset value)) = some output := by
   induction steps generalizing offset initialCache resultCache digest with
   | zero => omega
@@ -37,7 +37,7 @@ theorem chainWalk_query_cached_in_largerCache
       have hmiddleLe : middleCache ≤ resultCache :=
         randomOracle_cache_le
           (if hlast : position + steps < chainLength - 1 then
-            Concrete.chainHash parameter epoch chain ⟨position + steps, hlast⟩ previous
+            Concrete.chainHash parameter leafIndex chain ⟨position + steps, hlast⟩ previous
           else pure 0 : OracleComp HashSpec Digest)
           middleCache (digest, resultCache) hrest
       by_cases hbefore : offset < steps
@@ -47,10 +47,10 @@ theorem chainWalk_query_cached_in_largerCache
         subst offset
         simp only [hposition, ↓reduceDIte] at hrest
         obtain ⟨output, hcached, _⟩ := tweakableHash_query_cached parameter
-          (.chain epoch chain ⟨position + steps, hposition⟩)
+          (.chain leafIndex chain ⟨position + steps, hposition⟩)
           (Concrete.digestBytes previous) middleCache resultCache digest hrest
         have hprevious := eval_answerFn_largerCache_eq_of_mem_support
-          (Concrete.chainWalk parameter epoch chain position steps value :
+          (Concrete.chainWalk parameter leafIndex chain position steps value :
             OracleComp HashSpec Digest)
           initialCache middleCache largerCache previous hprefix (hmiddleLe.trans hle)
         rw [eval_chainWalk] at hprevious
@@ -91,27 +91,27 @@ theorem sequenceFin_component_support_in_largerCache {n : Nat}
           largerCache tail htail hle
 
 theorem oneTimePublicKey_chain_query_cached_in_largerCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (initialCache resultCache largerCache : QueryCache HashSpec)
     (endpoints : ChainIndex → Digest)
     (hmem : (endpoints, resultCache) ∈ support
       ((simulateQ randomOracle
-        (Concrete.oneTimePublicKey parameter secret epoch :
+        (Concrete.oneTimePublicKey parameter secret leafIndex :
           OracleComp HashSpec (ChainIndex → Digest))).run initialCache))
     (hle : resultCache ≤ largerCache) :
     ∃ output, largerCache
-      (Concrete.CacheView.chainInput parameter epoch chain step
-        (Wots.walk (Concrete.CacheView.chainStep largerCache parameter epoch chain)
-          0 step.val (secret epoch chain))) = some output := by
+      (Concrete.CacheView.chainInput parameter leafIndex chain step
+        (Wots.walk (Concrete.CacheView.chainStep largerCache parameter leafIndex chain)
+          0 step.val (secret leafIndex chain))) = some output := by
   unfold Concrete.oneTimePublicKey at hmem
   obtain ⟨beforeCache, afterCache, value, hchain, hafterLe⟩ :=
     sequenceFin_component_support_in_largerCache
-      (fun index => Concrete.chainWalk parameter epoch index 0 (chainLength - 1)
-        (secret epoch index) : ChainIndex → OracleComp HashSpec Digest)
+      (fun index => Concrete.chainWalk parameter leafIndex index 0 (chainLength - 1)
+        (secret leafIndex index) : ChainIndex → OracleComp HashSpec Digest)
       chain initialCache resultCache largerCache endpoints hmem hle
-  obtain ⟨output, hcached⟩ := chainWalk_query_cached_in_largerCache parameter epoch
-    chain 0 (chainLength - 1) (secret epoch chain) step.val step.isLt
+  obtain ⟨output, hcached⟩ := chainWalk_query_cached_in_largerCache parameter leafIndex
+    chain 0 (chainLength - 1) (secret leafIndex chain) step.val step.isLt
     (by simpa only [zero_add] using step.isLt) beforeCache afterCache largerCache value
     hchain hafterLe
   have hstepEq : (⟨0 + step.val, by simpa only [zero_add] using step.isLt⟩ : ChainStep) =
@@ -122,33 +122,33 @@ theorem oneTimePublicKey_chain_query_cached_in_largerCache
   exact ⟨output, hcached⟩
 
 theorem leafAt_chain_query_cached_in_largerCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (initialCache resultCache largerCache : QueryCache HashSpec) (digest : Digest)
     (hmem : (digest, resultCache) ∈ support
       ((simulateQ randomOracle
-        (Concrete.leafAt parameter secret epoch : OracleComp HashSpec Digest)).run
+        (Concrete.leafAt parameter secret leafIndex : OracleComp HashSpec Digest)).run
           initialCache))
     (hle : resultCache ≤ largerCache) :
     ∃ output, largerCache
-      (Concrete.CacheView.chainInput parameter epoch chain step
-        (Wots.walk (Concrete.CacheView.chainStep largerCache parameter epoch chain)
-          0 step.val (secret epoch chain))) = some output := by
+      (Concrete.CacheView.chainInput parameter leafIndex chain step
+        (Wots.walk (Concrete.CacheView.chainStep largerCache parameter leafIndex chain)
+          0 step.val (secret leafIndex chain))) = some output := by
   unfold Concrete.leafAt at hmem
   rw [simulateQ_bind, StateT.run_bind, mem_support_bind_iff] at hmem
   obtain ⟨⟨endpoints, middleCache⟩, honeTime, hleaf⟩ := hmem
   have hmiddleLe : middleCache ≤ resultCache :=
-    randomOracle_cache_le (Concrete.leafHash parameter epoch endpoints :
+    randomOracle_cache_le (Concrete.leafHash parameter leafIndex endpoints :
       OracleComp HashSpec Digest) middleCache (digest, resultCache) hleaf
-  exact oneTimePublicKey_chain_query_cached_in_largerCache parameter secret epoch chain
+  exact oneTimePublicKey_chain_query_cached_in_largerCache parameter secret leafIndex chain
     step initialCache middleCache largerCache endpoints honeTime (hmiddleLe.trans hle)
 
 theorem treeNode_chain_query_cached_in_largerCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (levels : Nat) (node : MerkleNode)
     (hlevels : levels ≤ treeHeight) (hvalid : TreeSubtreeValid levels node)
-    (hcover : TreeCovers levels node epoch)
+    (hcover : TreeCovers levels node leafIndex)
     (initialCache resultCache largerCache : QueryCache HashSpec) (digest : Digest)
     (hmem : (digest, resultCache) ∈ support
       ((simulateQ randomOracle
@@ -156,15 +156,15 @@ theorem treeNode_chain_query_cached_in_largerCache
           OracleComp HashSpec Digest)).run initialCache))
     (hle : resultCache ≤ largerCache) :
     ∃ output, largerCache
-      (Concrete.CacheView.chainInput parameter epoch chain step
-        (Wots.walk (Concrete.CacheView.chainStep largerCache parameter epoch chain)
-          0 step.val (secret epoch chain))) = some output := by
+      (Concrete.CacheView.chainInput parameter leafIndex chain step
+        (Wots.walk (Concrete.CacheView.chainStep largerCache parameter leafIndex chain)
+          0 step.val (secret leafIndex chain))) = some output := by
   induction levels generalizing node initialCache resultCache digest with
   | zero =>
-      have hnode : node = epoch := treeCovers_zero_iff node epoch |>.mp hcover
+      have hnode : node = leafIndex := treeCovers_zero_iff node leafIndex |>.mp hcover
       subst node
       rw [Concrete.treeNode_zero_eq] at hmem
-      exact leafAt_chain_query_cached_in_largerCache parameter secret epoch chain step
+      exact leafAt_chain_query_cached_in_largerCache parameter secret leafIndex chain step
         initialCache resultCache largerCache digest hmem hle
   | succ levels ih =>
       have hlevel : levels < treeHeight := Nat.lt_of_succ_le hlevels
@@ -176,9 +176,9 @@ theorem treeNode_chain_query_cached_in_largerCache
       have hrestAll := hrest
       rw [simulateQ_bind, StateT.run_bind, mem_support_bind_iff] at hrest
       obtain ⟨⟨right, rightCache⟩, hright, hnode⟩ := hrest
-      have hpartition := treeCovers_children_sum levels node epoch hvalid
+      have hpartition := treeCovers_children_sum levels node leafIndex hvalid
       rw [if_pos hcover] at hpartition
-      by_cases hleftCover : TreeCovers levels (Concrete.childNode node false) epoch
+      by_cases hleftCover : TreeCovers levels (Concrete.childNode node false) leafIndex
       · have hleftLe : leftCache ≤ resultCache :=
           randomOracle_cache_le
             (do
@@ -190,7 +190,7 @@ theorem treeNode_chain_query_cached_in_largerCache
               simpa only [hlevel, ↓reduceDIte] using hrestAll)
         exact ih (Concrete.childNode node false) (Nat.le_of_succ_le hlevels)
           hleftValid hleftCover initialCache leftCache left hleft (hleftLe.trans hle)
-      · have hrightCover : TreeCovers levels (Concrete.childNode node true) epoch := by
+      · have hrightCover : TreeCovers levels (Concrete.childNode node true) leafIndex := by
           by_contra hrightCover
           simp only [hleftCover, hrightCover, if_false, zero_add] at hpartition
           omega
@@ -204,18 +204,18 @@ theorem treeNode_chain_query_cached_in_largerCache
           hrightValid hrightCover leftCache rightCache right hright (hrightLe.trans hle)
 
 theorem rootTree_chain_query_cached
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (root : Digest) (cache : QueryCache HashSpec)
     (hmem : (root, cache) ∈ support
       ((simulateQ randomOracle
         (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
           OracleComp HashSpec Digest)).run ∅)) :
     ∃ output, cache
-      (Concrete.CacheView.chainInput parameter epoch chain step
-        (Wots.walk (Concrete.CacheView.chainStep cache parameter epoch chain)
-          0 step.val (secret epoch chain))) = some output := by
-  apply treeNode_chain_query_cached_in_largerCache parameter secret epoch chain step
+      (Concrete.CacheView.chainInput parameter leafIndex chain step
+        (Wots.walk (Concrete.CacheView.chainStep cache parameter leafIndex chain)
+          0 step.val (secret leafIndex chain))) = some output := by
+  apply treeNode_chain_query_cached_in_largerCache parameter secret leafIndex chain step
     treeHeight Concrete.rootNode le_rfl
   · unfold TreeSubtreeValid Concrete.rootNode lifetime
     norm_num
@@ -234,43 +234,43 @@ theorem Concrete.keygen_cache_has_chainInput
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep) :
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep) :
     ∃ output, keyResult.2
-      (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain step
+      (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain step
         (Wots.walk
-          (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-          0 step.val (keyResult.1.2.chainStart epoch chain))) = some output := by
+          (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+          0 step.val (keyResult.1.2.chainStart leafIndex chain))) = some output := by
   obtain ⟨parameter, secret, root, hkey, hroot⟩ :=
     Concrete.keygen_support_rootTree keyResult hmem
   rw [hkey]
-  exact Concrete.CacheReplay.rootTree_chain_query_cached parameter secret epoch chain step
+  exact Concrete.CacheReplay.rootTree_chain_query_cached parameter secret leafIndex chain step
     root keyResult.2 hroot
 
 theorem Concrete.keygen_cache_chainInput_eq_none_of_ne
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep) (value : Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep) (value : Digest)
     (hne : value ≠ Wots.walk
-      (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-      0 step.val (keyResult.1.2.chainStart epoch chain)) :
+      (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+      0 step.val (keyResult.1.2.chainStart leafIndex chain)) :
     keyResult.2
-      (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain step value) = none := by
+      (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain step value) = none := by
   obtain ⟨honestOutput, hhonest⟩ :=
-    Concrete.keygen_cache_has_chainInput keyResult hmem epoch chain step
+    Concrete.keygen_cache_has_chainInput keyResult hmem leafIndex chain step
   cases hcandidate : keyResult.2
-      (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain step value) with
+      (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain step value) with
   | none => rfl
   | some candidateOutput =>
       exfalso
       apply hne
-      apply Concrete.CacheView.chainInput_injective keyResult.1.2.parameter epoch chain step
-      apply Concrete.keygen_cache_unique_chainAddress keyResult hmem epoch chain step
-        (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain step value)
-        (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain step
+      apply Concrete.CacheView.chainInput_injective keyResult.1.2.parameter leafIndex chain step
+      apply Concrete.keygen_cache_unique_chainAddress keyResult hmem leafIndex chain step
+        (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain step value)
+        (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain step
           (Wots.walk
-            (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-            0 step.val (keyResult.1.2.chainStart epoch chain)))
+            (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+            0 step.val (keyResult.1.2.chainStart leafIndex chain)))
         candidateOutput honestOutput
       · simp [Concrete.CacheView.chainInput]
       · simp [Concrete.CacheView.chainInput]
@@ -282,38 +282,38 @@ theorem Concrete.keygen_cache_has_chainValue_preimage
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
-    (epoch : Epoch) (chain : ChainIndex) (digit : Digit)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (digit : Digit)
     (hpositive : 0 < digit.val) :
     ∃ previous : ChainStep, ∃ output,
       previous.val + 1 = digit.val ∧
       keyResult.2
-        (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain previous
+        (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain previous
           (Wots.walk
-            (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-            0 previous.val (keyResult.1.2.chainStart epoch chain))) = some output ∧
+            (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+            0 previous.val (keyResult.1.2.chainStart leafIndex chain))) = some output ∧
       truncateHash output =
         Wots.signChain
-          (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-          digit (keyResult.1.2.chainStart epoch chain) := by
+          (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+          digit (keyResult.1.2.chainStart leafIndex chain) := by
   let previous : ChainStep := ⟨digit.val - 1, by
     have hdigit := digit.isLt
     omega⟩
   obtain ⟨output, hcached⟩ :=
-    Concrete.keygen_cache_has_chainInput keyResult hmem epoch chain previous
+    Concrete.keygen_cache_has_chainInput keyResult hmem leafIndex chain previous
   refine ⟨previous, output, by dsimp only [previous]; omega, hcached, ?_⟩
-  let step := Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain
+  let step := Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain
   calc
     truncateHash output = Concrete.CacheView.digestAt keyResult.2
-        (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain previous
+        (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain previous
           (Wots.walk step 0 previous.val
-            (keyResult.1.2.chainStart epoch chain))) :=
+            (keyResult.1.2.chainStart leafIndex chain))) :=
       (Concrete.CacheView.digestAt_eq_of_cache_eq_some hcached).symm
     _ = step previous.val
-        (Wots.walk step 0 previous.val (keyResult.1.2.chainStart epoch chain)) := by
+        (Wots.walk step 0 previous.val (keyResult.1.2.chainStart leafIndex chain)) := by
       symm
-      exact Concrete.CacheView.chainStep_eq keyResult.2 keyResult.1.2.parameter epoch chain
+      exact Concrete.CacheView.chainStep_eq keyResult.2 keyResult.1.2.parameter leafIndex chain
         previous.val _ previous.isLt
-    _ = Wots.signChain step digit (keyResult.1.2.chainStart epoch chain) := by
+    _ = Wots.signChain step digit (keyResult.1.2.chainStart leafIndex chain) := by
       unfold Wots.signChain
       rw [show digit.val = previous.val + 1 by dsimp only [previous]; omega]
       simp only [Wots.walk, zero_add]
@@ -323,21 +323,21 @@ theorem Concrete.keygen_chainWalk_eq_of_cache_le
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.keygen).run ∅))
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (chain : ChainIndex) (steps : Nat)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (steps : Nat)
     (hsteps : steps ≤ chainLength - 1) :
     Wots.walk
-        (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-        0 steps (keyResult.1.2.chainStart epoch chain) =
+        (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+        0 steps (keyResult.1.2.chainStart leafIndex chain) =
       Wots.walk
-        (Concrete.CacheView.chainStep largerCache keyResult.1.2.parameter epoch chain)
-        0 steps (keyResult.1.2.chainStart epoch chain) := by
+        (Concrete.CacheView.chainStep largerCache keyResult.1.2.parameter leafIndex chain)
+        0 steps (keyResult.1.2.chainStart leafIndex chain) := by
   induction steps with
   | zero => rfl
   | succ steps ih =>
       have hstep : steps < chainLength - 1 := by omega
       have ih' := ih (by omega)
       obtain ⟨output, hcached⟩ := Concrete.keygen_cache_has_chainInput keyResult hmem
-        epoch chain ⟨steps, hstep⟩
+        leafIndex chain ⟨steps, hstep⟩
       have hcachedLarger := hle hcached
       rw [ih'] at hcached hcachedLarger
       simp only [Wots.walk, zero_add]
@@ -352,7 +352,7 @@ end XmssSecurity
 
 namespace XmssSecurity
 
-abbrev ChainEdgeIndex := Epoch × ChainStep
+abbrev ChainEdgeIndex := LeafIndex × ChainStep
 
 def chainTableEdgeInput
     (parameter : PublicParameter) (chain : ChainIndex)
@@ -372,7 +372,7 @@ def chainTableEdgeTarget
 def ChainTableSeedsMatch
     (secretKey : SecretKey) (chain : ChainIndex)
     (table : ChainValueIndex → Digest) : Prop :=
-  ∀ epoch, secretKey.chainStart epoch chain = table (epoch, ⟨0, by simp [chainLength]⟩)
+  ∀ leafIndex, secretKey.chainStart leafIndex chain = table (leafIndex, ⟨0, by simp [chainLength]⟩)
 
 def ChainTableEdgesMatch
     (cache : QueryCache HashSpec) (parameter : PublicParameter)
@@ -395,41 +395,41 @@ noncomputable local instance presamplingSampleableChainEdges :
     SampleableType (ChainEdgeIndex → Digest) :=
   SampleableType.ofFintype (ChainEdgeIndex → Digest)
 
-abbrev FlatSecret := Epoch × ChainIndex → Digest
+abbrev FlatSecret := LeafIndex × ChainIndex → Digest
 
 noncomputable local instance presamplingSampleableFlatSecret :
     SampleableType FlatSecret :=
   SampleableType.ofFintype FlatSecret
 
 noncomputable local instance presamplingSampleableSecret :
-    SampleableType (Epoch → ChainIndex → Digest) :=
-  SampleableType.ofFintype (Epoch → ChainIndex → Digest)
+    SampleableType (LeafIndex → ChainIndex → Digest) :=
+  SampleableType.ofFintype (LeafIndex → ChainIndex → Digest)
 
 def unflattenSecret (table : FlatSecret) :
-    Epoch → ChainIndex → Digest := fun epoch chain => table (epoch, chain)
+    LeafIndex → ChainIndex → Digest := fun leafIndex chain => table (leafIndex, chain)
 
 def flatSecretEquiv :
-    (Epoch → ChainIndex → Digest) ≃ FlatSecret where
+    (LeafIndex → ChainIndex → Digest) ≃ FlatSecret where
   toFun secret index := secret index.1 index.2
   invFun := unflattenSecret
   left_inv secret := by
-    funext epoch chain
+    funext leafIndex chain
     rfl
   right_inv table := by
     funext index
     rfl
 
 noncomputable def extractFixedChainSeeds
-    (chain : ChainIndex) : List Epoch →
+    (chain : ChainIndex) : List LeafIndex →
       ProbComp (List Digest × FlatSecret)
   | [] => do
       let table ← $ᵗ FlatSecret
       return ([], table)
-  | epoch :: epochs => do
+  | leafIndex :: leafIndices => do
       let value ← $ᵗ Digest
-      let rest ← extractFixedChainSeeds chain epochs
+      let rest ← extractFixedChainSeeds chain leafIndices
       return (value :: rest.1,
-        Function.update rest.2 (epoch, chain) value)
+        Function.update rest.2 (leafIndex, chain) value)
 
 @[simp]
 theorem extractFixedChainSeeds_nil (chain : ChainIndex) :
@@ -438,56 +438,56 @@ theorem extractFixedChainSeeds_nil (chain : ChainIndex) :
       return ([], table) := rfl
 
 theorem extractFixedChainSeeds_cons
-    (chain : ChainIndex) (epoch : Epoch) (epochs : List Epoch) :
-    extractFixedChainSeeds chain (epoch :: epochs) = do
+    (chain : ChainIndex) (leafIndex : LeafIndex) (leafIndices : List LeafIndex) :
+    extractFixedChainSeeds chain (leafIndex :: leafIndices) = do
       let value ← $ᵗ Digest
-      let rest ← extractFixedChainSeeds chain epochs
+      let rest ← extractFixedChainSeeds chain leafIndices
       return (value :: rest.1,
-        Function.update rest.2 (epoch, chain) value) := rfl
+        Function.update rest.2 (leafIndex, chain) value) := rfl
 
-def fixedChainSeedView (chain : ChainIndex) (epochs : List Epoch)
+def fixedChainSeedView (chain : ChainIndex) (leafIndices : List LeafIndex)
     (table : FlatSecret) : List Digest × FlatSecret :=
-  (epochs.map (fun target => table (target, chain)), table)
+  (leafIndices.map (fun target => table (target, chain)), table)
 
 set_option maxHeartbeats 1600000 in
 set_option maxRecDepth 1000000 in
 /-- Exposing the selected chain's seed tape and patching it back into a uniform flat secret preserves the joint distribution of the tape read from that secret. -/
 theorem evalDist_extractFixedChainSeeds_eq_uniform
     (chain : ChainIndex) :
-    ∀ (epochs : List Epoch), epochs.Nodup →
-      𝒟[extractFixedChainSeeds chain epochs] =
-      𝒟[fixedChainSeedView chain epochs <$> ($ᵗ FlatSecret)] := by
-  intro epochs
-  induction epochs with
+    ∀ (leafIndices : List LeafIndex), leafIndices.Nodup →
+      𝒟[extractFixedChainSeeds chain leafIndices] =
+      𝒟[fixedChainSeedView chain leafIndices <$> ($ᵗ FlatSecret)] := by
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro _hnodup
       simp only [extractFixedChainSeeds_nil, map_eq_bind_pure_comp,
         bind_pure_comp]
       congr 2
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro hnodup
       obtain ⟨hnotMem, htailNodup⟩ := List.nodup_cons.mp hnodup
       have htailUpdate (table : FlatSecret) (value : Digest) :
-          epochs.map (fun target =>
-              Function.update table (epoch, chain) value (target, chain)) =
-            epochs.map (fun target => table (target, chain)) := by
+          leafIndices.map (fun target =>
+              Function.update table (leafIndex, chain) value (target, chain)) =
+            leafIndices.map (fun target => table (target, chain)) := by
         apply List.map_congr_left
         intro target htarget
         rw [Function.update_of_ne]
         intro heq
-        have htargetEpoch : target = epoch := congrArg Prod.fst heq
+        have htargetLeafIndex : target = leafIndex := congrArg Prod.fst heq
         subst target
         exact hnotMem htarget
       rw [extractFixedChainSeeds_cons]
       calc
         𝒟[$ᵗ Digest >>= fun value =>
-            extractFixedChainSeeds chain epochs >>= fun rest =>
+            extractFixedChainSeeds chain leafIndices >>= fun rest =>
               pure (value :: rest.1,
-                Function.update rest.2 (epoch, chain) value)] =
+                Function.update rest.2 (leafIndex, chain) value)] =
             𝒟[$ᵗ Digest >>= fun value =>
-              (fixedChainSeedView chain epochs <$> ($ᵗ FlatSecret)) >>=
+              (fixedChainSeedView chain leafIndices <$> ($ᵗ FlatSecret)) >>=
                   fun rest => pure (value :: rest.1,
-                    Function.update rest.2 (epoch, chain) value)] := by
+                    Function.update rest.2 (leafIndex, chain) value)] := by
           apply OracleComp.DeferredSampling.evalDist_bind_congr_left
           intro value
           conv_lhs => rw [evalDist_bind]
@@ -495,25 +495,25 @@ theorem evalDist_extractFixedChainSeeds_eq_uniform
           rw [ih htailNodup]
         _ = 𝒟[$ᵗ Digest >>= fun value =>
               $ᵗ FlatSecret >>= fun table =>
-                pure (value :: epochs.map (fun target => table (target, chain)),
-                  Function.update table (epoch, chain) value)] := by
+                pure (value :: leafIndices.map (fun target => table (target, chain)),
+                  Function.update table (leafIndex, chain) value)] := by
           simp [fixedChainSeedView]
         _ = 𝒟[$ᵗ Digest >>= fun value =>
               $ᵗ FlatSecret >>= fun table =>
                 pure ((fun updated : FlatSecret =>
-                  ((epoch :: epochs).map
+                  ((leafIndex :: leafIndices).map
                     (fun target => updated (target, chain)), updated))
-                  (Function.update table (epoch, chain) value))] := by
+                  (Function.update table (leafIndex, chain) value))] := by
           apply OracleComp.DeferredSampling.evalDist_bind_congr_left
           intro value
           apply OracleComp.DeferredSampling.evalDist_bind_congr_left
           intro table
           simp [htailUpdate table value]
-        _ = 𝒟[fixedChainSeedView chain (epoch :: epochs) <$>
+        _ = 𝒟[fixedChainSeedView chain (leafIndex :: leafIndices) <$>
               ($ᵗ FlatSecret)] :=
           OracleComp.evalDist_uniformSample_bind_update_map
-            (R := Digest) (epoch, chain)
-            (fixedChainSeedView chain (epoch :: epochs))
+            (R := Digest) (leafIndex, chain)
+            (fixedChainSeedView chain (leafIndex :: leafIndices))
 
 theorem evalDist_listOfFn_uniform_eq_drawList (count : Nat) :
     𝒟[List.ofFn <$> ($ᵗ (Fin count → Digest))] =
@@ -538,7 +538,7 @@ noncomputable def actualFixedChainKeygen
 
 noncomputable def explicitFixedChainKeygenFromSecret
     (parameter : PublicParameter) (chain : ChainIndex)
-    (secret : Epoch → ChainIndex → Digest) :
+    (secret : LeafIndex → ChainIndex → Digest) :
     ProbComp ProgrammedFixedChainKeygenView := do
   let rootResult ← (simulateQ randomOracle
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
@@ -613,7 +613,7 @@ theorem evalDist_unflatten_uniformFlatSecret_eq_sampleSecret :
       evalDist Concrete.sampleSecret := by
   unfold Concrete.sampleSecret
   exact evalDist_map_bijective_uniform_cross
-    (α := FlatSecret) (β := Epoch → ChainIndex → Digest)
+    (α := FlatSecret) (β := LeafIndex → ChainIndex → Digest)
     (fun table : FlatSecret => unflattenSecret table)
     flatSecretEquiv.symm.bijective
 
@@ -647,7 +647,7 @@ theorem evalDist_explicitFixedChainKeygen_eq_flat
 noncomputable def extractedExplicitFixedChainKeygen
     (chain : ChainIndex) : ProbComp ProgrammedFixedChainKeygenView := do
   let parameter ← Concrete.samplePublicParameter
-  let secretView ← extractFixedChainSeeds chain allEpochs
+  let secretView ← extractFixedChainSeeds chain allLeafIndices
   explicitFixedChainKeygenFromSecret parameter chain
     (unflattenSecret secretView.2)
 
@@ -660,16 +660,16 @@ theorem evalDist_flatExplicitFixedChainKeygen_eq_extracted
   intro parameter
   symm
   calc
-    evalDist (extractFixedChainSeeds chain allEpochs >>= fun secretView =>
+    evalDist (extractFixedChainSeeds chain allLeafIndices >>= fun secretView =>
         explicitFixedChainKeygenFromSecret parameter chain
           (unflattenSecret secretView.2)) =
-        evalDist ((fixedChainSeedView chain allEpochs <$>
+        evalDist ((fixedChainSeedView chain allLeafIndices <$>
           ($ᵗ FlatSecret)) >>= fun secretView =>
             explicitFixedChainKeygenFromSecret parameter chain
               (unflattenSecret secretView.2)) := by
       conv_lhs => rw [evalDist_bind]
       conv_rhs => rw [evalDist_bind]
-      rw [evalDist_extractFixedChainSeeds_eq_uniform chain allEpochs allEpochs_nodup]
+      rw [evalDist_extractFixedChainSeeds_eq_uniform chain allLeafIndices allLeafIndices_nodup]
     _ = evalDist (($ᵗ FlatSecret) >>= fun flatSecret =>
           explicitFixedChainKeygenFromSecret parameter chain
             (unflattenSecret flatSecret)) := by
@@ -687,7 +687,7 @@ theorem keygenChainValueTable_seedsMatch
     (cache : QueryCache HashSpec) (secretKey : SecretKey) (chain : ChainIndex) :
     ChainTableSeedsMatch secretKey chain
       (keygenChainValueTable cache secretKey chain) := by
-  intro epoch
+  intro leafIndex
   simp [keygenChainValueTable]
 
 set_option maxRecDepth 10000 in
@@ -716,8 +716,8 @@ theorem Concrete.keygenChainValueTable_edgesMatch
       Wots.signChain] using houtput
 
 theorem Concrete.CacheReplay.rootTree_chain_query_cached_from_cache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (initialCache : QueryCache HashSpec)
     (result : Digest × QueryCache HashSpec)
     (hresult : result ∈ support
@@ -725,12 +725,12 @@ theorem Concrete.CacheReplay.rootTree_chain_query_cached_from_cache
         (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
           OracleComp HashSpec Digest)).run initialCache)) :
     ∃ output, result.2
-      (Concrete.CacheView.chainInput parameter epoch chain step
+      (Concrete.CacheView.chainInput parameter leafIndex chain step
         (Wots.walk
-          (Concrete.CacheView.chainStep result.2 parameter epoch chain)
-          0 step.val (secret epoch chain))) = some output := by
+          (Concrete.CacheView.chainStep result.2 parameter leafIndex chain)
+          0 step.val (secret leafIndex chain))) = some output := by
   apply Concrete.CacheReplay.treeNode_chain_query_cached_in_largerCache
-    parameter secret epoch chain step treeHeight Concrete.rootNode le_rfl
+    parameter secret leafIndex chain step treeHeight Concrete.rootNode le_rfl
   · unfold TreeSubtreeValid Concrete.rootNode lifetime
     norm_num
   · unfold TreeCovers Concrete.rootNode
@@ -741,27 +741,27 @@ theorem Concrete.CacheReplay.rootTree_chain_query_cached_from_cache
   · exact le_rfl
 
 theorem evalDist_rootTree_run_eq_chainHash_then_rootTree
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (chain : ChainIndex) (steps : Nat)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (steps : Nat)
     (previous : Digest)
     (initialCache prefixCache : QueryCache HashSpec)
     (hvalid : steps < chainLength - 1)
     (hprefix : (previous, prefixCache) ∈ support
       ((simulateQ randomOracle
-        (Concrete.chainWalk parameter epoch chain 0 steps
-          (secret epoch chain) :
+        (Concrete.chainWalk parameter leafIndex chain 0 steps
+          (secret leafIndex chain) :
           OracleComp HashSpec Digest)).run initialCache)) :
     evalDist ((simulateQ randomOracle
       (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
         OracleComp HashSpec Digest)).run prefixCache) =
       evalDist ((simulateQ randomOracle
-        (Concrete.chainHash parameter epoch chain
+        (Concrete.chainHash parameter leafIndex chain
           ⟨steps, hvalid⟩ previous : OracleComp HashSpec Digest)).run
             prefixCache >>= fun hashResult =>
         (simulateQ randomOracle
           (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
             OracleComp HashSpec Digest)).run hashResult.2) := by
-  let target := Concrete.CacheView.chainInput parameter epoch chain
+  let target := Concrete.CacheView.chainInput parameter leafIndex chain
     ⟨steps, hvalid⟩ previous
   have hcached : ∀ result ∈ support
       ((simulateQ randomOracle
@@ -773,18 +773,18 @@ theorem evalDist_rootTree_run_eq_chainHash_then_rootTree
       (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
         OracleComp HashSpec Digest) prefixCache result hresult
     have hreplay := Concrete.CacheReplay.eval_answerFn_largerCache_eq_of_mem_support
-      (Concrete.chainWalk parameter epoch chain 0 steps
-        (secret epoch chain) :
+      (Concrete.chainWalk parameter leafIndex chain 0 steps
+        (secret leafIndex chain) :
         OracleComp HashSpec Digest)
       initialCache prefixCache result.2 previous hprefix hprefixLe
     rw [Concrete.CacheReplay.eval_chainWalk] at hreplay
     obtain ⟨output, houtput⟩ :=
       Concrete.CacheReplay.rootTree_chain_query_cached_from_cache
-        parameter secret epoch chain ⟨steps, hvalid⟩
+        parameter secret leafIndex chain ⟨steps, hvalid⟩
         prefixCache result hresult
     refine ⟨output, ?_⟩
     change result.2
-      (Concrete.CacheView.chainInput parameter epoch chain
+      (Concrete.CacheView.chainInput parameter leafIndex chain
         ⟨steps, hvalid⟩ previous) = some output
     rw [← hreplay]
     exact houtput
@@ -801,7 +801,7 @@ theorem evalDist_rootTree_run_eq_chainHash_then_rootTree
         (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
           OracleComp HashSpec Digest) prefixCache target hcached
     _ = evalDist ((simulateQ randomOracle
-          (Concrete.chainHash parameter epoch chain
+          (Concrete.chainHash parameter leafIndex chain
             ⟨steps, hvalid⟩ previous :
               OracleComp HashSpec Digest)).run prefixCache >>= fun hashResult =>
           (simulateQ randomOracle
@@ -811,16 +811,16 @@ theorem evalDist_rootTree_run_eq_chainHash_then_rootTree
         target, Concrete.CacheView.chainInput]
 
 theorem evalDist_rootTree_run_eq_chainWalk_then_rootTree
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (chain : ChainIndex) (steps : Nat)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (steps : Nat)
     (hsteps : steps ≤ chainLength - 1)
     (initialCache : QueryCache HashSpec) :
     evalDist ((simulateQ randomOracle
       (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
         OracleComp HashSpec Digest)).run initialCache) =
       evalDist ((simulateQ randomOracle
-        (Concrete.chainWalk parameter epoch chain 0 steps
-          (secret epoch chain) : OracleComp HashSpec Digest)).run initialCache >>=
+        (Concrete.chainWalk parameter leafIndex chain 0 steps
+          (secret leafIndex chain) : OracleComp HashSpec Digest)).run initialCache >>=
             fun chainResult =>
         (simulateQ randomOracle
           (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
@@ -835,19 +835,19 @@ theorem evalDist_rootTree_run_eq_chainWalk_then_rootTree
             (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
               OracleComp HashSpec Digest)).run initialCache) =
             evalDist ((simulateQ randomOracle
-              (Concrete.chainWalk parameter epoch chain 0 steps
-                (secret epoch chain) : OracleComp HashSpec Digest)).run
+              (Concrete.chainWalk parameter leafIndex chain 0 steps
+                (secret leafIndex chain) : OracleComp HashSpec Digest)).run
                   initialCache >>= fun prefixResult =>
               (simulateQ randomOracle
                 (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
                   OracleComp HashSpec Digest)).run prefixResult.2) :=
           ih (by omega) initialCache
         _ = evalDist ((simulateQ randomOracle
-              (Concrete.chainWalk parameter epoch chain 0 steps
-                (secret epoch chain) : OracleComp HashSpec Digest)).run
+              (Concrete.chainWalk parameter leafIndex chain 0 steps
+                (secret leafIndex chain) : OracleComp HashSpec Digest)).run
                   initialCache >>= fun prefixResult =>
               (simulateQ randomOracle
-                (Concrete.chainHash parameter epoch chain ⟨steps, hvalid⟩
+                (Concrete.chainHash parameter leafIndex chain ⟨steps, hvalid⟩
                   prefixResult.1 : OracleComp HashSpec Digest)).run
                     prefixResult.2 >>= fun hashResult =>
               (simulateQ randomOracle
@@ -856,11 +856,11 @@ theorem evalDist_rootTree_run_eq_chainWalk_then_rootTree
           apply evalDist_bind_congr
           intro prefixResult hprefix
           exact evalDist_rootTree_run_eq_chainHash_then_rootTree
-            parameter secret epoch chain steps prefixResult.1 initialCache
+            parameter secret leafIndex chain steps prefixResult.1 initialCache
             prefixResult.2 hvalid hprefix
         _ = evalDist ((simulateQ randomOracle
-              (Concrete.chainWalk parameter epoch chain 0 (steps + 1)
-                (secret epoch chain) : OracleComp HashSpec Digest)).run
+              (Concrete.chainWalk parameter leafIndex chain 0 (steps + 1)
+                (secret leafIndex chain) : OracleComp HashSpec Digest)).run
                   initialCache >>= fun chainResult =>
               (simulateQ randomOracle
                 (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
@@ -870,10 +870,10 @@ theorem evalDist_rootTree_run_eq_chainWalk_then_rootTree
           simp only [hvalid, ↓reduceDIte, bind_assoc]
 
 theorem Concrete.chainTrajectory_back_map_eq_chainWalk
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position steps : Nat) (value : Digest) :
-    Vector.back <$> Concrete.chainTrajectory parameter epoch chain position steps value =
-      (Concrete.chainWalk parameter epoch chain position steps value :
+    Vector.back <$> Concrete.chainTrajectory parameter leafIndex chain position steps value =
+      (Concrete.chainWalk parameter leafIndex chain position steps value :
         OracleComp HashSpec Digest) := by
   induction steps with
   | zero =>
@@ -883,50 +883,50 @@ theorem Concrete.chainTrajectory_back_map_eq_chainWalk
   | succ steps ih =>
       calc
         Vector.back <$>
-            Concrete.chainTrajectory parameter epoch chain position
+            Concrete.chainTrajectory parameter leafIndex chain position
               (steps + 1) value =
-            (Vector.back <$> Concrete.chainTrajectory parameter epoch chain
+            (Vector.back <$> Concrete.chainTrajectory parameter leafIndex chain
               position steps value) >>= fun previous =>
               if hvalid : position + steps < chainLength - 1 then
-                Concrete.chainHash parameter epoch chain
+                Concrete.chainHash parameter leafIndex chain
                   ⟨position + steps, hvalid⟩ previous
               else pure 0 := by
           rw [Concrete.chainTrajectory_succ]
           by_cases hvalid : position + steps < chainLength - 1
           · simp [hvalid, map_eq_bind_pure_comp, bind_assoc]
           · simp [hvalid, map_eq_bind_pure_comp, bind_assoc]
-        _ = Concrete.chainWalk parameter epoch chain position
+        _ = Concrete.chainWalk parameter leafIndex chain position
             (steps + 1) value := by
           rw [ih]
           rfl
 
 theorem evalDist_chainTrajectory_run_cache_eq_chainWalk_run_cache
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position steps : Nat) (value : Digest)
     (initialCache : QueryCache HashSpec) :
     evalDist ((fun result : Vector Digest (steps + 1) × QueryCache HashSpec =>
       (result.1.back, result.2)) <$>
         (simulateQ randomOracle
-          (Concrete.chainTrajectory parameter epoch chain position steps value)).run
+          (Concrete.chainTrajectory parameter leafIndex chain position steps value)).run
             initialCache) =
       evalDist ((simulateQ randomOracle
-        (Concrete.chainWalk parameter epoch chain position steps value :
+        (Concrete.chainWalk parameter leafIndex chain position steps value :
           OracleComp HashSpec Digest)).run initialCache) := by
   rw [← StateT.run_map]
   rw [← simulateQ_map]
   rw [Concrete.chainTrajectory_back_map_eq_chainWalk]
 
 theorem evalDist_rootTree_run_eq_chainTrajectory_then_rootTree
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (chain : ChainIndex) (steps : Nat)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (steps : Nat)
     (hsteps : steps ≤ chainLength - 1)
     (initialCache : QueryCache HashSpec) :
     evalDist ((simulateQ randomOracle
       (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
         OracleComp HashSpec Digest)).run initialCache) =
       evalDist ((simulateQ randomOracle
-        (Concrete.chainTrajectory parameter epoch chain 0 steps
-          (secret epoch chain))).run initialCache >>= fun trajectoryResult =>
+        (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+          (secret leafIndex chain))).run initialCache >>= fun trajectoryResult =>
         (simulateQ randomOracle
           (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
             OracleComp HashSpec Digest)).run trajectoryResult.2) := by
@@ -935,19 +935,19 @@ theorem evalDist_rootTree_run_eq_chainTrajectory_then_rootTree
         (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
           OracleComp HashSpec Digest)).run initialCache) =
         evalDist ((simulateQ randomOracle
-          (Concrete.chainWalk parameter epoch chain 0 steps
-            (secret epoch chain) : OracleComp HashSpec Digest)).run initialCache >>=
+          (Concrete.chainWalk parameter leafIndex chain 0 steps
+            (secret leafIndex chain) : OracleComp HashSpec Digest)).run initialCache >>=
               fun chainResult =>
           (simulateQ randomOracle
             (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
               OracleComp HashSpec Digest)).run chainResult.2) :=
-      evalDist_rootTree_run_eq_chainWalk_then_rootTree parameter secret epoch
+      evalDist_rootTree_run_eq_chainWalk_then_rootTree parameter secret leafIndex
         chain steps hsteps initialCache
     _ = evalDist (((fun result : Vector Digest (steps + 1) × QueryCache HashSpec =>
           (result.1.back, result.2)) <$>
             (simulateQ randomOracle
-              (Concrete.chainTrajectory parameter epoch chain 0 steps
-                (secret epoch chain))).run initialCache) >>= fun chainResult =>
+              (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+                (secret leafIndex chain))).run initialCache) >>= fun chainResult =>
           (simulateQ randomOracle
             (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
               OracleComp HashSpec Digest)).run chainResult.2) := by
@@ -955,73 +955,73 @@ theorem evalDist_rootTree_run_eq_chainTrajectory_then_rootTree
       conv_rhs => rw [evalDist_bind]
       rw [evalDist_chainTrajectory_run_cache_eq_chainWalk_run_cache]
     _ = evalDist ((simulateQ randomOracle
-          (Concrete.chainTrajectory parameter epoch chain 0 steps
-            (secret epoch chain))).run initialCache >>= fun trajectoryResult =>
+          (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+            (secret leafIndex chain))).run initialCache >>= fun trajectoryResult =>
           (simulateQ randomOracle
             (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
               OracleComp HashSpec Digest)).run trajectoryResult.2) := by
       simp [map_eq_bind_pure_comp, bind_assoc]
 
 noncomputable def Concrete.fixedSeedChainTrajectoriesFromCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) :
-    QueryCache HashSpec → List Epoch →
+    QueryCache HashSpec → List LeafIndex →
       ProbComp (List (Vector Digest (steps + 1)) × QueryCache HashSpec)
   | cache, [] => pure ([], cache)
-  | cache, epoch :: epochs => do
+  | cache, leafIndex :: leafIndices => do
       let first ← (simulateQ randomOracle
-        (Concrete.chainTrajectory parameter epoch chain 0 steps
-          (secret epoch chain))).run cache
+        (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+          (secret leafIndex chain))).run cache
       let rest ← Concrete.fixedSeedChainTrajectoriesFromCache
-        parameter secret chain steps first.2 epochs
+        parameter secret chain steps first.2 leafIndices
       return (first.1 :: rest.1, rest.2)
 
 @[simp]
 theorem Concrete.fixedSeedChainTrajectoriesFromCache_nil
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) (cache : QueryCache HashSpec) :
     Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain steps
       cache [] = pure ([], cache) := rfl
 
 theorem Concrete.fixedSeedChainTrajectoriesFromCache_cons
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (epochs : List Epoch) :
+    (leafIndex : LeafIndex) (leafIndices : List LeafIndex) :
     Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain steps
-      cache (epoch :: epochs) = (do
+      cache (leafIndex :: leafIndices) = (do
         let first ← (simulateQ randomOracle
-          (Concrete.chainTrajectory parameter epoch chain 0 steps
-            (secret epoch chain))).run cache
+          (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+            (secret leafIndex chain))).run cache
         let rest ← Concrete.fixedSeedChainTrajectoriesFromCache
-          parameter secret chain steps first.2 epochs
+          parameter secret chain steps first.2 leafIndices
         return (first.1 :: rest.1, rest.2)) := rfl
 
 set_option maxRecDepth 100000 in
 set_option linter.constructorNameAsVariable false in
 theorem Concrete.fixedSeedChainTrajectoriesFromCache_support_info
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) :
-    ∀ (epochs : List Epoch) (cache : QueryCache HashSpec)
+    ∀ (leafIndices : List LeafIndex) (cache : QueryCache HashSpec)
       (result : List (Vector Digest (steps + 1)) × QueryCache HashSpec),
       result ∈ support
         (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-          steps cache epochs) →
-      cache ≤ result.2 ∧ result.1.length = epochs.length ∧
+          steps cache leafIndices) →
+      cache ≤ result.2 ∧ result.1.length = leafIndices.length ∧
         List.Forall₂
-          (fun epoch trajectory =>
+          (fun leafIndex trajectory =>
             evalWithAnswerFn (Concrete.CacheReplay.answerFn result.2)
-              (Concrete.chainTrajectory parameter epoch chain 0 steps
-                (secret epoch chain)) = trajectory)
-          epochs result.1 := by
-  intro epochs
-  induction epochs with
+              (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+                (secret leafIndex chain)) = trajectory)
+          leafIndices result.1 := by
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro cache result hresult
       simp only [Concrete.fixedSeedChainTrajectoriesFromCache_nil,
         support_pure, Set.mem_singleton_iff] at hresult
       subst result
       exact ⟨le_rfl, rfl, List.Forall₂.nil⟩
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro cache result hresult
       rw [Concrete.fixedSeedChainTrajectoriesFromCache_cons,
         mem_support_bind_iff] at hresult
@@ -1034,44 +1034,44 @@ theorem Concrete.fixedSeedChainTrajectoriesFromCache_support_info
         ih first.2 rest hrest
       constructor
       · exact (Concrete.CacheReplay.randomOracle_cache_le
-          (Concrete.chainTrajectory parameter epoch chain 0 steps
-            (secret epoch chain)) cache first hfirst).trans hfirstCacheLe
+          (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+            (secret leafIndex chain)) cache first hfirst).trans hfirstCacheLe
       · constructor
         · simp [hlength]
         · apply List.Forall₂.cons
           · exact Concrete.CacheReplay.eval_answerFn_largerCache_eq_of_mem_support
-              (Concrete.chainTrajectory parameter epoch chain 0 steps
-                (secret epoch chain)) cache first.2 rest.2 first.1 hfirst
+              (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+                (secret leafIndex chain)) cache first.2 rest.2 first.1 hfirst
                 hfirstCacheLe
           · exact hpairs
 
 set_option maxRecDepth 100000 in
 set_option linter.constructorNameAsVariable false in
 theorem Concrete.fixedSeedChainTrajectoriesFromCache_replay_in_largerCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) :
-    ∀ (epochs : List Epoch) (cache : QueryCache HashSpec)
+    ∀ (leafIndices : List LeafIndex) (cache : QueryCache HashSpec)
       (result : List (Vector Digest (steps + 1)) × QueryCache HashSpec)
       (largerCache : QueryCache HashSpec),
       result ∈ support
         (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-          steps cache epochs) →
+          steps cache leafIndices) →
       result.2 ≤ largerCache →
       List.Forall₂
-        (fun epoch trajectory =>
+        (fun leafIndex trajectory =>
           evalWithAnswerFn (Concrete.CacheReplay.answerFn largerCache)
-            (Concrete.chainTrajectory parameter epoch chain 0 steps
-              (secret epoch chain)) = trajectory)
-        epochs result.1 := by
-  intro epochs
-  induction epochs with
+            (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+              (secret leafIndex chain)) = trajectory)
+        leafIndices result.1 := by
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro cache result largerCache hresult _hle
       simp only [Concrete.fixedSeedChainTrajectoriesFromCache_nil,
         support_pure, Set.mem_singleton_iff] at hresult
       subst result
       exact List.Forall₂.nil
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro cache result largerCache hresult hlarger
       rw [Concrete.fixedSeedChainTrajectoriesFromCache_cons,
         mem_support_bind_iff] at hresult
@@ -1082,43 +1082,43 @@ theorem Concrete.fixedSeedChainTrajectoriesFromCache_replay_in_largerCache
       subst result
       have hrestInfo :=
         Concrete.fixedSeedChainTrajectoriesFromCache_support_info parameter
-          secret chain steps epochs first.2 rest hrest
+          secret chain steps leafIndices first.2 rest hrest
       apply List.Forall₂.cons
       · exact Concrete.CacheReplay.eval_answerFn_largerCache_eq_of_mem_support
-          (Concrete.chainTrajectory parameter epoch chain 0 steps
-            (secret epoch chain)) cache first.2 largerCache first.1 hfirst
+          (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+            (secret leafIndex chain)) cache first.2 largerCache first.1 hfirst
             (hrestInfo.1.trans hlarger)
       · exact ih first.2 rest largerCache hrest hlarger
 
 theorem Concrete.fixedSeedChainTrajectoriesFromCache_table_eq_in_largerCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex)
     (result : List FullChainTrajectory × QueryCache HashSpec)
     (largerCache : QueryCache HashSpec)
     (hresult : result ∈ support
       (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-        (chainLength - 1) ∅ allEpochs))
+        (chainLength - 1) ∅ allLeafIndices))
     (hle : result.2 ≤ largerCache) :
     chainValueTableOfList result.1 =
       keygenChainValueTable largerCache (SecretKey.withoutPrecomputation parameter secret) chain := by
   have hinfo := Concrete.fixedSeedChainTrajectoriesFromCache_support_info
-    parameter secret chain (chainLength - 1) allEpochs ∅ result hresult
+    parameter secret chain (chainLength - 1) allLeafIndices ∅ result hresult
   have hpairs :=
     Concrete.fixedSeedChainTrajectoriesFromCache_replay_in_largerCache
-      parameter secret chain (chainLength - 1) allEpochs ∅ result largerCache
+      parameter secret chain (chainLength - 1) allLeafIndices ∅ result largerCache
       hresult hle
   funext index
   unfold chainValueTableOfList
   split
   · rename_i htableLength
-    let position := epochPosition index.1
+    let position := leafIndexPosition index.1
     have hresultPosition : position.val < result.1.length := by
       rw [← htableLength]
       exact position.isLt
     have hpair := hpairs.get position.isLt hresultPosition
-    have hepoch : allEpochs.get position = index.1 := by
-      exact allEpochs_get_epochPosition index.1
-    rw [hepoch] at hpair
+    have hleafIndex : allLeafIndices.get position = index.1 := by
+      exact allLeafIndices_get_leafIndexPosition index.1
+    rw [hleafIndex] at hpair
     have hvalue := congrArg
       (fun trajectory : FullChainTrajectory =>
         trajectory[index.2.val]'(by
@@ -1130,38 +1130,38 @@ theorem Concrete.fixedSeedChainTrajectoriesFromCache_table_eq_in_largerCache
     exact (htableLength hinfo.2.1.symm).elim
 
 theorem evalDist_rootTree_run_eq_fixedSeedTrajectories_then_rootTree
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) (hsteps : steps ≤ chainLength - 1)
-    (epochs : List Epoch) (initialCache : QueryCache HashSpec) :
+    (leafIndices : List LeafIndex) (initialCache : QueryCache HashSpec) :
     evalDist ((simulateQ randomOracle
       (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
         OracleComp HashSpec Digest)).run initialCache) =
       evalDist (Concrete.fixedSeedChainTrajectoriesFromCache
-        parameter secret chain steps initialCache epochs >>= fun trajectoryResult =>
+        parameter secret chain steps initialCache leafIndices >>= fun trajectoryResult =>
         (simulateQ randomOracle
           (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
             OracleComp HashSpec Digest)).run trajectoryResult.2) := by
-  induction epochs generalizing initialCache with
+  induction leafIndices generalizing initialCache with
   | nil =>
       simp
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       calc
         evalDist ((simulateQ randomOracle
             (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
               OracleComp HashSpec Digest)).run initialCache) =
             evalDist ((simulateQ randomOracle
-              (Concrete.chainTrajectory parameter epoch chain 0 steps
-                (secret epoch chain))).run initialCache >>= fun first =>
+              (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+                (secret leafIndex chain))).run initialCache >>= fun first =>
               (simulateQ randomOracle
                 (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
                   OracleComp HashSpec Digest)).run first.2) :=
           evalDist_rootTree_run_eq_chainTrajectory_then_rootTree
-            parameter secret epoch chain steps hsteps initialCache
+            parameter secret leafIndex chain steps hsteps initialCache
         _ = evalDist ((simulateQ randomOracle
-              (Concrete.chainTrajectory parameter epoch chain 0 steps
-                (secret epoch chain))).run initialCache >>= fun first =>
+              (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+                (secret leafIndex chain))).run initialCache >>= fun first =>
               Concrete.fixedSeedChainTrajectoriesFromCache
-                parameter secret chain steps first.2 epochs >>= fun rest =>
+                parameter secret chain steps first.2 leafIndices >>= fun rest =>
               (simulateQ randomOracle
                 (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
                   OracleComp HashSpec Digest)).run rest.2) := by
@@ -1169,7 +1169,7 @@ theorem evalDist_rootTree_run_eq_fixedSeedTrajectories_then_rootTree
           intro first
           exact ih first.2
         _ = evalDist (Concrete.fixedSeedChainTrajectoriesFromCache parameter
-              secret chain steps initialCache (epoch :: epochs) >>=
+              secret chain steps initialCache (leafIndex :: leafIndices) >>=
                 fun trajectoryResult =>
               (simulateQ randomOracle
                 (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
@@ -1180,11 +1180,11 @@ theorem evalDist_rootTree_run_eq_fixedSeedTrajectories_then_rootTree
 noncomputable def chronologicallyWarmedExtractedFixedChainKeygen
     (chain : ChainIndex) : ProbComp ProgrammedFixedChainKeygenView := do
   let parameter ← Concrete.samplePublicParameter
-  let secretView ← extractFixedChainSeeds chain allEpochs
+  let secretView ← extractFixedChainSeeds chain allLeafIndices
   let secret := unflattenSecret secretView.2
   let rootResult ← (do
     let trajectoryResult ← Concrete.fixedSeedChainTrajectoriesFromCache
-      parameter secret chain (chainLength - 1) ∅ allEpochs
+      parameter secret chain (chainLength - 1) ∅ allLeafIndices
     (simulateQ randomOracle
       (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
         OracleComp HashSpec Digest)).run trajectoryResult.2)
@@ -1219,14 +1219,14 @@ theorem evalDist_extractedFixedChainKeygen_eq_chronologicallyWarmed
       (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
         OracleComp HashSpec Digest)).run ∅ >>= makeView) =
     evalDist ((Concrete.fixedSeedChainTrajectoriesFromCache parameter secret
-      chain (chainLength - 1) ∅ allEpochs >>= fun trajectoryResult =>
+      chain (chainLength - 1) ∅ allLeafIndices >>= fun trajectoryResult =>
         (simulateQ randomOracle
           (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
             OracleComp HashSpec Digest)).run trajectoryResult.2) >>= makeView)
   conv_lhs => rw [evalDist_bind]
   conv_rhs => rw [evalDist_bind]
   rw [evalDist_rootTree_run_eq_fixedSeedTrajectories_then_rootTree
-    parameter secret chain (chainLength - 1) le_rfl allEpochs ∅]
+    parameter secret chain (chainLength - 1) le_rfl allLeafIndices ∅]
 
 theorem evalDist_actualFixedChainKeygen_eq_chronologicallyWarmed
     (chain : ChainIndex) :

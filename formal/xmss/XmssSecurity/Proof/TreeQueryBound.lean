@@ -5,14 +5,14 @@ open OracleComp OracleSpec
 
 namespace XmssSecurity
 
-def TreeCovers (levels : Nat) (node : MerkleNode) (epoch : Epoch) : Prop :=
-  node.val * 2 ^ levels ≤ epoch.val ∧ epoch.val < (node.val + 1) * 2 ^ levels
+def TreeCovers (levels : Nat) (node : MerkleNode) (leafIndex : LeafIndex) : Prop :=
+  node.val * 2 ^ levels ≤ leafIndex.val ∧ leafIndex.val < (node.val + 1) * 2 ^ levels
 
 def TreeSubtreeValid (levels : Nat) (node : MerkleNode) : Prop :=
   (node.val + 1) * 2 ^ levels ≤ lifetime
 
-instance (levels : Nat) (node : MerkleNode) (epoch : Epoch) :
-    Decidable (TreeCovers levels node epoch) := by
+instance (levels : Nat) (node : MerkleNode) (leafIndex : LeafIndex) :
+    Decidable (TreeCovers levels node leafIndex) := by
   unfold TreeCovers
   infer_instance
 
@@ -36,14 +36,14 @@ theorem childNode_subtreeValid (levels : Nat) (node : MerkleNode)
   have hpow : 0 < 2 ^ levels := pow_pos (by omega) _
   split <;> nlinarith
 
-theorem treeCovers_children_sum (levels : Nat) (node : MerkleNode) (epoch : Epoch)
+theorem treeCovers_children_sum (levels : Nat) (node : MerkleNode) (leafIndex : LeafIndex)
     (hvalid : TreeSubtreeValid (levels + 1) node) :
-    (if TreeCovers levels (Concrete.childNode node false) epoch then 1 else 0) +
-        (if TreeCovers levels (Concrete.childNode node true) epoch then 1 else 0) =
-      if TreeCovers (levels + 1) node epoch then 1 else 0 := by
-  by_cases hleft : TreeCovers levels (Concrete.childNode node false) epoch
-  <;> by_cases hright : TreeCovers levels (Concrete.childNode node true) epoch
-  <;> by_cases hparent : TreeCovers (levels + 1) node epoch
+    (if TreeCovers levels (Concrete.childNode node false) leafIndex then 1 else 0) +
+        (if TreeCovers levels (Concrete.childNode node true) leafIndex then 1 else 0) =
+      if TreeCovers (levels + 1) node leafIndex then 1 else 0 := by
+  by_cases hleft : TreeCovers levels (Concrete.childNode node false) leafIndex
+  <;> by_cases hright : TreeCovers levels (Concrete.childNode node true) leafIndex
+  <;> by_cases hparent : TreeCovers (levels + 1) node leafIndex
   <;> simp only [hleft, hright, hparent, ↓reduceIte]
   all_goals
     unfold TreeCovers at hleft hright hparent
@@ -56,34 +56,34 @@ theorem treeCovers_children_sum (levels : Nat) (node : MerkleNode) (epoch : Epoc
     omega
 
 theorem Concrete.treeNode_queryBound_leafAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (targetEpoch : Epoch) (levels : Nat) (node : MerkleNode)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (targetLeafIndex : LeafIndex) (levels : Nat) (node : MerkleNode)
     (hlevels : levels ≤ treeHeight) (hvalid : TreeSubtreeValid levels node) :
     (Concrete.treeNode parameter secret levels node :
       OracleComp HashSpec Digest).IsQueryBoundP
-        (AtHashAddress parameter (.leaf targetEpoch))
-        (if TreeCovers levels node targetEpoch then 1 else 0) := by
+        (AtHashAddress parameter (.leaf targetLeafIndex))
+        (if TreeCovers levels node targetLeafIndex then 1 else 0) := by
   induction levels generalizing node with
   | zero =>
       rw [Concrete.treeNode_zero_eq]
-      by_cases hcover : TreeCovers 0 node targetEpoch
-      · have heq : node = targetEpoch := by
+      by_cases hcover : TreeCovers 0 node targetLeafIndex
+      · have heq : node = targetLeafIndex := by
           apply Fin.ext
           unfold TreeCovers at hcover
           simp only [pow_zero, mul_one] at hcover
           omega
-        subst targetEpoch
+        subst targetLeafIndex
         simpa [hcover] using
           Concrete.leafAt_queryBound_leafAddress parameter secret node node
-      · have hne : node ≠ targetEpoch := by
+      · have hne : node ≠ targetLeafIndex := by
           intro heq
-          subst targetEpoch
+          subst targetLeafIndex
           apply hcover
           unfold TreeCovers
           simp
         simpa [hcover] using
           Concrete.leafAt_queryBound_zero_at_other_leaf parameter secret node
-            targetEpoch hne
+            targetLeafIndex hne
   | succ levels ih =>
       have hlevel : levels < treeHeight := Nat.lt_of_succ_le hlevels
       have hleftValid := childNode_subtreeValid levels node false hvalid
@@ -99,29 +99,29 @@ theorem Concrete.treeNode_queryBound_leafAddress
               (Concrete.childNode node true)
             Concrete.nodeHash parameter ⟨levels, hlevel⟩ node left right :
             OracleComp HashSpec Digest).IsQueryBoundP
-              (AtHashAddress parameter (.leaf targetEpoch))
-              (if TreeCovers levels (Concrete.childNode node true) targetEpoch then 1 else 0) := by
+              (AtHashAddress parameter (.leaf targetLeafIndex))
+              (if TreeCovers levels (Concrete.childNode node true) targetLeafIndex then 1 else 0) := by
         refine OracleComp.isQueryBoundP_bind (m := 0) hright ?_
         intro right _
         exact Concrete.tweakableHash_queryBound_atOtherAddress parameter
-          (.leaf targetEpoch) (.merkle ⟨levels, hlevel⟩ node)
+          (.leaf targetLeafIndex) (.merkle ⟨levels, hlevel⟩ node)
           (Concrete.nodePayload left right) (by simp)
       have hall := OracleComp.isQueryBoundP_bind hleft
         (fun left _ => hcontinuation left)
       simpa only [hlevel, ↓reduceDIte, Nat.add_zero,
-        treeCovers_children_sum levels node targetEpoch hvalid] using hall
+        treeCovers_children_sum levels node targetLeafIndex hvalid] using hall
 
 theorem Concrete.rootTree_queryBound_leafAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (targetEpoch : Epoch) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (targetLeafIndex : LeafIndex) :
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest).IsQueryBoundP
-        (AtHashAddress parameter (.leaf targetEpoch)) 1 := by
-  have hbound := Concrete.treeNode_queryBound_leafAddress parameter secret targetEpoch
+        (AtHashAddress parameter (.leaf targetLeafIndex)) 1 := by
+  have hbound := Concrete.treeNode_queryBound_leafAddress parameter secret targetLeafIndex
     treeHeight Concrete.rootNode le_rfl (by
       unfold TreeSubtreeValid Concrete.rootNode lifetime
       norm_num)
-  have hcover : TreeCovers treeHeight Concrete.rootNode targetEpoch := by
+  have hcover : TreeCovers treeHeight Concrete.rootNode targetLeafIndex := by
     unfold TreeCovers Concrete.rootNode
     constructor
     · simp
@@ -130,57 +130,57 @@ theorem Concrete.rootTree_queryBound_leafAddress
 
 /-- A supported root-tree execution from an empty cache contains at most one input at each leaf address. -/
 theorem Concrete.CacheReplay.rootTree_cache_unique_leafAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (root : Digest) (cache : QueryCache HashSpec)
     (hmem : (root, cache) ∈ support
       ((simulateQ randomOracle
         (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
           OracleComp HashSpec Digest)).run ∅))
-    (targetEpoch : Epoch) (left right : HashInput)
+    (targetLeafIndex : LeafIndex) (left right : HashInput)
     (leftOutput rightOutput : HashOutput)
-    (hleftP : AtHashAddress parameter (.leaf targetEpoch) left)
-    (hrightP : AtHashAddress parameter (.leaf targetEpoch) right)
+    (hleftP : AtHashAddress parameter (.leaf targetLeafIndex) left)
+    (hrightP : AtHashAddress parameter (.leaf targetLeafIndex) right)
     (hleft : cache left = some leftOutput)
     (hright : cache right = some rightOutput) :
     left = right := by
   exact Concrete.CacheReplay.cache_unique_of_query_bound_one
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest)
-    (AtHashAddress parameter (.leaf targetEpoch)) ∅ cache root
-    (Concrete.rootTree_queryBound_leafAddress parameter secret targetEpoch)
+    (AtHashAddress parameter (.leaf targetLeafIndex)) ∅ cache root
+    (Concrete.rootTree_queryBound_leafAddress parameter secret targetLeafIndex)
     (by simp) hmem left right leftOutput rightOutput hleftP hrightP hleft hright
 
 theorem Concrete.treeNode_queryBound_chainAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (targetEpoch : Epoch) (targetChain : ChainIndex) (targetStep : ChainStep)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (targetLeafIndex : LeafIndex) (targetChain : ChainIndex) (targetStep : ChainStep)
     (levels : Nat) (node : MerkleNode)
     (hlevels : levels ≤ treeHeight) (hvalid : TreeSubtreeValid levels node) :
     (Concrete.treeNode parameter secret levels node :
       OracleComp HashSpec Digest).IsQueryBoundP
-        (AtHashAddress parameter (.chain targetEpoch targetChain targetStep))
-        (if TreeCovers levels node targetEpoch then 1 else 0) := by
+        (AtHashAddress parameter (.chain targetLeafIndex targetChain targetStep))
+        (if TreeCovers levels node targetLeafIndex then 1 else 0) := by
   induction levels generalizing node with
   | zero =>
       rw [Concrete.treeNode_zero_eq]
-      by_cases hcover : TreeCovers 0 node targetEpoch
-      · have heq : node = targetEpoch := by
+      by_cases hcover : TreeCovers 0 node targetLeafIndex
+      · have heq : node = targetLeafIndex := by
           apply Fin.ext
           unfold TreeCovers at hcover
           simp only [pow_zero, mul_one] at hcover
           omega
-        subst targetEpoch
+        subst targetLeafIndex
         simpa [hcover] using
           Concrete.leafAt_queryBound_chainAddress parameter secret node node
             targetChain targetStep
-      · have hne : node ≠ targetEpoch := by
+      · have hne : node ≠ targetLeafIndex := by
           intro heq
-          subst targetEpoch
+          subst targetLeafIndex
           apply hcover
           unfold TreeCovers
           simp
         simpa [hcover] using
-          Concrete.leafAt_queryBound_zero_chainAddress_at_other_epoch parameter secret node
-            targetEpoch targetChain targetStep hne
+          Concrete.leafAt_queryBound_zero_chainAddress_at_other_leafIndex parameter secret node
+            targetLeafIndex targetChain targetStep hne
   | succ levels ih =>
       have hlevel : levels < treeHeight := Nat.lt_of_succ_le hlevels
       have hleftValid := childNode_subtreeValid levels node false hvalid
@@ -196,29 +196,29 @@ theorem Concrete.treeNode_queryBound_chainAddress
               (Concrete.childNode node true)
             Concrete.nodeHash parameter ⟨levels, hlevel⟩ node left right :
             OracleComp HashSpec Digest).IsQueryBoundP
-              (AtHashAddress parameter (.chain targetEpoch targetChain targetStep))
-              (if TreeCovers levels (Concrete.childNode node true) targetEpoch then 1 else 0) := by
+              (AtHashAddress parameter (.chain targetLeafIndex targetChain targetStep))
+              (if TreeCovers levels (Concrete.childNode node true) targetLeafIndex then 1 else 0) := by
         refine OracleComp.isQueryBoundP_bind (m := 0) hright ?_
         intro right _
         exact Concrete.tweakableHash_queryBound_atOtherAddress parameter
-          (.chain targetEpoch targetChain targetStep) (.merkle ⟨levels, hlevel⟩ node)
+          (.chain targetLeafIndex targetChain targetStep) (.merkle ⟨levels, hlevel⟩ node)
           (Concrete.nodePayload left right) (by simp)
       have hall := OracleComp.isQueryBoundP_bind hleft
         (fun left _ => hcontinuation left)
       simpa only [hlevel, ↓reduceDIte, Nat.add_zero,
-        treeCovers_children_sum levels node targetEpoch hvalid] using hall
+        treeCovers_children_sum levels node targetLeafIndex hvalid] using hall
 
 theorem Concrete.rootTree_queryBound_chainAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
-    (targetEpoch : Epoch) (targetChain : ChainIndex) (targetStep : ChainStep) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
+    (targetLeafIndex : LeafIndex) (targetChain : ChainIndex) (targetStep : ChainStep) :
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest).IsQueryBoundP
-        (AtHashAddress parameter (.chain targetEpoch targetChain targetStep)) 1 := by
-  have hbound := Concrete.treeNode_queryBound_chainAddress parameter secret targetEpoch
+        (AtHashAddress parameter (.chain targetLeafIndex targetChain targetStep)) 1 := by
+  have hbound := Concrete.treeNode_queryBound_chainAddress parameter secret targetLeafIndex
     targetChain targetStep treeHeight Concrete.rootNode le_rfl (by
       unfold TreeSubtreeValid Concrete.rootNode lifetime
       norm_num)
-  have hcover : TreeCovers treeHeight Concrete.rootNode targetEpoch := by
+  have hcover : TreeCovers treeHeight Concrete.rootNode targetLeafIndex := by
     unfold TreeCovers Concrete.rootNode
     constructor
     · simp
@@ -227,24 +227,24 @@ theorem Concrete.rootTree_queryBound_chainAddress
 
 /-- A supported root-tree execution from an empty cache contains at most one input at each chain-step address. -/
 theorem Concrete.CacheReplay.rootTree_cache_unique_chainAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (root : Digest) (cache : QueryCache HashSpec)
     (hmem : (root, cache) ∈ support
       ((simulateQ randomOracle
         (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
           OracleComp HashSpec Digest)).run ∅))
-    (targetEpoch : Epoch) (targetChain : ChainIndex) (targetStep : ChainStep)
+    (targetLeafIndex : LeafIndex) (targetChain : ChainIndex) (targetStep : ChainStep)
     (left right : HashInput) (leftOutput rightOutput : HashOutput)
-    (hleftP : AtHashAddress parameter (.chain targetEpoch targetChain targetStep) left)
-    (hrightP : AtHashAddress parameter (.chain targetEpoch targetChain targetStep) right)
+    (hleftP : AtHashAddress parameter (.chain targetLeafIndex targetChain targetStep) left)
+    (hrightP : AtHashAddress parameter (.chain targetLeafIndex targetChain targetStep) right)
     (hleft : cache left = some leftOutput)
     (hright : cache right = some rightOutput) :
     left = right := by
   exact Concrete.CacheReplay.cache_unique_of_query_bound_one
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest)
-    (AtHashAddress parameter (.chain targetEpoch targetChain targetStep)) ∅ cache root
-    (Concrete.rootTree_queryBound_chainAddress parameter secret targetEpoch
+    (AtHashAddress parameter (.chain targetLeafIndex targetChain targetStep)) ∅ cache root
+    (Concrete.rootTree_queryBound_chainAddress parameter secret targetLeafIndex
       targetChain targetStep)
     (by simp) hmem left right leftOutput rightOutput hleftP hrightP hleft hright
 

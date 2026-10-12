@@ -423,6 +423,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bench"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "primitives",
+ "tikv-jemallocator",
+ "tracing-forest",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1027,11 +1038,12 @@ dependencies = [
 name = "flock"
 version = "0.1.0"
 dependencies = [
+ "bench",
  "fiat_shamir",
  "parallel",
  "pcs",
  "primitives",
- "zk_alloc",
+ "tracing",
 ]
 
 [[package]]
@@ -1409,7 +1421,7 @@ name = "lean_compiler"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "lean_vm",
+ "leanvm_core",
  "primitives",
  "rand 0.9.4",
 ]
@@ -1428,7 +1440,38 @@ dependencies = [
 ]
 
 [[package]]
-name = "lean_vm"
+name = "leanvm"
+version = "0.1.0"
+dependencies = [
+ "lean_da",
+ "leanvm_core",
+ "rand 0.9.4",
+ "rec_aggregation",
+ "sphincs",
+ "xmss",
+]
+
+[[package]]
+name = "leanvm-cli"
+version = "0.1.0"
+dependencies = [
+ "bench",
+ "bincode",
+ "clap",
+ "lean_compiler",
+ "lean_da",
+ "leanvm_core",
+ "primitives",
+ "rand 0.9.4",
+ "rec_aggregation",
+ "serde",
+ "sphincs",
+ "tracing",
+ "xmss",
+]
+
+[[package]]
+name = "leanvm_core"
 version = "0.1.0"
 dependencies = [
  "bincode",
@@ -1439,22 +1482,6 @@ dependencies = [
  "pcs",
  "primitives",
  "tracing",
- "zk_alloc",
-]
-
-[[package]]
-name = "leanvm"
-version = "0.1.0"
-dependencies = [
- "clap",
- "lean_da",
- "lean_vm",
- "primitives",
- "rand 0.9.4",
- "rec_aggregation",
- "sphincs",
- "xmss",
- "zk_alloc",
 ]
 
 [[package]]
@@ -1591,13 +1618,12 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 name = "pcs"
 version = "0.1.0"
 dependencies = [
+ "bench",
  "bincode",
  "fiat_shamir",
  "parallel",
  "primitives",
- "serde",
  "tracing",
- "zk_alloc",
 ]
 
 [[package]]
@@ -1671,15 +1697,12 @@ dependencies = [
 name = "primitives"
 version = "0.1.0"
 dependencies = [
+ "bench",
  "bincode",
- "libc",
  "parallel",
  "primitives",
  "rand 0.9.4",
  "serde",
- "tracing-forest",
- "tracing-subscriber",
- "zk_alloc",
 ]
 
 [[package]]
@@ -1823,7 +1846,7 @@ dependencies = [
  "flock",
  "lean_compiler",
  "lean_da",
- "lean_vm",
+ "leanvm_core",
  "parallel",
  "pcs",
  "primitives",
@@ -1832,7 +1855,6 @@ dependencies = [
  "sphincs",
  "tracing",
  "xmss",
- "zk_alloc",
 ]
 
 [[package]]
@@ -2283,6 +2305,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "tikv-jemalloc-sys"
+version = "0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a2825c78386b4ae0314074867860ba9577875de945f05992c38815cbec327f0"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "249f09e49ab1609436f34c776e84231bead18d6a955f119f939bdc1d847561bd"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
+]
+
+[[package]]
 name = "time"
 version = "0.3.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2721,13 +2763,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
-]
-
-[[package]]
-name = "zk_alloc"
-version = "0.1.0"
-dependencies = [
- "libc",
 ]
 
 [[package]]

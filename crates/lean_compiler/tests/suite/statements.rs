@@ -3,7 +3,7 @@
 //! diagnostic is the whole fix.
 
 use lean_compiler::{compile, parse};
-use lean_vm::cpu::{prove, verify};
+use leanvm_core::cpu::{prove, verify};
 use primitives::field::{F192, g_pow};
 
 /// A name is a plain identifier. Two different mistakes arrive here, and both
@@ -114,7 +114,7 @@ def main():
     return
 "
         );
-        compile(&parse(&src).expect("parse")).execute([F192::ZERO; 2]);
+        compile(&parse(&src).expect("parse")).execute([F192::ZERO; 2]).unwrap();
     }
     // `s = [s[1], s[0]]` rebinds to a fresh run and must still swap.
     let swap = "\
@@ -132,7 +132,7 @@ def main():
         F192::from(primitives::field::F64(7)),
         F192::from(primitives::field::F64(5)),
     ];
-    compile(&parse(swap).expect("parse")).execute(want);
+    compile(&parse(swap).expect("parse")).execute(want).unwrap();
 }
 
 /// A `mul_range` stop bound that is a compile-time value but not a power of GEN
@@ -185,7 +185,7 @@ def main():
     // the other, from the outer `w`.
     let program = compile(&parse(src).expect("parse"));
     let want = [F192::from(g_pow(1)), F192::from(g_pow(3))];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("the else arm reads the outer binding");
 }
 
@@ -213,7 +213,7 @@ def main():
     let program = compile(&parse(src).expect("parse"));
     // y·x, i.e. the tower coefficient shifted, NOT g^65.
     let want = [F192::new(0, 2, 0); 2];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("2^64 is the tower element y, not g^64");
 }
 
@@ -259,9 +259,9 @@ fn one_hinted_value_needs_no_buffer() {
         let mut program = compile(&parse(src).expect("parse"));
         program.set_witness("m", vec![vec![g_pow(5).into()]]);
         let want = [g_pow(5).into(), g_pow(0).into()];
-        let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+        let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
         verify(&program, &want, &proof).expect("verifies");
-        program.execute(want).base_counts.iter().sum::<usize>()
+        program.execute(want).unwrap().base_counts.iter().sum::<usize>()
     };
     assert_eq!(run(&old), run(&new), "the sugar must cost what it replaces");
 
@@ -283,7 +283,7 @@ def main():
         vec![vec![g_pow(1).into()], vec![g_pow(2).into()], vec![g_pow(3).into()]],
     );
     let want = [g_pow(2).into(), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     // `mul_range(1, 8)` is g^0..g^3, so THREE iterations and all three entries
     // are popped. With `mul_range(1, 4)` the third would sit unread and mask an
     // off-by-one in that direction.
@@ -334,7 +334,7 @@ fn the_scalar_hint_binds_like_any_other_binder() {
     let mut program = compile(&parse(&inlined).expect("an @inline body may bind a hint"));
     program.set_witness("m", vec![vec![g_pow(5).into()]]);
     let want = [g_pow(5).into(), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("the inlined binding fires");
 
     // A `for` body that shadows an enclosing StackBuf's name from inside an arm
@@ -357,7 +357,7 @@ def main():
     let mut program = compile(&parse(shadowed).expect("shadowing is not capturing"));
     program.set_witness("w", vec![vec![g_pow(7).into()], vec![g_pow(8).into()]]);
     let want = [g_pow(1).into(), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("the outer StackBuf is untouched");
 
     // Return-shape inference, the third walker: rebinding a `StackBuf` name to a
@@ -370,7 +370,7 @@ def main():
     let mut program = compile(&parse(&rebound).expect("a hint may rebind a StackBuf name"));
     program.set_witness("m", vec![vec![g_pow(6).into()]]);
     let want = [g_pow(6).into(), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("the rebound name returns as a scalar");
 }
 
@@ -450,7 +450,7 @@ def main():
 ";
     let program = compile(&parse(captured).expect("a constant may be captured"));
     let want = [F192::new(5, 0, 0), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("the captured constant reaches the body");
 }
 
@@ -518,7 +518,7 @@ def main():
     let mut program = compile(&parse(ok).expect("parse"));
     program.set_witness("w", vec![vec![F192::new(1234, 0, 0), F192::new(5678, 0, 0)]]);
     let want = [F192::new(1234, 0, 0), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("an in-bounds runtime-start slice still works");
 }
 
@@ -579,7 +579,7 @@ fn a_match_target_binds_and_every_field_is_walked() {
     let want = [F192::ZERO, g_pow(0).into()];
     let verifies = |src: &str, why: &str| {
         let program = compile(&parse(src).unwrap_or_else(|e| panic!("{why}: {e}")));
-        let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+        let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
         verify(&program, &want, &proof).unwrap_or_else(|e| panic!("{why}: {e:?}"));
     };
 
@@ -633,10 +633,7 @@ fn a_value_may_ask_for_the_integer_regime() {
             "def main():\n    for i in unroll(3, 4):\n        v = {expr}\n        assert v == {want}\n    return\n"
         );
         let program = compile(&parse(&src).expect("parse"));
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            program.execute([F192::ZERO, F192::ZERO]);
-        }))
-        .is_ok()
+        program.execute([F192::ZERO, F192::ZERO]).is_ok()
     };
 
     // i = 3: the integer reading is 4, the field reading `3 XOR 1` is 2.
@@ -732,7 +729,7 @@ fn an_ambiguous_compile_time_branch_must_be_declared() {
     let fold = |cond: &str| {
         let program = compile(&parse(&prog(cond)).unwrap_or_else(|e| panic!("{cond}: {e}")));
         let want = [F192::new(5, 0, 0), g_pow(0).into()];
-        let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+        let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
         verify(&program, &want, &proof).unwrap_or_else(|e| panic!("`{cond}` did not take the then arm: {e:?}"));
     };
     // Declared, so it folds with integer arithmetic and the arm runs.
@@ -782,7 +779,7 @@ fn an_ambiguous_compile_time_branch_must_be_declared() {
     let plain = "def main():\n    const = 4\n    hb = HeapBuf(4)\n    if const == 4:\n        hb[GEN ** 0] = 5\n    else:\n        hb[GEN ** 0] = 7\n    p = GEN ** 0\n    p[1] = hb[GEN ** 0]\n    p[GEN] = GEN ** 0\n    return\n";
     let program = compile(&parse(plain).expect("a name beginning with `const` is an ordinary name"));
     let want = [F192::new(5, 0, 0), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("`const == 4` is a comparison, not a wrapper");
 
     // Declared, but not actually decidable while compiling.
@@ -817,7 +814,7 @@ def main():
     let mut program = compile(&parse(src).expect("a `,`, `#` or `]` inside a string is part of the name"));
     program.set_witness("x,y#z]w", vec![vec![F192::new(7, 0, 0)]]);
     let want = [F192::new(7, 0, 0), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("the stream name survived parsing intact");
 }
 
@@ -855,7 +852,7 @@ def main():
     // `r` is 1, so the index is `K` itself: cell 1, holding 11. Reading the
     // integer view instead would name cell 2, holding 12.
     let want = [F192::new(11, 0, 0), g_pow(0).into()];
-    let (proof, _) = prove(&program, want, lean_vm::pcs::TEST_LOG_INV_RATE);
+    let (proof, _) = prove(&program, want, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
     verify(&program, &want, &proof).expect("the index means what the value means");
 }
 
@@ -881,7 +878,7 @@ def main():
     assert sa[0] == GEN
     return
 ";
-    let exec = compile(&parse(src).expect("parse")).execute([F192::ZERO; 2]);
+    let exec = compile(&parse(src).expect("parse")).execute([F192::ZERO; 2]).unwrap();
     assert!(exec.unconstrained_reads.is_empty(), "no prover-chosen read");
 }
 
@@ -904,7 +901,7 @@ def main():
     assert hb[1] == GEN
     return
 ";
-    let exec = compile(&parse(src).expect("parse")).execute([F192::ZERO; 2]);
+    let exec = compile(&parse(src).expect("parse")).execute([F192::ZERO; 2]).unwrap();
     assert!(exec.unconstrained_reads.is_empty(), "no prover-chosen read");
 }
 
@@ -996,15 +993,8 @@ fn a_failed_assert_names_its_source_line() {
     // 1 blank, 2 def, 3 let, 4 blank, 5 the assert that cannot hold.
     let src = "\ndef main():\n    x = GEN ** 3\n\n    assert x == GEN ** 4\n    return\n";
     let program = compile(&parse(src).expect("parse"));
-    let err = std::panic::catch_unwind(|| {
-        program.execute([F192::ZERO; 2]);
-    })
-    .expect_err("the assert cannot hold");
-    let msg = err
-        .downcast_ref::<String>()
-        .cloned()
-        .unwrap_or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()).unwrap_or_default());
-    assert!(msg.contains("line 5"), "{msg}");
+    let err = program.execute([F192::ZERO; 2]).err().expect("the assert cannot hold");
+    assert!(err.site.contains("line 5"), "{err}");
 }
 
 /// An `@inline` body lowers through the CALLER's `FnLower`, so its statements
@@ -1016,15 +1006,11 @@ fn an_inline_call_does_not_steal_the_call_site_line() {
     // 1 blank, 2 @inline, 3 def, 4 let, 5 return, 6-7 blank, 8 def main, ... 12 the assert.
     let src = "\n@inline\ndef idf(x):\n    y = x * x\n    return y\n\n\ndef main():\n    hb = HeapBuf(4)\n    hb[GEN] = GEN ** 3\n    a = hb[GEN]\n    assert idf(a) == GEN\n    return\n";
     let program = compile(&parse(src).expect("parse"));
-    let err = std::panic::catch_unwind(|| {
-        program.execute([F192::ZERO; 2]);
-    })
-    .expect_err("the assert cannot hold");
-    let msg = err
-        .downcast_ref::<String>()
-        .cloned()
-        .unwrap_or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()).unwrap_or_default());
-    assert!(msg.contains("line 12"), "the call site, not the callee's line 5: {msg}");
+    let err = program.execute([F192::ZERO; 2]).err().expect("the assert cannot hold");
+    assert!(
+        err.site.contains("line 12"),
+        "the call site, not the callee's line 5: {err}"
+    );
 }
 
 /// The fill blocks are not source code, so they carry the unknown line rather
@@ -1045,16 +1031,14 @@ fn fill_blocks_carry_no_source_line() {
     );
 }
 
-/// A dispatched `match` join reads one cell per bound name, but a callee
-/// returning a `StackBuf` flattens it into several ABI cells, so the name would
-/// silently bind the run's FIRST cell and the rest would be written where
-/// nothing reads them. The guard against that is `all(is scalar)`; negating it
-/// as `all(is not scalar)` rather than `any(is not scalar)` left it firing only
-/// when EVERY return is a buffer, so a `(scalar, StackBuf)` pair walked through
-/// and no existing test noticed.
+/// A `match` join reads one cell per bound name, so a multi-cell `StackBuf`
+/// return would bind only the run's FIRST cell and leave the rest where nothing
+/// reads them. The guard must check every return, not all of them at once:
+/// testing `all(is not scalar)` rather than `any(is not scalar)` fired only when
+/// EVERY return was a buffer, so a `(scalar, StackBuf)` pair walked through.
 #[test]
-#[should_panic(expected = "StackBuf return cannot cross a dispatched join")]
-fn a_mixed_stack_buf_return_cannot_cross_a_dispatched_join() {
+#[should_panic(expected = "StackBuf return cannot cross a match join")]
+fn a_mixed_stack_buf_return_cannot_cross_a_match_join() {
     let src = "\
 @inline
 def f(k: Const):

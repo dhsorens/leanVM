@@ -9,27 +9,27 @@ open OracleComp.ProgramLogic.Relational
 namespace XmssSecurity.CappedChain
 
 theorem Concrete.fixedSeedChainTrajectoriesFromCache_component_support_global
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) :
-    ∀ (epochs : List Epoch) (cache : QueryCache HashSpec)
+    ∀ (leafIndices : List LeafIndex) (cache : QueryCache HashSpec)
       (result : List (Vector Digest (steps + 1)) × QueryCache HashSpec)
-      (target : Epoch),
-      target ∈ epochs →
+      (target : LeafIndex),
+      target ∈ leafIndices →
       result ∈ support
         (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-          steps cache epochs) →
+          steps cache leafIndices) →
       ∃ before after trajectory,
         (trajectory, after) ∈ support
           ((simulateQ randomOracle
             (Concrete.chainTrajectory parameter target chain 0 steps
               (secret target chain))).run before) ∧
         after ≤ result.2 := by
-  intro epochs
-  induction epochs with
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro _cache _result target htarget _hresult
       simp at htarget
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro cache result target htarget hresult
       rw [Concrete.fixedSeedChainTrajectoriesFromCache_cons,
         mem_support_bind_iff] at hresult
@@ -42,12 +42,12 @@ theorem Concrete.fixedSeedChainTrajectoriesFromCache_component_support_global
       rcases htarget with rfl | htarget
       · have hrestInfo :=
           Concrete.fixedSeedChainTrajectoriesFromCache_support_info parameter
-            secret chain steps epochs first.2 rest hrest
+            secret chain steps leafIndices first.2 rest hrest
         exact ⟨cache, first.2, first.1, hfirst, hrestInfo.1⟩
       · exact ih first.2 rest target htarget hrest
 
 theorem Concrete.allChainTrajectoriesFromCache_chain_component_support
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     ∀ (chains : List ChainIndex) (cache : QueryCache HashSpec)
       (result : AllChainTrajectories × QueryCache HashSpec)
       (selected : ChainIndex),
@@ -58,7 +58,7 @@ theorem Concrete.allChainTrajectoriesFromCache_chain_component_support
       ∃ before after trajectories,
         (trajectories, after) ∈ support
           (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret
-            selected (chainLength - 1) before allEpochs) ∧
+            selected (chainLength - 1) before allLeafIndices) ∧
         after ≤ result.2 := by
   intro chains
   induction chains with
@@ -84,86 +84,86 @@ theorem Concrete.allChainTrajectoriesFromCache_chain_component_support
       · exact ih first.2 rest selected htailNodup hselected hrest
 
 theorem Concrete.allChainTrajectoriesFromCache_chainWalk_run_eq_pure
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (result : AllChainTrajectories × QueryCache HashSpec)
     (hresult : result ∈ support
       (Concrete.allChainTrajectoriesFromCache parameter secret ∅ allChains))
     (largerCache : QueryCache HashSpec) (hle : result.2 ≤ largerCache)
-    (epoch : Epoch) (chain : ChainIndex) :
+    (leafIndex : LeafIndex) (chain : ChainIndex) :
     (simulateQ randomOracle
-      (Concrete.chainWalk parameter epoch chain 0 (chainLength - 1)
-        (secret epoch chain))).run largerCache =
+      (Concrete.chainWalk parameter leafIndex chain 0 (chainLength - 1)
+        (secret leafIndex chain))).run largerCache =
       pure (Concrete.CacheReplay.oneTimePublicKey largerCache parameter secret
-        epoch chain, largerCache) := by
+        leafIndex chain, largerCache) := by
   obtain ⟨before, after, trajectories, htrajectories, hafter⟩ :=
     Concrete.allChainTrajectoriesFromCache_chain_component_support
       parameter secret allChains ∅ result chain allChains_nodup
         (mem_allChains chain) hresult
   obtain ⟨walkBefore, walkAfter, trajectory, htrajectory, hwalkAfter⟩ :=
     Concrete.fixedSeedChainTrajectoriesFromCache_component_support_global
-      parameter secret chain (chainLength - 1) allEpochs before
-        (trajectories, after) epoch (mem_allEpochs epoch) htrajectories
+      parameter secret chain (chainLength - 1) allLeafIndices before
+        (trajectories, after) leafIndex (mem_allLeafIndices leafIndex) htrajectories
   have hmapped : (trajectory.back, walkAfter) ∈ support
       ((fun value : FullChainTrajectory × QueryCache HashSpec =>
         (value.1.back, value.2)) <$>
           (simulateQ randomOracle
-            (Concrete.chainTrajectory parameter epoch chain 0
-              (chainLength - 1) (secret epoch chain))).run walkBefore) := by
+            (Concrete.chainTrajectory parameter leafIndex chain 0
+              (chainLength - 1) (secret leafIndex chain))).run walkBefore) := by
     rw [support_map]
     exact ⟨(trajectory, walkAfter), htrajectory, rfl⟩
   have hwalk : (trajectory.back, walkAfter) ∈ support
       ((simulateQ randomOracle
-        (Concrete.chainWalk parameter epoch chain 0 (chainLength - 1)
-          (secret epoch chain) : OracleComp HashSpec Digest)).run walkBefore) :=
+        (Concrete.chainWalk parameter leafIndex chain 0 (chainLength - 1)
+          (secret leafIndex chain) : OracleComp HashSpec Digest)).run walkBefore) :=
     (mem_support_iff_of_evalDist_eq
       (evalDist_chainTrajectory_run_cache_eq_chainWalk_run_cache
-        parameter epoch chain 0 (chainLength - 1) (secret epoch chain)
+        parameter leafIndex chain 0 (chainLength - 1) (secret leafIndex chain)
           walkBefore) (trajectory.back, walkAfter)).mp hmapped
   have hwalkLe : walkAfter ≤ largerCache :=
     hwalkAfter.trans (hafter.trans hle)
   have hreplay :=
     Concrete.CacheReplay.eval_answerFn_largerCache_eq_of_mem_support
-      (Concrete.chainWalk parameter epoch chain 0 (chainLength - 1)
-        (secret epoch chain) : OracleComp HashSpec Digest)
+      (Concrete.chainWalk parameter leafIndex chain 0 (chainLength - 1)
+        (secret leafIndex chain) : OracleComp HashSpec Digest)
       walkBefore walkAfter largerCache trajectory.back hwalk hwalkLe
   rw [Concrete.CacheReplay.eval_chainWalk] at hreplay
   rw [Concrete.CacheReplay.randomOracle_rerun_largerCache_eq_pure_of_mem_support
-    (Concrete.chainWalk parameter epoch chain 0 (chainLength - 1)
-      (secret epoch chain) : OracleComp HashSpec Digest)
+    (Concrete.chainWalk parameter leafIndex chain 0 (chainLength - 1)
+      (secret leafIndex chain) : OracleComp HashSpec Digest)
     walkBefore walkAfter largerCache trajectory.back hwalk hwalkLe]
   rw [← hreplay]
   rfl
 
 theorem Concrete.allChainTrajectoriesFromCache_oneTimePublicKey_run_eq_pure
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (result : AllChainTrajectories × QueryCache HashSpec)
     (hresult : result ∈ support
       (Concrete.allChainTrajectoriesFromCache parameter secret ∅ allChains))
     (largerCache : QueryCache HashSpec) (hle : result.2 ≤ largerCache)
-    (epoch : Epoch) :
+    (leafIndex : LeafIndex) :
     (simulateQ randomOracle
-      (Concrete.oneTimePublicKey parameter secret epoch)).run largerCache =
+      (Concrete.oneTimePublicKey parameter secret leafIndex)).run largerCache =
       pure (Concrete.CacheReplay.oneTimePublicKey largerCache parameter secret
-        epoch, largerCache) := by
+        leafIndex, largerCache) := by
   have hrun : ∀ chain,
       (simulateQ randomOracle
-        (Concrete.chainWalk parameter epoch chain 0 (chainLength - 1)
-          (secret epoch chain))).run largerCache =
+        (Concrete.chainWalk parameter leafIndex chain 0 (chainLength - 1)
+          (secret leafIndex chain))).run largerCache =
         pure (Concrete.CacheReplay.oneTimePublicKey largerCache parameter secret
-          epoch chain, largerCache) := by
+          leafIndex chain, largerCache) := by
     intro chain
     exact Concrete.allChainTrajectoriesFromCache_chainWalk_run_eq_pure
-      parameter secret result hresult largerCache hle epoch chain
+      parameter secret result hresult largerCache hle leafIndex chain
   simpa [Concrete.oneTimePublicKey] using
     (simulate_sequenceFin_run_eq_pure
-      (fun chain => Concrete.chainWalk parameter epoch chain 0
-        (chainLength - 1) (secret epoch chain)) largerCache
-      (Concrete.CacheReplay.oneTimePublicKey largerCache parameter secret epoch)
+      (fun chain => Concrete.chainWalk parameter leafIndex chain 0
+        (chainLength - 1) (secret leafIndex chain)) largerCache
+      (Concrete.CacheReplay.oneTimePublicKey largerCache parameter secret leafIndex)
       hrun)
 
 structure GlobalTreeCacheCorrespondence
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec) : Prop where
   merkle : HashCachesAgreeOn (MerkleHashInput parameter) leftCache rightCache
   leaves : LeafCacheOutputsCorrespond parameter leftEndpoints rightEndpoints
@@ -171,8 +171,8 @@ structure GlobalTreeCacheCorrespondence
 
 def TreeCacheResult
     (parameter : PublicParameter)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     {Result : Type}
     (leftResult rightResult : Result × QueryCache HashSpec) : Prop :=
   leftResult.1 = rightResult.1 ∧
@@ -183,7 +183,7 @@ def TreeCacheResult
 
 def GlobalTreeValuesResult
     (parameter : PublicParameter)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (leftResult rightResult : List Digest × QueryCache HashSpec) : Prop :=
   leftResult.1 = rightResult.1 ∧
     ∃ leftEndpoints rightEndpoints,
@@ -194,9 +194,9 @@ def GlobalTreeValuesResult
 
 theorem GlobalTreeCacheCorrespondence.replayLeaves
     (parameter : PublicParameter)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (htree : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
     (hleftReplay : ReplayEndpointsMatch parameter leftSecret leftEndpoints
@@ -205,36 +205,36 @@ theorem GlobalTreeCacheCorrespondence.replayLeaves
       rightCache) :
     LeafReplayOutputsCorrespond parameter leftSecret rightSecret leftCache
       rightCache := by
-  intro epoch
+  intro leafIndex
   calc
-    hashCacheLookup leftCache (Concrete.CacheView.leafInput parameter epoch
+    hashCacheLookup leftCache (Concrete.CacheView.leafInput parameter leafIndex
         (Concrete.CacheReplay.oneTimePublicKey leftCache parameter leftSecret
-          epoch)) =
-        hashCacheLookup leftCache (Concrete.CacheView.leafInput parameter epoch
-          (leftEndpoints epoch)) := by rw [hleftReplay epoch]
-    _ = hashCacheLookup rightCache (Concrete.CacheView.leafInput parameter epoch
-        (rightEndpoints epoch)) := htree.leaves epoch
-    _ = hashCacheLookup rightCache (Concrete.CacheView.leafInput parameter epoch
+          leafIndex)) =
+        hashCacheLookup leftCache (Concrete.CacheView.leafInput parameter leafIndex
+          (leftEndpoints leafIndex)) := by rw [hleftReplay leafIndex]
+    _ = hashCacheLookup rightCache (Concrete.CacheView.leafInput parameter leafIndex
+        (rightEndpoints leafIndex)) := htree.leaves leafIndex
+    _ = hashCacheLookup rightCache (Concrete.CacheView.leafInput parameter leafIndex
         (Concrete.CacheReplay.oneTimePublicKey rightCache parameter rightSecret
-          epoch)) := by rw [hrightReplay epoch]
+          leafIndex)) := by rw [hrightReplay leafIndex]
 
 theorem merkleHashInput_ne_leafInput
-    (parameter : PublicParameter) (epoch : Epoch)
+    (parameter : PublicParameter) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) (input : HashInput)
     (hinput : MerkleHashInput parameter input) :
-    input ≠ Concrete.CacheView.leafInput parameter epoch endpoints := by
+    input ≠ Concrete.CacheView.leafInput parameter leafIndex endpoints := by
   obtain ⟨level, node, hmerkle⟩ := hinput
   intro heq
-  have hleaf : AtHashAddress parameter (.leaf epoch) input := by
+  have hleaf : AtHashAddress parameter (.leaf leafIndex) input := by
     rw [heq]
     simp [Concrete.CacheView.leafInput]
   have hdomain := atHashAddress_unique parameter (.merkle level node)
-    (.leaf epoch) input hmerkle hleaf
+    (.leaf leafIndex) input hmerkle hleaf
   simp at hdomain
 
 theorem GlobalTreeCacheCorrespondence.cacheQuery_merkle
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec)
     (hrel : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
@@ -250,43 +250,43 @@ theorem GlobalTreeCacheCorrespondence.cacheQuery_merkle
   · exact hrel.merkle.cacheQuery (MerkleHashInput parameter) leftCache
       rightCache _ output
   · apply hrel.leaves.cacheQuery_distinct
-    · intro epoch heq
-      exact Concrete.CacheView.leafInput_ne_merkleInput parameter epoch
-        (leftEndpoints epoch) level node left right heq.symm
-    · intro epoch heq
-      exact Concrete.CacheView.leafInput_ne_merkleInput parameter epoch
-        (rightEndpoints epoch) level node left right heq.symm
+    · intro leafIndex heq
+      exact Concrete.CacheView.leafInput_ne_merkleInput parameter leafIndex
+        (leftEndpoints leafIndex) level node left right heq.symm
+    · intro leafIndex heq
+      exact Concrete.CacheView.leafInput_ne_merkleInput parameter leafIndex
+        (rightEndpoints leafIndex) level node left right heq.symm
 
 theorem GlobalTreeCacheCorrespondence.cacheQuery_leafPair
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec)
     (hrel : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
-    (epoch : Epoch) (output : HashOutput) :
+    (leafIndex : LeafIndex) (output : HashOutput) :
     GlobalTreeCacheCorrespondence parameter leftEndpoints rightEndpoints
       (leftCache.cacheQuery
-        (Concrete.CacheView.leafInput parameter epoch (leftEndpoints epoch))
+        (Concrete.CacheView.leafInput parameter leafIndex (leftEndpoints leafIndex))
           output)
       (rightCache.cacheQuery
-        (Concrete.CacheView.leafInput parameter epoch (rightEndpoints epoch))
+        (Concrete.CacheView.leafInput parameter leafIndex (rightEndpoints leafIndex))
           output) := by
   constructor
   · apply HashCachesAgreeOn.cacheQuery_distinct
       (MerkleHashInput parameter) leftCache rightCache hrel.merkle
     · intro input hinput
-      exact merkleHashInput_ne_leafInput parameter epoch (leftEndpoints epoch)
+      exact merkleHashInput_ne_leafInput parameter leafIndex (leftEndpoints leafIndex)
         input hinput
     · intro input hinput
-      exact merkleHashInput_ne_leafInput parameter epoch (rightEndpoints epoch)
+      exact merkleHashInput_ne_leafInput parameter leafIndex (rightEndpoints leafIndex)
         input hinput
   · exact hrel.leaves.cacheQuery_pair parameter leftEndpoints
-      rightEndpoints leftCache rightCache epoch output
+      rightEndpoints leftCache rightCache leafIndex output
 
 theorem relTriple_randomOracle_globalLeaf_fixed
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec)
     (hcache : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
@@ -294,18 +294,18 @@ theorem relTriple_randomOracle_globalLeaf_fixed
       leftCache)
     (hrightReplay : ReplayEndpointsMatch parameter rightSecret rightEndpoints
       rightCache)
-    (epoch : Epoch)
+    (leafIndex : LeafIndex)
     (hleftNone : leftCache
-      (Concrete.CacheView.leafInput parameter epoch (leftEndpoints epoch)) =
+      (Concrete.CacheView.leafInput parameter leafIndex (leftEndpoints leafIndex)) =
         none)
     (hrightNone : rightCache
-      (Concrete.CacheView.leafInput parameter epoch (rightEndpoints epoch)) =
+      (Concrete.CacheView.leafInput parameter leafIndex (rightEndpoints leafIndex)) =
         none) :
     RelTriple
-      ((randomOracle (Concrete.CacheView.leafInput parameter epoch
-        (leftEndpoints epoch))).run leftCache)
-      ((randomOracle (Concrete.CacheView.leafInput parameter epoch
-        (rightEndpoints epoch))).run rightCache)
+      ((randomOracle (Concrete.CacheView.leafInput parameter leafIndex
+        (leftEndpoints leafIndex))).run leftCache)
+      ((randomOracle (Concrete.CacheView.leafInput parameter leafIndex
+        (rightEndpoints leafIndex))).run rightCache)
       (TreeCacheResult parameter leftSecret rightSecret leftEndpoints
         rightEndpoints) := by
   rw [randomOracle, QueryImpl.withCaching_run_none _ hleftNone,
@@ -317,16 +317,16 @@ theorem relTriple_randomOracle_globalLeaf_fixed
   apply relTriple_pure_pure
   refine ⟨rfl, ?_, ?_, ?_⟩
   · exact hcache.cacheQuery_leafPair parameter leftEndpoints rightEndpoints
-      leftCache rightCache epoch leftOutput
+      leftCache rightCache leafIndex leftOutput
   · exact hleftReplay.cacheQuery_leafInput parameter leftSecret
-      leftEndpoints leftCache epoch (leftEndpoints epoch) leftOutput
+      leftEndpoints leftCache leafIndex (leftEndpoints leafIndex) leftOutput
   · exact hrightReplay.cacheQuery_leafInput parameter rightSecret
-      rightEndpoints rightCache epoch (rightEndpoints epoch) leftOutput
+      rightEndpoints rightCache leafIndex (rightEndpoints leafIndex) leftOutput
 
 theorem relTriple_globalLeafHash_fixed_run
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec)
     (hcache : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
@@ -334,36 +334,36 @@ theorem relTriple_globalLeafHash_fixed_run
       leftCache)
     (hrightReplay : ReplayEndpointsMatch parameter rightSecret rightEndpoints
       rightCache)
-    (epoch : Epoch)
+    (leafIndex : LeafIndex)
     (hleftNone : leftCache
-      (Concrete.CacheView.leafInput parameter epoch (leftEndpoints epoch)) =
+      (Concrete.CacheView.leafInput parameter leafIndex (leftEndpoints leafIndex)) =
         none)
     (hrightNone : rightCache
-      (Concrete.CacheView.leafInput parameter epoch (rightEndpoints epoch)) =
+      (Concrete.CacheView.leafInput parameter leafIndex (rightEndpoints leafIndex)) =
         none) :
     RelTriple
       ((simulateQ randomOracle
-        (Concrete.leafHash parameter epoch (leftEndpoints epoch) :
+        (Concrete.leafHash parameter leafIndex (leftEndpoints leafIndex) :
           OracleComp HashSpec Digest)).run leftCache)
       ((simulateQ randomOracle
-        (Concrete.leafHash parameter epoch (rightEndpoints epoch) :
+        (Concrete.leafHash parameter leafIndex (rightEndpoints leafIndex) :
           OracleComp HashSpec Digest)).run rightCache)
       (TreeCacheResult parameter leftSecret rightSecret leftEndpoints
         rightEndpoints) := by
   change RelTriple
     ((fun result : HashOutput × QueryCache HashSpec =>
       (truncateHash result.1, result.2)) <$>
-        (randomOracle (Concrete.CacheView.leafInput parameter epoch
-          (leftEndpoints epoch))).run leftCache)
+        (randomOracle (Concrete.CacheView.leafInput parameter leafIndex
+          (leftEndpoints leafIndex))).run leftCache)
     ((fun result : HashOutput × QueryCache HashSpec =>
       (truncateHash result.1, result.2)) <$>
-        (randomOracle (Concrete.CacheView.leafInput parameter epoch
-          (rightEndpoints epoch))).run rightCache) _
+        (randomOracle (Concrete.CacheView.leafInput parameter leafIndex
+          (rightEndpoints leafIndex))).run rightCache) _
   apply relTriple_map
   apply relTriple_post_mono
     (relTriple_randomOracle_globalLeaf_fixed parameter leftEndpoints
       rightEndpoints leftSecret rightSecret leftCache rightCache hcache
-        hleftReplay hrightReplay epoch hleftNone hrightNone)
+        hleftReplay hrightReplay leafIndex hleftNone hrightNone)
   intro leftResult rightResult hresult
   exact ⟨congrArg truncateHash hresult.1, hresult.2⟩
 
@@ -388,7 +388,7 @@ theorem programmedGlobalChainTrajectoryMaterial_initialTreeCacheCorrespondence
       (programmedGlobalChainTrajectoryMaterial parameter))
     (hright : right ∈ support
       (programmedGlobalChainTrajectoryMaterial parameter))
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest) :
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest) :
     GlobalTreeCacheCorrespondence parameter leftEndpoints rightEndpoints
       left.2.2 right.2.2 := by
   have hleftActual :=
@@ -404,13 +404,13 @@ theorem programmedGlobalChainTrajectoryMaterial_initialTreeCacheCorrespondence
         level node input haddress allChains ∅ left.2 (by simp) hleftActual,
       Concrete.allChainTrajectoriesFromCache_avoids_merkle parameter right.1
         level node input haddress allChains ∅ right.2 (by simp) hrightActual]
-  · intro epoch
+  · intro leafIndex
     unfold hashCacheLookup
     rw [Concrete.allChainTrajectoriesFromCache_avoids_leaf parameter left.1
-        epoch _ (by simp [Concrete.CacheView.leafInput]) allChains ∅ left.2
+        leafIndex _ (by simp [Concrete.CacheView.leafInput]) allChains ∅ left.2
           (by simp) hleftActual,
       Concrete.allChainTrajectoriesFromCache_avoids_leaf parameter right.1
-        epoch _ (by simp [Concrete.CacheView.leafInput]) allChains ∅ right.2
+        leafIndex _ (by simp [Concrete.CacheView.leafInput]) allChains ∅ right.2
           (by simp) hrightActual]
 
 theorem relTriple_globalMaterial_leafAt_fixed_run
@@ -420,8 +420,8 @@ theorem relTriple_globalMaterial_leafAt_fixed_run
       (programmedGlobalChainTrajectoryMaterial parameter))
     (hright : right ∈ support
       (programmedGlobalChainTrajectoryMaterial parameter))
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
-    (epoch : Epoch) (leftCache rightCache : QueryCache HashSpec)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
+    (leafIndex : LeafIndex) (leftCache rightCache : QueryCache HashSpec)
     (hcache : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
     (hleftReplay : ReplayEndpointsMatch parameter left.1 leftEndpoints
@@ -429,16 +429,16 @@ theorem relTriple_globalMaterial_leafAt_fixed_run
     (hrightReplay : ReplayEndpointsMatch parameter right.1 rightEndpoints
       rightCache)
     (hleftLe : left.2.2 ≤ leftCache) (hrightLe : right.2.2 ≤ rightCache)
-    (hleftAbsent : ∀ input, AtHashAddress parameter (.leaf epoch) input →
+    (hleftAbsent : ∀ input, AtHashAddress parameter (.leaf leafIndex) input →
       leftCache input = none)
-    (hrightAbsent : ∀ input, AtHashAddress parameter (.leaf epoch) input →
+    (hrightAbsent : ∀ input, AtHashAddress parameter (.leaf leafIndex) input →
       rightCache input = none) :
     RelTriple
       ((simulateQ randomOracle
-        (Concrete.leafAt parameter left.1 epoch :
+        (Concrete.leafAt parameter left.1 leafIndex :
           OracleComp HashSpec Digest)).run leftCache)
       ((simulateQ randomOracle
-        (Concrete.leafAt parameter right.1 epoch :
+        (Concrete.leafAt parameter right.1 leafIndex :
           OracleComp HashSpec Digest)).run rightCache)
       (TreeCacheResult parameter left.1 right.1 leftEndpoints
         rightEndpoints) := by
@@ -450,24 +450,24 @@ theorem relTriple_globalMaterial_leafAt_fixed_run
       hright
   have hleftOneTime :=
     Concrete.allChainTrajectoriesFromCache_oneTimePublicKey_run_eq_pure
-      parameter left.1 left.2 hleftActual leftCache hleftLe epoch
+      parameter left.1 left.2 hleftActual leftCache hleftLe leafIndex
   have hrightOneTime :=
     Concrete.allChainTrajectoriesFromCache_oneTimePublicKey_run_eq_pure
-      parameter right.1 right.2 hrightActual rightCache hrightLe epoch
+      parameter right.1 right.2 hrightActual rightCache hrightLe leafIndex
   unfold Concrete.leafAt
   simp only [simulateQ_bind, StateT.run_bind, hleftOneTime, hrightOneTime,
     pure_bind]
-  rw [← hleftReplay epoch, ← hrightReplay epoch]
+  rw [← hleftReplay leafIndex, ← hrightReplay leafIndex]
   apply relTriple_globalLeafHash_fixed_run parameter leftEndpoints
     rightEndpoints left.1 right.1 leftCache rightCache hcache hleftReplay
-      hrightReplay epoch
+      hrightReplay leafIndex
   · exact hleftAbsent _ (by simp [Concrete.CacheView.leafInput])
   · exact hrightAbsent _ (by simp [Concrete.CacheView.leafInput])
 
 theorem relTriple_randomOracle_globalMerkle_with_endpoint_matches
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec)
     (hcache : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
@@ -517,8 +517,8 @@ theorem relTriple_randomOracle_globalMerkle_with_endpoint_matches
 
 theorem relTriple_globalNodeHash_run_with_endpoint_matches
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (leftCache rightCache : QueryCache HashSpec)
     (hcache : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
@@ -556,8 +556,8 @@ theorem relTriple_globalNodeHash_run_with_endpoint_matches
 
 theorem relTriple_globalTreeNode_succ_run
     (parameter : PublicParameter)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
-    (leftSecret rightSecret : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
+    (leftSecret rightSecret : LeafIndex → ChainIndex → Digest)
     (levels : Nat) (node : MerkleNode) (hlevel : levels < treeHeight)
     (leftChild rightChild : Digest)
     (leftCache rightCache : QueryCache HashSpec)
@@ -614,7 +614,7 @@ theorem relTriple_globalMaterial_leafTreeValues_run
     ∀ (indices : List TreeValueIndex),
       (∀ index ∈ indices, index.1.val = 0) →
       indices.Pairwise TreeValueIndex.Precedes →
-      ∀ (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+      ∀ (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
         (leftCache rightCache : QueryCache HashSpec),
         TreeValuesFresh parameter indices leftCache →
         TreeValuesFresh parameter indices rightCache →
@@ -742,10 +742,10 @@ theorem relTriple_globalMaterial_allLeafValues_run
           parameter right hright)
     intro index _hindex input hinput
     exact hall index (mem_allTreeValueIndices index) input hinput
-  let leftEndpoints := fun epoch =>
-    Concrete.CacheReplay.oneTimePublicKey left.2.2 parameter left.1 epoch
-  let rightEndpoints := fun epoch =>
-    Concrete.CacheReplay.oneTimePublicKey right.2.2 parameter right.1 epoch
+  let leftEndpoints := fun leafIndex =>
+    Concrete.CacheReplay.oneTimePublicKey left.2.2 parameter left.1 leafIndex
+  let rightEndpoints := fun leafIndex =>
+    Concrete.CacheReplay.oneTimePublicKey right.2.2 parameter right.1 leafIndex
   apply relTriple_post_mono
     (relTriple_globalMaterial_leafTreeValues_run parameter left right hleft
       hright (treeValueIndicesAtHeight 0) hzero hordered leftEndpoints
@@ -766,7 +766,7 @@ theorem relTriple_globalMaterial_merkleTreeValue_run
     (hrightPrefix : rightPrefix ∈ support
       (treeValues parameter right.1 processed right.2.2))
     (hprefixValues : leftPrefix.1 = rightPrefix.1)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (hcache : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftPrefix.2 rightPrefix.2)
     (hleftReplay : ReplayEndpointsMatch parameter left.1 leftEndpoints
@@ -904,7 +904,7 @@ theorem relTriple_globalMaterial_merkleTreeValues_run
       leftBase.1 = rightBase.1 →
       TreeValuesFresh parameter indices leftBase.2 →
       TreeValuesFresh parameter indices rightBase.2 →
-      ∀ (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest),
+      ∀ (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest),
       GlobalTreeCacheCorrespondence parameter leftEndpoints rightEndpoints
         leftBase.2 rightBase.2 →
       ReplayEndpointsMatch parameter left.1 leftEndpoints leftBase.2 →
@@ -1042,7 +1042,7 @@ theorem relTriple_globalMaterial_merkleHeight_run
       (treeValueIndicesAtHeight height) leftBase.2)
     (hrightFresh : TreeValuesFresh parameter
       (treeValueIndicesAtHeight height) rightBase.2)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (hcache : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftBase.2 rightBase.2)
     (hleftReplay : ReplayEndpointsMatch parameter left.1 leftEndpoints

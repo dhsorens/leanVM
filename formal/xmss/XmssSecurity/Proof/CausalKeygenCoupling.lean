@@ -6,49 +6,49 @@ open OracleComp OracleSpec ENNReal
 namespace XmssSecurity
 
 theorem simulate_chainHash_run_of_fresh
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (value : Digest) (cache : QueryCache HashSpec)
     (habsent : cache
-      (Concrete.CacheView.chainInput parameter epoch chain step value) = none) :
+      (Concrete.CacheView.chainInput parameter leafIndex chain step value) = none) :
     (simulateQ randomOracle
-      (Concrete.chainHash parameter epoch chain step value :
+      (Concrete.chainHash parameter leafIndex chain step value :
         OracleComp HashSpec Digest)).run cache =
       (fun output => (truncateHash output,
         cache.cacheQuery
-          (Concrete.CacheView.chainInput parameter epoch chain step value)
+          (Concrete.CacheView.chainInput parameter leafIndex chain step value)
           output)) <$> uniformHashOutput := by
-  let input := Concrete.CacheView.chainInput parameter epoch chain step value
+  let input := Concrete.CacheView.chainInput parameter leafIndex chain step value
   change (fun result : HashOutput × QueryCache HashSpec =>
       (truncateHash result.1, result.2)) <$> (randomOracle input).run cache = _
   rw [randomOracle_run_none_eq_uniformHashOutput _ _ habsent]
   simp [Functor.map_map]
 
 noncomputable def programmedChainExtension
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (values : Vector Digest (n + 1))
     (cache : QueryCache HashSpec) :
     ProbComp (Vector Digest ((n + 1) + 1) × QueryCache HashSpec) := do
   let sampled ← Rom.sampledHashOutputWithDigest
   pure (values.push sampled.1,
     cache.cacheQuery
-      (Concrete.CacheView.chainInput parameter epoch chain step values.back)
+      (Concrete.CacheView.chainInput parameter leafIndex chain step values.back)
       sampled.2)
 
 set_option maxRecDepth 100000 in
 theorem evalDist_chainExtension_eq_programmed
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (values : Vector Digest (n + 1))
     (cache : QueryCache HashSpec)
     (habsent : cache
-      (Concrete.CacheView.chainInput parameter epoch chain step values.back) = none) :
+      (Concrete.CacheView.chainInput parameter leafIndex chain step values.back) = none) :
     evalDist ((simulateQ randomOracle ((do
-      let next ← Concrete.chainHash parameter epoch chain step values.back
+      let next ← Concrete.chainHash parameter leafIndex chain step values.back
       pure (values.push next)) :
         OracleComp HashSpec (Vector Digest ((n + 1) + 1)))).run
         cache) =
-    evalDist (programmedChainExtension parameter epoch chain step values cache) := by
+    evalDist (programmedChainExtension parameter leafIndex chain step values cache) := by
   rw [simulateQ_bind, StateT.run_bind,
-    simulate_chainHash_run_of_fresh parameter epoch chain step values.back
+    simulate_chainHash_run_of_fresh parameter leafIndex chain step values.back
       cache habsent]
   simp only [map_eq_bind_pure_comp, bind_assoc, pure_bind,
     Function.comp_apply, simulateQ_pure, StateT.run_pure]
@@ -58,19 +58,19 @@ theorem evalDist_chainExtension_eq_programmed
     (fun sampled => pure
       (values.push sampled.1,
         cache.cacheQuery
-          (Concrete.CacheView.chainInput parameter epoch chain step values.back)
+          (Concrete.CacheView.chainInput parameter leafIndex chain step values.back)
           sampled.2))
 
 noncomputable def programmedChainTrajectory
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position : Nat) : (steps : Nat) → Digest → QueryCache HashSpec →
       ProbComp (Vector Digest (steps + 1) × QueryCache HashSpec)
   | 0, value, cache => pure (Vector.ofFn (fun _ => value), cache)
   | steps + 1, value, cache => do
-      let prior ← programmedChainTrajectory parameter epoch chain position
+      let prior ← programmedChainTrajectory parameter leafIndex chain position
         steps value cache
       if hvalid : position + steps < chainLength - 1 then
-        programmedChainExtension parameter epoch chain ⟨position + steps, hvalid⟩
+        programmedChainExtension parameter leafIndex chain ⟨position + steps, hvalid⟩
           prior.1 prior.2
       else
         pure (prior.1.push 0, prior.2)
@@ -79,17 +79,17 @@ set_option maxHeartbeats 1600000 in
 set_option maxRecDepth 100000 in
 set_option linter.constructorNameAsVariable false in
 theorem evalDist_chainTrajectory_eq_programmed
-    (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+    (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position : Nat) : ∀ (steps : Nat) (value : Digest)
       (cache : QueryCache HashSpec),
       position + steps ≤ chainLength - 1 →
       (∀ step : ChainStep, ∀ input,
-        AtHashAddress parameter (.chain epoch chain step) input →
+        AtHashAddress parameter (.chain leafIndex chain step) input →
           cache input = none) →
       evalDist ((simulateQ randomOracle
-        (Concrete.chainTrajectory parameter epoch chain position steps value)).run
+        (Concrete.chainTrajectory parameter leafIndex chain position steps value)).run
           cache) =
-      evalDist (programmedChainTrajectory parameter epoch chain position steps
+      evalDist (programmedChainTrajectory parameter leafIndex chain position steps
         value cache) := by
   intro steps
   induction steps with
@@ -104,20 +104,20 @@ theorem evalDist_chainTrajectory_eq_programmed
       simp only [hvalid, ↓reduceDIte, simulateQ_bind, StateT.run_bind,
         simulateQ_pure, StateT.run_pure]
       let actualPrior := (simulateQ randomOracle
-        (Concrete.chainTrajectory parameter epoch chain position steps value)).run
+        (Concrete.chainTrajectory parameter leafIndex chain position steps value)).run
           cache
-      let programmedPrior := programmedChainTrajectory parameter epoch chain
+      let programmedPrior := programmedChainTrajectory parameter leafIndex chain
         position steps value cache
       let actualExtension := fun prior :
           Vector Digest (steps + 1) × QueryCache HashSpec =>
         (simulateQ randomOracle
-          (Concrete.chainHash parameter epoch chain
+          (Concrete.chainHash parameter leafIndex chain
             ⟨position + steps, hvalid⟩ prior.1.back :
             OracleComp HashSpec Digest)).run prior.2 >>= fun hashed =>
           pure (prior.1.push hashed.1, hashed.2)
       let programmedExtension := fun prior :
           Vector Digest (steps + 1) × QueryCache HashSpec =>
-        programmedChainExtension parameter epoch chain
+        programmedChainExtension parameter leafIndex chain
           ⟨position + steps, hvalid⟩ prior.1 prior.2
       change evalDist (actualPrior >>= actualExtension) =
         evalDist (programmedPrior >>= programmedExtension)
@@ -133,16 +133,16 @@ theorem evalDist_chainTrajectory_eq_programmed
             (mem_support_iff_of_evalDist_eq
               (ih value cache (by omega) habsent) prior).mpr hprior
           have hfresh : prior.2
-              (Concrete.CacheView.chainInput parameter epoch chain
+              (Concrete.CacheView.chainInput parameter leafIndex chain
                 ⟨position + steps, hvalid⟩ prior.1.back) = none := by
             apply Concrete.CacheReplay.cache_none_of_zero_query_bound
-              (Concrete.chainTrajectory parameter epoch chain position steps value)
-              (Concrete.CacheView.chainInput parameter epoch chain
+              (Concrete.chainTrajectory parameter leafIndex chain position steps value)
+              (Concrete.CacheView.chainInput parameter leafIndex chain
                 ⟨position + steps, hvalid⟩ prior.1.back)
               cache prior.2 prior.1
             · apply OracleComp.IsQueryBoundP.of_imp
                 (p' := AtHashAddress parameter
-                  (.chain epoch chain ⟨position + steps, hvalid⟩))
+                  (.chain leafIndex chain ⟨position + steps, hvalid⟩))
               · intro input heq
                 subst input
                 exact (atHashAddress_tweakableHashInput_iff
@@ -157,83 +157,83 @@ theorem evalDist_chainTrajectory_eq_programmed
             · exact hpriorActual
           simpa [actualExtension, programmedExtension, simulateQ_bind,
             StateT.run_bind, simulateQ_pure, StateT.run_pure] using
-            (evalDist_chainExtension_eq_programmed parameter epoch chain
+            (evalDist_chainExtension_eq_programmed parameter leafIndex chain
               ⟨position + steps, hvalid⟩ prior.1 prior.2 hfresh)
 
 noncomputable def programmedFixedSeedChainTrajectoriesFromCache
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) :
-    QueryCache HashSpec → List Epoch →
+    QueryCache HashSpec → List LeafIndex →
       ProbComp (List (Vector Digest (steps + 1)) × QueryCache HashSpec)
   | cache, [] => pure ([], cache)
-  | cache, epoch :: epochs => do
-      let first ← programmedChainTrajectory parameter epoch chain 0 steps
-        (secret epoch chain) cache
+  | cache, leafIndex :: leafIndices => do
+      let first ← programmedChainTrajectory parameter leafIndex chain 0 steps
+        (secret leafIndex chain) cache
       let rest ← programmedFixedSeedChainTrajectoriesFromCache parameter secret
-        chain steps first.2 epochs
+        chain steps first.2 leafIndices
       pure (first.1 :: rest.1, rest.2)
 
 theorem programmedFixedSeedChainTrajectoriesFromCache_cons
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (epochs : List Epoch) :
+    (leafIndex : LeafIndex) (leafIndices : List LeafIndex) :
     programmedFixedSeedChainTrajectoriesFromCache parameter secret chain steps
-      cache (epoch :: epochs) = (do
-        let first ← programmedChainTrajectory parameter epoch chain 0 steps
-          (secret epoch chain) cache
+      cache (leafIndex :: leafIndices) = (do
+        let first ← programmedChainTrajectory parameter leafIndex chain 0 steps
+          (secret leafIndex chain) cache
         let rest ← programmedFixedSeedChainTrajectoriesFromCache parameter secret
-          chain steps first.2 epochs
+          chain steps first.2 leafIndices
         pure (first.1 :: rest.1, rest.2)) := rfl
 
 set_option maxHeartbeats 2400000 in
 set_option maxRecDepth 100000 in
 set_option linter.constructorNameAsVariable false in
 theorem evalDist_fixedSeedChainTrajectories_eq_programmed
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (chain : ChainIndex) (steps : Nat) (hsteps : steps ≤ chainLength - 1) :
-    ∀ (epochs : List Epoch) (cache : QueryCache HashSpec),
-      epochs.Nodup →
-      (∀ epoch ∈ epochs, ∀ step : ChainStep, ∀ input,
-        AtHashAddress parameter (.chain epoch chain step) input →
+    ∀ (leafIndices : List LeafIndex) (cache : QueryCache HashSpec),
+      leafIndices.Nodup →
+      (∀ leafIndex ∈ leafIndices, ∀ step : ChainStep, ∀ input,
+        AtHashAddress parameter (.chain leafIndex chain step) input →
           cache input = none) →
       evalDist (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret
-        chain steps cache epochs) =
+        chain steps cache leafIndices) =
       evalDist (programmedFixedSeedChainTrajectoriesFromCache parameter secret
-        chain steps cache epochs) := by
-  intro epochs
-  induction epochs with
+        chain steps cache leafIndices) := by
+  intro leafIndices
+  induction leafIndices with
   | nil =>
       intro cache _hnodup _habsent
       rfl
-  | cons epoch epochs ih =>
+  | cons leafIndex leafIndices ih =>
       intro cache hnodup habsent
-      have hnotMem : epoch ∉ epochs := (List.nodup_cons.mp hnodup).1
-      have htailNodup : epochs.Nodup := (List.nodup_cons.mp hnodup).2
+      have hnotMem : leafIndex ∉ leafIndices := (List.nodup_cons.mp hnodup).1
+      have htailNodup : leafIndices.Nodup := (List.nodup_cons.mp hnodup).2
       rw [Concrete.fixedSeedChainTrajectoriesFromCache_cons,
         programmedFixedSeedChainTrajectoriesFromCache_cons]
       let actualFirst := (simulateQ randomOracle
-        (Concrete.chainTrajectory parameter epoch chain 0 steps
-          (secret epoch chain))).run cache
-      let programmedFirst := programmedChainTrajectory parameter epoch chain 0
-        steps (secret epoch chain) cache
+        (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+          (secret leafIndex chain))).run cache
+      let programmedFirst := programmedChainTrajectory parameter leafIndex chain 0
+        steps (secret leafIndex chain) cache
       let actualRest := fun first :
           Vector Digest (steps + 1) × QueryCache HashSpec =>
         Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-          steps first.2 epochs >>= fun rest =>
+          steps first.2 leafIndices >>= fun rest =>
         pure (first.1 :: rest.1, rest.2)
       let programmedRest := fun first :
           Vector Digest (steps + 1) × QueryCache HashSpec =>
         programmedFixedSeedChainTrajectoriesFromCache parameter secret chain
-          steps first.2 epochs >>= fun rest =>
+          steps first.2 leafIndices >>= fun rest =>
         pure (first.1 :: rest.1, rest.2)
       change evalDist (actualFirst >>= actualRest) =
         evalDist (programmedFirst >>= programmedRest)
       have hfirst : evalDist actualFirst = evalDist programmedFirst := by
-        apply evalDist_chainTrajectory_eq_programmed parameter epoch chain 0
-          steps (secret epoch chain) cache
+        apply evalDist_chainTrajectory_eq_programmed parameter leafIndex chain 0
+          steps (secret leafIndex chain) cache
         · simpa using hsteps
         · intro step input haddress
-          exact habsent epoch (by simp) step input haddress
+          exact habsent leafIndex (by simp) step input haddress
       calc
         evalDist (actualFirst >>= actualRest) =
             evalDist (programmedFirst >>= actualRest) := by
@@ -243,13 +243,13 @@ theorem evalDist_fixedSeedChainTrajectories_eq_programmed
           intro first hfirstProgrammed
           have hfirstActual : first ∈ support actualFirst :=
             (mem_support_iff_of_evalDist_eq hfirst first).mpr hfirstProgrammed
-          have htailAbsent : ∀ later ∈ epochs, ∀ step : ChainStep, ∀ input,
+          have htailAbsent : ∀ later ∈ leafIndices, ∀ step : ChainStep, ∀ input,
               AtHashAddress parameter (.chain later chain step) input →
                 first.2 input = none := by
             intro later hlater step input haddress
             apply Concrete.CacheReplay.cache_none_of_zero_query_bound
-              (Concrete.chainTrajectory parameter epoch chain 0 steps
-                (secret epoch chain)) input cache first.2 first.1
+              (Concrete.chainTrajectory parameter leafIndex chain 0 steps
+                (secret leafIndex chain)) input cache first.2 first.1
             · apply OracleComp.IsQueryBoundP.of_imp
                 (p' := AtHashAddress parameter (.chain later chain step))
               · intro candidate heq
@@ -268,10 +268,10 @@ theorem evalDist_fixedSeedChainTrajectories_eq_programmed
 noncomputable def programmedWarmedFixedChainKeygenReplayTable
     (chain : ChainIndex) : ProbComp ProgrammedFixedChainKeygenView := do
   let parameter ← Concrete.samplePublicParameter
-  let secretView ← extractFixedChainSeeds chain allEpochs
+  let secretView ← extractFixedChainSeeds chain allLeafIndices
   let secret := unflattenSecret secretView.2
   let trajectoryResult ← programmedFixedSeedChainTrajectoriesFromCache
-    parameter secret chain (chainLength - 1) ∅ allEpochs
+    parameter secret chain (chainLength - 1) ∅ allLeafIndices
   let rootResult ← (simulateQ randomOracle
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest)).run trajectoryResult.2
@@ -311,22 +311,22 @@ theorem evalDist_chronologicallyWarmedFixedChainKeygen_eq_programmedReplay
   simp only [bind_assoc]
   change evalDist
       (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-        (chainLength - 1) ∅ allEpochs >>= finish) =
+        (chainLength - 1) ∅ allLeafIndices >>= finish) =
     evalDist
       (programmedFixedSeedChainTrajectoriesFromCache parameter secret chain
-        (chainLength - 1) ∅ allEpochs >>= finish)
+        (chainLength - 1) ∅ allLeafIndices >>= finish)
   rw [evalDist_bind,
     evalDist_fixedSeedChainTrajectories_eq_programmed parameter secret chain
-      (chainLength - 1) le_rfl allEpochs ∅ allEpochs_nodup (by simp),
+      (chainLength - 1) le_rfl allLeafIndices ∅ allLeafIndices_nodup (by simp),
     ← evalDist_bind]
 
 noncomputable def programmedWarmedFixedChainKeygen
     (chain : ChainIndex) : ProbComp ProgrammedFixedChainKeygenView := do
   let parameter ← Concrete.samplePublicParameter
-  let secretView ← extractFixedChainSeeds chain allEpochs
+  let secretView ← extractFixedChainSeeds chain allLeafIndices
   let secret := unflattenSecret secretView.2
   let trajectoryResult ← programmedFixedSeedChainTrajectoriesFromCache
-    parameter secret chain (chainLength - 1) ∅ allEpochs
+    parameter secret chain (chainLength - 1) ∅ allLeafIndices
   let rootResult ← (simulateQ randomOracle
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest)).run trajectoryResult.2
@@ -354,15 +354,15 @@ theorem evalDist_programmedWarmedFixedChainKeygenReplayTable_eq_explicit
   intro trajectoryResult hprogrammed
   have htrajectories : evalDist
       (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-        (chainLength - 1) ∅ allEpochs) =
+        (chainLength - 1) ∅ allLeafIndices) =
       evalDist
       (programmedFixedSeedChainTrajectoriesFromCache parameter secret chain
-        (chainLength - 1) ∅ allEpochs) :=
+        (chainLength - 1) ∅ allLeafIndices) :=
     evalDist_fixedSeedChainTrajectories_eq_programmed parameter secret chain
-      (chainLength - 1) le_rfl allEpochs ∅ allEpochs_nodup (by simp)
+      (chainLength - 1) le_rfl allLeafIndices ∅ allLeafIndices_nodup (by simp)
   have hactual : trajectoryResult ∈ support
       (Concrete.fixedSeedChainTrajectoriesFromCache parameter secret chain
-        (chainLength - 1) ∅ allEpochs) :=
+        (chainLength - 1) ∅ allLeafIndices) :=
     (mem_support_iff_of_evalDist_eq htrajectories trajectoryResult).mpr
       hprogrammed
   apply evalDist_bind_congr

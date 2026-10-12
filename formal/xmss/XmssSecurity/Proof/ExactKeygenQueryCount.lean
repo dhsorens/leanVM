@@ -19,33 +19,33 @@ def treeHashQueryCount : Nat → Nat
 namespace ExactQueryCount
 
 theorem oneTimePublicKey (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (epoch : Epoch) :
+    (secret : LeafIndex → ChainIndex → Digest) (leafIndex : LeafIndex) :
     ExactQueryCount
-      (Concrete.oneTimePublicKey (m := OracleComp HashSpec) parameter secret epoch)
+      (Concrete.oneTimePublicKey (m := OracleComp HashSpec) parameter secret leafIndex)
       (numChains * (chainLength - 1)) := by
   unfold Concrete.oneTimePublicKey
   have hexact := sequenceFin
     (fun chain : ChainIndex =>
-      Concrete.chainWalk (m := OracleComp HashSpec) parameter epoch chain 0
-        (chainLength - 1) (secret epoch chain))
+      Concrete.chainWalk (m := OracleComp HashSpec) parameter leafIndex chain 0
+        (chainLength - 1) (secret leafIndex chain))
     (fun _ : ChainIndex => chainLength - 1)
-    (fun chain => chainWalk parameter epoch chain 0 (chainLength - 1)
-      (secret epoch chain) (by omega))
+    (fun chain => chainWalk parameter leafIndex chain 0 (chainLength - 1)
+      (secret leafIndex chain) (by omega))
   simpa using hexact
 
 theorem leafAt (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (epoch : Epoch) :
+    (secret : LeafIndex → ChainIndex → Digest) (leafIndex : LeafIndex) :
     ExactQueryCount
-      (Concrete.leafAt (m := OracleComp HashSpec) parameter secret epoch)
+      (Concrete.leafAt (m := OracleComp HashSpec) parameter secret leafIndex)
       (numChains * (chainLength - 1) + 1) := by
   unfold Concrete.leafAt
-  exact (oneTimePublicKey parameter secret epoch).bind
-    (fun endpoints => Concrete.leafHash parameter epoch endpoints) 1
-    (fun endpoints => tweakableHash parameter (.leaf epoch)
+  exact (oneTimePublicKey parameter secret leafIndex).bind
+    (fun endpoints => Concrete.leafHash parameter leafIndex endpoints) 1
+    (fun endpoints => tweakableHash parameter (.leaf leafIndex)
       (Concrete.leafPayload endpoints))
 
 theorem treeNode (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (levels : Nat) (node : MerkleNode)
+    (secret : LeafIndex → ChainIndex → Digest) (levels : Nat) (node : MerkleNode)
     (hlevels : levels ≤ treeHeight) :
     ExactQueryCount
       (Concrete.treeNode (m := OracleComp HashSpec) parameter secret levels node)
@@ -79,7 +79,7 @@ theorem treeNode (parameter : PublicParameter)
           (treeHashQueryCount levels + 1) hcontinuation
 
 theorem rootTree (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) :
+    (secret : LeafIndex → ChainIndex → Digest) :
     ExactQueryCount
       (Concrete.treeNode (m := OracleComp HashSpec) parameter secret treeHeight
         Concrete.rootNode)
@@ -114,7 +114,7 @@ theorem liftProbComp_hashCount_zero (computation : ProbComp α) :
     (OracleComp.isQueryBoundP_false computation 0)
 
 theorem rootTreeWithLog_hashCount
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest) :
     ExactPredicateQueryCount IsHashQuery
       (liftM
         (Concrete.treeNode (m := OracleComp HashSpec) parameter secret treeHeight

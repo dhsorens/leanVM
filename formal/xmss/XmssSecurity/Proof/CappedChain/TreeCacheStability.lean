@@ -7,7 +7,7 @@ open OracleComp OracleSpec
 namespace XmssSecurity.CappedChain
 
 def TreeCacheStable
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec) : Prop :=
   ∀ (levels : Nat) (node : MerkleNode),
     levels ≤ treeHeight → TreeSubtreeValid levels node →
@@ -19,7 +19,7 @@ def TreeCacheStable
         largerCache)
 
 theorem treeCacheStable_of_treeValues_support
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (initialCache : QueryCache HashSpec)
     (tree : List Digest × QueryCache HashSpec)
     (htree : tree ∈ support
@@ -49,7 +49,7 @@ theorem treeCacheStable_of_treeValues_support
       hmem hle
 
 theorem TreeCacheStable.treeNode_eq
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (cache : QueryCache HashSpec)
     (hstable : TreeCacheStable parameter secret cache)
     (levels : Nat) (node : MerkleNode)
@@ -78,13 +78,13 @@ theorem TreeCacheStable.authenticationPath_eq
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
     (hstable : TreeCacheStable secretKey.parameter secretKey.chainStart cache)
     (largerCache : QueryCache HashSpec) (hle : cache ≤ largerCache)
-    (epoch : Epoch) :
-    Concrete.CacheReplay.authenticationPath cache secretKey epoch =
-      Concrete.CacheReplay.authenticationPath largerCache secretKey epoch := by
+    (leafIndex : LeafIndex) :
+    Concrete.CacheReplay.authenticationPath cache secretKey leafIndex =
+      Concrete.CacheReplay.authenticationPath largerCache secretKey leafIndex := by
   funext level
   exact TreeCacheStable.treeNode_eq secretKey.parameter secretKey.chainStart
-    cache hstable level.val (Concrete.authenticationPathNode epoch level)
-      (by omega) (authenticationPathNode_subtreeValid epoch level)
+    cache hstable level.val (Concrete.authenticationPathNode leafIndex level)
+      (by omega) (authenticationPathNode_subtreeValid leafIndex level)
         largerCache hle
 
 theorem coupledWarmedKeygenExperiment_support_treeCacheStable

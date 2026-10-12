@@ -10,11 +10,11 @@ fn keygen_sign_verify() {
     let seed: [u8; 32] = std::array::from_fn(|i| i as u8);
     let message = test_message();
 
-    for epoch in [0u32, 1234, u32::MAX] {
-        let (sk, pk) = key_gen_from_seed(seed, epoch.saturating_sub(1), epoch.saturating_add(2)).unwrap();
-        let sig = sign(&sk, &message, epoch).unwrap();
-        verify(&pk, &message, &sig, epoch).unwrap();
-        assert_eq!(sign(&sk, &message, epoch).unwrap(), sig);
+    for leaf_index in [0u32, 1234, u32::MAX] {
+        let (sk, pk) = key_gen_from_seed(seed, leaf_index.saturating_sub(1), leaf_index.saturating_add(2)).unwrap();
+        let sig = sign(&sk, &message, leaf_index).unwrap();
+        verify(&pk, &message, &sig, leaf_index).unwrap();
+        assert_eq!(sign(&sk, &message, leaf_index).unwrap(), sig);
     }
 }
 
@@ -22,10 +22,10 @@ fn keygen_sign_verify() {
 fn serialize_deserialize_and_size() {
     let seed: [u8; 32] = std::array::from_fn(|i| i as u8);
     let message = test_message();
-    let epoch = 110;
+    let leaf_index = 110;
 
     let (sk, pk) = key_gen_from_seed(seed, 100, 115).unwrap();
-    let sig = sign(&sk, &message, epoch).unwrap();
+    let sig = sign(&sk, &message, leaf_index).unwrap();
 
     let public_key_bytes = bincode::serialize(&pk).unwrap();
     assert_eq!(public_key_bytes.len(), PUB_KEY_SIZE);
@@ -37,7 +37,7 @@ fn serialize_deserialize_and_size() {
     let decoded_signature: XmssSignature = bincode::deserialize(&signature_bytes).unwrap();
     assert_eq!(sig, decoded_signature);
 
-    verify(&decoded_public_key, &message, &decoded_signature, epoch).unwrap();
+    verify(&decoded_public_key, &message, &decoded_signature, leaf_index).unwrap();
 }
 
 #[test]
@@ -94,33 +94,33 @@ fn multi_block_tweak_hash_is_the_hash_of_its_input() {
 fn tampered_signatures_rejected() {
     let seed = [9u8; 32];
     let message = test_message();
-    let epoch = 7;
+    let leaf_index = 7;
     let (sk, pk) = key_gen_from_seed(seed, 0, 15).unwrap();
-    let sig = sign(&sk, &message, epoch).unwrap();
-    verify(&pk, &message, &sig, epoch).unwrap();
+    let sig = sign(&sk, &message, leaf_index).unwrap();
+    verify(&pk, &message, &sig, leaf_index).unwrap();
 
     let mut bad_message = message;
     bad_message[0] ^= 1;
-    assert!(verify(&pk, &bad_message, &sig, epoch).is_err());
+    assert!(verify(&pk, &bad_message, &sig, leaf_index).is_err());
 
-    assert!(verify(&pk, &message, &sig, epoch + 1).is_err());
+    assert!(verify(&pk, &message, &sig, leaf_index + 1).is_err());
 
     let mut bad_chain_tip = sig.clone();
     bad_chain_tip.wots_signature.chain_tips[5][0] ^= 1;
-    assert!(verify(&pk, &message, &bad_chain_tip, epoch).is_err());
+    assert!(verify(&pk, &message, &bad_chain_tip, leaf_index).is_err());
 
     let mut bad_randomness = sig.clone();
     bad_randomness.wots_signature.randomness[0] ^= 1;
-    assert!(verify(&pk, &message, &bad_randomness, epoch).is_err());
+    assert!(verify(&pk, &message, &bad_randomness, leaf_index).is_err());
 
     let mut bad_merkle_path = sig.clone();
     bad_merkle_path.merkle_proof[10][3] ^= 1;
     assert_eq!(
-        verify(&pk, &message, &bad_merkle_path, epoch),
+        verify(&pk, &message, &bad_merkle_path, leaf_index),
         Err(XmssVerifyError::InvalidMerklePath)
     );
 
-    assert_eq!(sign(&sk, &message, 16), Err(XmssSignError::EpochOutOfRange));
+    assert_eq!(sign(&sk, &message, 16), Err(XmssSignError::LeafIndexOutOfRange));
 }
 
 /// Detect changes to the encoding predicate through its grinding cost.
@@ -150,13 +150,13 @@ fn secret_key_survives_a_round_trip() {
     let reloaded: XmssSecretKey = bincode::deserialize(&bincode::serialize(&sk).unwrap()).unwrap();
 
     assert_eq!(reloaded.public_key(), pk);
-    assert_eq!(reloaded.epoch_range(), 40..=45);
+    assert_eq!(reloaded.leaf_index_range(), 40..=45);
     let message = test_message();
-    for epoch in [40, 43, 45] {
-        let sig = sign(&reloaded, &message, epoch as u32).unwrap();
-        verify(&pk, &message, &sig, epoch as u32).unwrap();
+    for leaf_index in [40, 43, 45] {
+        let sig = sign(&reloaded, &message, leaf_index as u32).unwrap();
+        verify(&pk, &message, &sig, leaf_index as u32).unwrap();
     }
-    assert_eq!(sign(&reloaded, &message, 46), Err(XmssSignError::EpochOutOfRange));
+    assert_eq!(sign(&reloaded, &message, 46), Err(XmssSignError::LeafIndexOutOfRange));
 }
 
 /// The SSZ encoding is the container's fields concatenated, in declaration
@@ -166,9 +166,9 @@ fn secret_key_survives_a_round_trip() {
 fn ssz_layout_is_exact() {
     let seed: [u8; 32] = std::array::from_fn(|i| (i * 5 + 1) as u8);
     let message = test_message();
-    let epoch = 300;
+    let leaf_index = 300;
     let (sk, pk) = key_gen_from_seed(seed, 290, 310).unwrap();
-    let sig = sign(&sk, &message, epoch).unwrap();
+    let sig = sign(&sk, &message, leaf_index).unwrap();
 
     let mut expected_pk = Vec::new();
     expected_pk.extend_from_slice(&pk.merkle_root);
@@ -193,7 +193,7 @@ fn ssz_layout_is_exact() {
     let decoded_sig = XmssSignature::from_ssz_bytes(&expected_sig).unwrap();
     assert_eq!(decoded_pk, pk);
     assert_eq!(decoded_sig, sig);
-    verify(&decoded_pk, &message, &decoded_sig, epoch).unwrap();
+    verify(&decoded_pk, &message, &decoded_sig, leaf_index).unwrap();
 }
 
 /// A fixed-length container rejects any other length, and only that.
@@ -217,7 +217,7 @@ fn ssz_rejects_wrong_lengths() {
 }
 
 /// `prepare` only warms a cache, so it must change no signature, and a later
-/// epoch in a different bottom subtree must still evict what it left behind.
+/// leaf index in a different bottom subtree must still evict what it left behind.
 #[test]
 fn prepare_warms_without_changing_signatures() {
     let seed = [21u8; 32];
@@ -237,17 +237,17 @@ fn prepare_warms_without_changing_signatures() {
     let other = sign(&sk, &message, 0).unwrap();
     verify(&pk, &message, &other, 0).unwrap();
 
-    assert_eq!(sk.prepare(256), Err(XmssSignError::EpochOutOfRange));
+    assert_eq!(sk.prepare(256), Err(XmssSignError::LeafIndexOutOfRange));
 }
 
-/// The rng entry point must forward `(seed, epoch_start, epoch_end)` in that
+/// The rng entry point must forward `(seed, leaf_index_start, leaf_index_end)` in that
 /// order, and draw a fresh seed on every call.
 #[test]
 fn key_gen_draws_a_usable_seed() {
     let mut rng = StdRng::seed_from_u64(99);
     let message = test_message();
     let (sk, pk) = key_gen(&mut rng, 70, 80).unwrap();
-    assert_eq!(sk.epoch_range(), 70..=80);
+    assert_eq!(sk.leaf_index_range(), 70..=80);
     let sig = sign(&sk, &message, 75).unwrap();
     verify(&pk, &message, &sig, 75).unwrap();
 

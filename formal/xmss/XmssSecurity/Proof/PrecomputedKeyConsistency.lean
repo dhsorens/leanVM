@@ -8,9 +8,9 @@ namespace XmssSecurity
 def PrecomputedKeyConsistent (keygenCache : QueryCache HashSpec)
     (secretKey : SecretKey) : Prop :=
   ∀ largerCache, keygenCache ≤ largerCache →
-    ∀ epoch randomness encoding,
-      Concrete.precomputedSignWithEncoding secretKey epoch randomness encoding =
-        Concrete.CacheReplay.signWithEncoding largerCache secretKey epoch randomness encoding
+    ∀ leafIndex randomness encoding,
+      Concrete.precomputedSignWithEncoding secretKey leafIndex randomness encoding =
+        Concrete.CacheReplay.signWithEncoding largerCache secretKey leafIndex randomness encoding
 
 theorem keygen_support_treeCacheStable
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
@@ -108,7 +108,7 @@ theorem Concrete.precomputedKeygen_support_consistent
   have hold := Concrete.precomputedKeygen_support_oldKeygen keyResult hmem
   have hstable := keygen_support_treeCacheStable
     ((keyResult.1.1, Concrete.erasePrecomputation keyResult.1.2), keyResult.2) hold
-  intro largerCache hle epoch randomness encoding
+  intro largerCache hle leafIndex randomness encoding
   rw [hsecretKey] at hold hstable ⊢
   unfold Concrete.precomputedSignWithEncoding Concrete.CacheReplay.signWithEncoding
   congr 1
@@ -118,97 +118,97 @@ theorem Concrete.precomputedKeygen_support_consistent
       ((keyResult.1.1,
         Concrete.erasePrecomputation
           (Concrete.precomputedSecretKey parameter secret keyResult.2)), keyResult.2)
-      hold largerCache hle epoch chain (encoding chain).val
+      hold largerCache hle leafIndex chain (encoding chain).val
         (Nat.le_pred_of_lt (encoding chain).isLt)
   · rw [Concrete.CacheReplay.precomputedAuthenticationPath_eq]
     exact CappedChain.TreeCacheStable.authenticationPath_eq
       (Concrete.precomputedSecretKey parameter secret keyResult.2) keyResult.2
-      hstable largerCache hle epoch
+      hstable largerCache hle leafIndex
 
 theorem Concrete.precomputedKeygen_cache_none_encodingInput
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.precomputedKeygen).run ∅))
-    (targetEpoch : Epoch) (targetInput : Message × Randomness) :
+    (targetLeafIndex : LeafIndex) (targetInput : Message × Randomness) :
     keyResult.2
-      (Concrete.CacheView.encodingInput keyResult.1.2.parameter targetEpoch targetInput) =
+      (Concrete.CacheView.encodingInput keyResult.1.2.parameter targetLeafIndex targetInput) =
         none := by
   let oldKeyResult : (PublicKey × SecretKey) × QueryCache HashSpec :=
     ((keyResult.1.1, Concrete.erasePrecomputation keyResult.1.2), keyResult.2)
   have hold := Concrete.precomputedKeygen_support_oldKeygen keyResult hmem
-  exact Concrete.keygen_cache_none_encodingInput oldKeyResult hold targetEpoch targetInput
+  exact Concrete.keygen_cache_none_encodingInput oldKeyResult hold targetLeafIndex targetInput
 
 theorem Concrete.precomputedKeygen_chainWalk_eq_of_cache_le
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.precomputedKeygen).run ∅))
     (largerCache : QueryCache HashSpec) (hle : keyResult.2 ≤ largerCache)
-    (epoch : Epoch) (chain : ChainIndex) (steps : Nat)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (steps : Nat)
     (hsteps : steps ≤ chainLength - 1) :
     Wots.walk
-        (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-        0 steps (keyResult.1.2.chainStart epoch chain) =
+        (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+        0 steps (keyResult.1.2.chainStart leafIndex chain) =
       Wots.walk
-        (Concrete.CacheView.chainStep largerCache keyResult.1.2.parameter epoch chain)
-        0 steps (keyResult.1.2.chainStart epoch chain) := by
+        (Concrete.CacheView.chainStep largerCache keyResult.1.2.parameter leafIndex chain)
+        0 steps (keyResult.1.2.chainStart leafIndex chain) := by
   let oldKeyResult : (PublicKey × SecretKey) × QueryCache HashSpec :=
     ((keyResult.1.1, Concrete.erasePrecomputation keyResult.1.2), keyResult.2)
   have hold := Concrete.precomputedKeygen_support_oldKeygen keyResult hmem
-  exact Concrete.keygen_chainWalk_eq_of_cache_le oldKeyResult hold largerCache hle epoch
+  exact Concrete.keygen_chainWalk_eq_of_cache_le oldKeyResult hold largerCache hle leafIndex
     chain steps hsteps
 
 theorem Concrete.precomputedKeygen_cache_has_chainInput
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.precomputedKeygen).run ∅))
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep) :
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep) :
     ∃ output, keyResult.2
-      (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain step
+      (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain step
         (Wots.walk
-          (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-          0 step.val (keyResult.1.2.chainStart epoch chain))) = some output := by
+          (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+          0 step.val (keyResult.1.2.chainStart leafIndex chain))) = some output := by
   let oldKeyResult : (PublicKey × SecretKey) × QueryCache HashSpec :=
     ((keyResult.1.1, Concrete.erasePrecomputation keyResult.1.2), keyResult.2)
   have hold := Concrete.precomputedKeygen_support_oldKeygen keyResult hmem
-  exact Concrete.keygen_cache_has_chainInput oldKeyResult hold epoch chain step
+  exact Concrete.keygen_cache_has_chainInput oldKeyResult hold leafIndex chain step
 
 theorem Concrete.precomputedKeygen_cache_chainInput_eq_none_of_ne
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.precomputedKeygen).run ∅))
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep) (value : Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep) (value : Digest)
     (hne : value ≠ Wots.walk
-      (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-      0 step.val (keyResult.1.2.chainStart epoch chain)) :
+      (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+      0 step.val (keyResult.1.2.chainStart leafIndex chain)) :
     keyResult.2
-      (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain step value) = none := by
+      (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain step value) = none := by
   let oldKeyResult : (PublicKey × SecretKey) × QueryCache HashSpec :=
     ((keyResult.1.1, Concrete.erasePrecomputation keyResult.1.2), keyResult.2)
   have hold := Concrete.precomputedKeygen_support_oldKeygen keyResult hmem
-  exact Concrete.keygen_cache_chainInput_eq_none_of_ne oldKeyResult hold epoch chain step
+  exact Concrete.keygen_cache_chainInput_eq_none_of_ne oldKeyResult hold leafIndex chain step
     value hne
 
 theorem Concrete.precomputedKeygen_cache_has_chainValue_preimage
     (keyResult : (PublicKey × SecretKey) × QueryCache HashSpec)
     (hmem : keyResult ∈ support
       ((simulateQ romImpl Concrete.precomputedKeygen).run ∅))
-    (epoch : Epoch) (chain : ChainIndex) (digit : Digit)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (digit : Digit)
     (hpositive : 0 < digit.val) :
     ∃ previous : ChainStep, ∃ output,
       previous.val + 1 = digit.val ∧
       keyResult.2
-        (Concrete.CacheView.chainInput keyResult.1.2.parameter epoch chain previous
+        (Concrete.CacheView.chainInput keyResult.1.2.parameter leafIndex chain previous
           (Wots.walk
-            (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-            0 previous.val (keyResult.1.2.chainStart epoch chain))) = some output ∧
+            (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+            0 previous.val (keyResult.1.2.chainStart leafIndex chain))) = some output ∧
       truncateHash output =
         Wots.signChain
-          (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter epoch chain)
-          digit (keyResult.1.2.chainStart epoch chain) := by
+          (Concrete.CacheView.chainStep keyResult.2 keyResult.1.2.parameter leafIndex chain)
+          digit (keyResult.1.2.chainStart leafIndex chain) := by
   let oldKeyResult : (PublicKey × SecretKey) × QueryCache HashSpec :=
     ((keyResult.1.1, Concrete.erasePrecomputation keyResult.1.2), keyResult.2)
   have hold := Concrete.precomputedKeygen_support_oldKeygen keyResult hmem
-  exact Concrete.keygen_cache_has_chainValue_preimage oldKeyResult hold epoch chain digit
+  exact Concrete.keygen_cache_has_chainValue_preimage oldKeyResult hold leafIndex chain digit
     hpositive
 
 theorem Concrete.precomputedKeygen_cache_has_merkleInput_in_largerCache

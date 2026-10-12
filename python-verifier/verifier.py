@@ -180,7 +180,6 @@ class E:
 ZERO = E(0)
 ONE = E(1)
 GEN = E(2)
-Y = E(0, 1)  # the tower generator, y^3 = y + 1
 
 
 def powers(base: E, count: int) -> list[E]:
@@ -437,7 +436,6 @@ def sumcheck(transcript: Transcript, claim: E, count: int, equalities: Sequence[
 
 def verify_gkr_grand_products(depth: int, transcript: Transcript) -> tuple[E, MultilinearPoint, tuple[E, E, E]]:
     shared, count = transcript.next_scalar(), transcript.next_scalar()
-    combiner = transcript.sample()
     point: list[E] = []
     values = (shared, shared, count)  # 3 grand product GKR are batched together: push, pull, count
 
@@ -445,6 +443,7 @@ def verify_gkr_grand_products(depth: int, transcript: Transcript) -> tuple[E, Mu
     while layer > 0:
         # Two levels a step. An odd depth starts with one.
         step = 1 if layer % 2 else 2
+        combiner = transcript.sample()
         claim = poly_eval(values, combiner)
         # The product is degree 2^step, so one more coefficient than that per round.
         x, claim = sumcheck(transcript, claim, 2**step + 1, point)
@@ -455,7 +454,6 @@ def verify_gkr_grand_products(depth: int, transcript: Transcript) -> tuple[E, Mu
 
         y = transcript.samples(step)
         values = [multilinear_eval(child, y) for child in children]
-        combiner = transcript.sample()
         point = [*y, *x]
         layer -= step
 
@@ -925,7 +923,7 @@ QUERY_GRINDING_BITS = 17
 MIN_STACKED_LOG = 15
 MAX_STACKED_LOG = 28
 
-WHIR_QUERIES = (((223,55), (223,56,30), (223,56,31), (224,56,32), (224,56,32), (224,56,32,22), (224,56,32,22), (225,56,32,23), (225,56,32,23), (225,56,32,23,17), (226,56,32,23,17), (226,56,32,23,18), (227,56,32,23,18), (228,56,32,23,18,14)), ((112,45), (112,45,27), (112,45,28), (112,45,28), (112,45,28), (112,45,28,20), (112,45,28,20), (112,45,28,21), (112,45,28,21), (113,45,28,21,16), (113,45,28,21,16), (113,45,28,21,16), (113,45,28,21,16), (113,45,28,21,17,13)), ((75,37), (75,37,24), (75,38,25), (75,38,25), (75,38,25), (75,38,25,18), (75,38,25,19), (75,38,25,19), (75,38,25,19), (75,38,25,19,15), (75,38,25,19,15), (75,38,25,19,15), (75,38,25,19,15), (76,38,25,19,16,13)), ((56,32), (56,32,22), (56,32,22), (56,32,23), (56,32,23), (56,32,23,17), (56,32,23,17), (56,32,23,18), (56,32,23,18), (57,32,23,18,14), (57,32,23,18,14), (57,32,23,18,15), (57,33,23,18,15), (57,33,23,18,15,12)))  # fmt: skip
+WHIR_QUERIES = (((222,55), (223,56,30), (223,56,31), (223,56,32), (223,56,32), (223,56,32,22), (223,56,32,22), (224,56,32,23), (224,56,32,23), (224,56,32,23,17), (224,56,32,23,17), (224,56,32,23,18), (225,56,32,23,18), (225,56,32,23,18,14)), ((111,45), (112,45,27), (112,45,28), (112,45,28), (112,45,28), (112,45,28,20), (112,45,28,20), (112,45,28,21), (112,45,28,21), (112,45,28,21,16), (112,45,28,21,16), (112,45,28,21,16), (112,45,28,21,16), (112,45,28,21,16,13)), ((75,37), (75,37,24), (75,37,25), (75,38,25), (75,38,25), (75,38,25,18), (75,38,25,19), (75,38,25,19), (75,38,25,19), (75,38,25,19,15), (75,38,25,19,15), (75,38,25,19,15), (75,38,25,19,15), (75,38,25,19,15,13)), ((56,32), (56,32,22), (56,32,22), (56,32,23), (56,32,23), (56,32,23,17), (56,32,23,17), (56,32,23,18), (56,32,23,18), (56,32,23,18,14), (56,32,23,18,14), (56,32,23,18,14), (56,32,23,18,15), (56,32,23,18,15,12)))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -1348,10 +1346,11 @@ def verify_execution(bytecode: Sequence[K], public_input: Digest, proof: Proof) 
     table_sumcheck_claims = table_sumcheck(layout.table_log_heights, bus.forms, constraint_powers, form_powers, bus.point, target, transcript)
     claims = [*bus.claims, *table_sumcheck_claims]
 
-    # 5] binding the public input
+    # 5] binding the public input: each memory limb's claim is that limb's public line at the challenge, which the verifier
+    # evaluates itself, so the prover sends nothing. Both public words are 128-bit, so the top limb's claim is zero.
     public_challenge = transcript.sample()
-    public_limbs = (*transcript.next_scalars(2), ZERO)
-    require(poly_eval(public_limbs, Y) == multilinear_eval(public_input.halves(), [public_challenge]), "public input check failed")
+    first, second = public_input.halves()
+    public_limbs = tuple(multilinear_eval(pair, [public_challenge]) for pair in ((first.c0, second.c0), (first.c1, second.c1), (first.c2, second.c2)))
     public_point = (public_challenge, *[ZERO] * (layout.placements[MEMORY_0].variables - 1))
     claims.extend(ColumnClaim(column, public_point, value) for column, value in zip((MEMORY_0, MEMORY_1, MEMORY_2), public_limbs))
 

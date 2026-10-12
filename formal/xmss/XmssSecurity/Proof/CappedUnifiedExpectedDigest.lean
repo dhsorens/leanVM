@@ -12,10 +12,10 @@ set_option maxRecDepth 100000
 
 theorem CappedSuffix.keygenChainTargetInput_encodingInput_eq_self
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (payload : Message × Randomness) :
+    (leafIndex : LeafIndex) (payload : Message × Randomness) :
     CappedSuffix.keygenChainTargetInput secretKey cache
-      (Concrete.CacheView.encodingInput secretKey.parameter epoch payload) =
-    Concrete.CacheView.encodingInput secretKey.parameter epoch payload := by
+      (Concrete.CacheView.encodingInput secretKey.parameter leafIndex payload) =
+    Concrete.CacheView.encodingInput secretKey.parameter leafIndex payload := by
   unfold CappedSuffix.keygenChainTargetInput
   split
   · rename_i h
@@ -26,10 +26,10 @@ theorem CappedSuffix.keygenChainTargetInput_encodingInput_eq_self
 
 theorem CappedLeaf.keygenLeafTargetInput_encodingInput_eq_self
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (payload : Message × Randomness) :
+    (leafIndex : LeafIndex) (payload : Message × Randomness) :
     CappedLeaf.keygenLeafTargetInput secretKey cache
-      (Concrete.CacheView.encodingInput secretKey.parameter epoch payload) =
-    Concrete.CacheView.encodingInput secretKey.parameter epoch payload := by
+      (Concrete.CacheView.encodingInput secretKey.parameter leafIndex payload) =
+    Concrete.CacheView.encodingInput secretKey.parameter leafIndex payload := by
   unfold CappedLeaf.keygenLeafTargetInput
   split
   · rename_i h
@@ -40,10 +40,10 @@ theorem CappedLeaf.keygenLeafTargetInput_encodingInput_eq_self
 
 theorem CappedMerkle.keygenMerkleTargetInput_encodingInput_eq_self
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (payload : Message × Randomness) :
+    (leafIndex : LeafIndex) (payload : Message × Randomness) :
     CappedMerkle.keygenMerkleTargetInput secretKey cache
-      (Concrete.CacheView.encodingInput secretKey.parameter epoch payload) =
-    Concrete.CacheView.encodingInput secretKey.parameter epoch payload := by
+      (Concrete.CacheView.encodingInput secretKey.parameter leafIndex payload) =
+    Concrete.CacheView.encodingInput secretKey.parameter leafIndex payload := by
   unfold CappedMerkle.keygenMerkleTargetInput
   split
   · rename_i h
@@ -55,10 +55,10 @@ theorem CappedMerkle.keygenMerkleTargetInput_encodingInput_eq_self
 @[simp]
 theorem keygenStructuralTargetInput_encodingInput
     (secretKey : SecretKey) (cache : QueryCache HashSpec)
-    (epoch : Epoch) (payload : Message × Randomness) :
+    (leafIndex : LeafIndex) (payload : Message × Randomness) :
     keygenStructuralTargetInput secretKey cache
-      (Concrete.CacheView.encodingInput secretKey.parameter epoch payload) =
-    Concrete.CacheView.encodingInput secretKey.parameter epoch payload := by
+      (Concrete.CacheView.encodingInput secretKey.parameter leafIndex payload) =
+    Concrete.CacheView.encodingInput secretKey.parameter leafIndex payload := by
   unfold keygenStructuralTargetInput
   rw [CappedSuffix.keygenChainTargetInput_encodingInput_eq_self,
     CappedLeaf.keygenLeafTargetInput_encodingInput_eq_self,
@@ -75,17 +75,17 @@ theorem encodingHashQuery_structuralQuery_disjoint
   | inr hashInput =>
       intro hboth
       rcases hboth with ⟨hencoding, hstructural⟩
-      change (encodingInputEpoch? secretKey.parameter hashInput).isSome at hencoding
+      change (encodingInputLeafIndex? secretKey.parameter hashInput).isSome at hencoding
       change keygenStructuralTargetInput secretKey cache hashInput ≠ hashInput at hstructural
-      cases hepoch : encodingInputEpoch? secretKey.parameter hashInput with
-      | none => simp [hepoch] at hencoding
-      | some epoch =>
+      cases hleafIndex : encodingInputLeafIndex? secretKey.parameter hashInput with
+      | none => simp [hleafIndex] at hencoding
+      | some leafIndex =>
           obtain ⟨payload, hpayload⟩ :=
-            exists_encodingInput_of_encodingInputEpoch?_eq_some
-              secretKey.parameter hashInput epoch hepoch
+            exists_encodingInput_of_encodingInputLeafIndex?_eq_some
+              secretKey.parameter hashInput leafIndex hleafIndex
           rw [← hpayload] at hstructural
           exact hstructural
-            (keygenStructuralTargetInput_encodingInput secretKey cache epoch payload)
+            (keygenStructuralTargetInput_encodingInput secretKey cache leafIndex payload)
 
 theorem cappedSourceUnloggedDetailedGameAfterKeygen_hashQueryBound_sub_keygen
     (q : Nat) (adversary : Adversary)

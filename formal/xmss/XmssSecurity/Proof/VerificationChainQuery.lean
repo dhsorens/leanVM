@@ -5,22 +5,22 @@ open OracleComp OracleSpec
 namespace XmssSecurity.Concrete.CacheReplay
 
 theorem verify_true_chain_query_cached_as_in_largerCache
-    (publicKey : PublicKey) (epoch : Epoch) (message : Message) (signature : Signature)
+    (publicKey : PublicKey) (leafIndex : LeafIndex) (message : Message) (signature : Signature)
     (encoding : Encoding) (chain : ChainIndex) (offset : Nat)
     (hoffset : offset < chainLength - 1 - (encoding chain).val)
     (initialCache resultCache largerCache : QueryCache HashSpec)
     (hmem : (true, resultCache) ∈ support
       ((simulateQ randomOracle
-        (Concrete.verify publicKey epoch message signature :
+        (Concrete.verify publicKey leafIndex message signature :
           OracleComp HashSpec Bool)).run initialCache))
     (hdecode : TargetSum.decodeDigest
-      (Concrete.CacheView.encodingHash largerCache publicKey.parameter epoch
+      (Concrete.CacheView.encodingHash largerCache publicKey.parameter leafIndex
         (message, signature.randomness)) = some encoding)
     (hle : resultCache ≤ largerCache) :
     ∃ output, largerCache
-      (Concrete.CacheView.chainInput publicKey.parameter epoch chain
+      (Concrete.CacheView.chainInput publicKey.parameter leafIndex chain
         ⟨(encoding chain).val + offset, by omega⟩
-        (Wots.walk (Concrete.CacheView.chainStep largerCache publicKey.parameter epoch chain)
+        (Wots.walk (Concrete.CacheView.chainStep largerCache publicKey.parameter leafIndex chain)
           (encoding chain).val offset (signature.chainValue chain))) = some output := by
   unfold Concrete.verify at hmem
   rw [simulateQ_bind, StateT.run_bind, mem_support_bind_iff] at hmem
@@ -34,15 +34,15 @@ theorem verify_true_chain_query_cached_as_in_largerCache
       have hdigestResultLe : digestCache ≤ resultCache :=
         randomOracle_cache_le
           (do
-            let endpoints ← Concrete.recoverEndpoints publicKey.parameter epoch
+            let endpoints ← Concrete.recoverEndpoints publicKey.parameter leafIndex
               actualEncoding signature
-            let leaf ← Concrete.leafHash publicKey.parameter epoch endpoints
-            Concrete.verifyAfterLeaf publicKey epoch signature leaf :
+            let leaf ← Concrete.leafHash publicKey.parameter leafIndex endpoints
+            Concrete.verifyAfterLeaf publicKey leafIndex signature leaf :
             OracleComp HashSpec Bool)
           digestCache (true, resultCache) (by
             simpa only [hactualDecode] using hafterDigest)
       have hdigestEval := eval_answerFn_largerCache_eq_of_mem_support
-        (Concrete.encodingHash publicKey.parameter epoch message signature.randomness :
+        (Concrete.encodingHash publicKey.parameter leafIndex message signature.randomness :
           OracleComp HashSpec Digest)
         initialCache digestCache largerCache digest hdigest (hdigestResultLe.trans hle)
       rw [eval_encodingHash] at hdigestEval
@@ -56,20 +56,20 @@ theorem verify_true_chain_query_cached_as_in_largerCache
       have hendpointsResultLe : endpointsCache ≤ resultCache :=
         randomOracle_cache_le
           (do
-            let leaf ← Concrete.leafHash publicKey.parameter epoch endpoints
-            Concrete.verifyAfterLeaf publicKey epoch signature leaf :
+            let leaf ← Concrete.leafHash publicKey.parameter leafIndex endpoints
+            Concrete.verifyAfterLeaf publicKey leafIndex signature leaf :
             OracleComp HashSpec Bool)
           endpointsCache (true, resultCache) hafterEndpoints
       unfold Concrete.recoverEndpoints at hendpoints
       obtain ⟨beforeCache, afterCache, value, hchain, hchainLe⟩ :=
         sequenceFin_component_support_in_largerCache
-          (fun index => Concrete.recoverChain publicKey.parameter epoch index
+          (fun index => Concrete.recoverChain publicKey.parameter leafIndex index
             (encoding index) (signature.chainValue index) :
             ChainIndex → OracleComp HashSpec Digest)
           chain digestCache endpointsCache largerCache endpoints hendpoints
           (hendpointsResultLe.trans hle)
       unfold Concrete.recoverChain at hchain
-      exact chainWalk_query_cached_in_largerCache publicKey.parameter epoch chain
+      exact chainWalk_query_cached_in_largerCache publicKey.parameter leafIndex chain
         (encoding chain).val (chainLength - 1 - (encoding chain).val)
         (signature.chainValue chain) offset hoffset (by omega) beforeCache afterCache
         largerCache value hchain hchainLe

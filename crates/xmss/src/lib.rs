@@ -47,11 +47,11 @@ pub const MESSAGE_LEN: usize = 32;
 pub const PUBLIC_PARAM_LEN: usize = 16;
 
 // XMSS
-/// Merkle tree height: a key is valid for up to `2^32` epochs.
+/// Merkle tree height: a key is valid for up to `2^32` leaf indices.
 pub const LOG_LIFETIME: usize = 32;
 
-/// When a signature was made. Each epoch in the key's range may sign only one message.
-pub type Epoch = u32;
+/// The Merkle leaf, and so the one-time key, a signature uses. Each leaf index in the key's range may sign only one message.
+pub type LeafIndex = u32;
 
 /// Serialized sizes (exact under bincode: fixed arrays, no length prefixes).
 pub const WOTS_SIG_SIZE: usize = RANDOMNESS_LEN + V * DIGEST_LEN; // 696

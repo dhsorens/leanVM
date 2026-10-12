@@ -8,7 +8,7 @@ def recoveredEndpoints (step : ChainIndex → Nat → Digest → Digest)
     (encoding : Encoding) (values : ChainIndex → Digest) : ChainIndex → Digest :=
   fun i => Wots.recoverChain (step i) (encoding i) (values i)
 
-noncomputable def SameEpochBadEventOccurs {EncodingInput : Type}
+noncomputable def SameLeafIndexBadEventOccurs {EncodingInput : Type}
     (encodingHash : EncodingInput → Digest)
     (step : ChainIndex → Nat → Digest → Digest)
     (leafHash : (ChainIndex → Digest) → Digest)
@@ -32,8 +32,8 @@ noncomputable def SameEpochBadEventOccurs {EncodingInput : Type}
       (leafHash (recoveredEndpoints step forgedEncoding forgedValue))
       (leafHash (recoveredEndpoints step signedEncoding signedValue)) level
 
-/-- The deterministic core of the same-epoch strong-forgery reduction. -/
-theorem classify_sameEpoch_forgery {EncodingInput : Type}
+/-- The deterministic core of the same-leaf-index strong-forgery reduction. -/
+theorem classify_sameLeafIndex_forgery {EncodingInput : Type}
     (encodingHash : EncodingInput → Digest)
     (step : ChainIndex → Nat → Digest → Digest)
     (leafHash : (ChainIndex → Digest) → Digest)
@@ -97,8 +97,8 @@ theorem classify_sameEpoch_forgery {EncodingInput : Type}
     · exact Or.inr <| Or.inr <| Or.inr <| Or.inl hleafCollision
   · exact Or.inr <| Or.inr <| Or.inr <| Or.inr hmerkle
 
-/-- Every same-epoch strong forgery selects one of the 175 explicitly indexed bad events. -/
-theorem sameEpoch_forgery_has_badEvent {EncodingInput : Type}
+/-- Every same-leaf-index strong forgery selects one of the 175 explicitly indexed bad events. -/
+theorem sameLeafIndex_forgery_has_badEvent {EncodingInput : Type}
     (encodingHash : EncodingInput → Digest)
     (step : ChainIndex → Nat → Digest → Digest)
     (leafHash : (ChainIndex → Digest) → Digest)
@@ -115,11 +115,11 @@ theorem sameEpoch_forgery_has_badEvent {EncodingInput : Type}
         (leafHash (recoveredEndpoints step signedEncoding signedValue)))
     (hstrong : signedInput ≠ forgedInput ∨ signedValue ≠ forgedValue ∨
       ¬Merkle.SamePathSegment signedPath forgedPath 0 treeHeight) :
-    ∃ event, SameEpochBadEventOccurs encodingHash step leafHash nodeHash
+    ∃ event, SameLeafIndexBadEventOccurs encodingHash step leafHash nodeHash
       signedInput forgedInput signedEncoding forgedEncoding signedValue forgedValue
       signedPath forgedPath (TargetSum.decodeDigest_eq_some_iff.mp hsignedEncoding).2 event := by
   have hsignedValid := (TargetSum.decodeDigest_eq_some_iff.mp hsignedEncoding).2
-  rcases classify_sameEpoch_forgery encodingHash step leafHash nodeHash
+  rcases classify_sameLeafIndex_forgery encodingHash step leafHash nodeHash
       signedInput forgedInput signedEncoding forgedEncoding signedValue forgedValue
       signedPath forgedPath hsignedEncoding hforgedEncoding hroot hstrong with
     hencoding | hbackward | hsuffix | hleaf | hmerkle
@@ -133,7 +133,7 @@ theorem sameEpoch_forgery_has_badEvent {EncodingInput : Type}
   · obtain ⟨level, hlevel⟩ := hmerkle
     exact ⟨.merkle level, hlevel⟩
 
-noncomputable def FreshEpochBadEventOccurs
+noncomputable def FreshLeafIndexBadEventOccurs
     (step : ChainIndex → Nat → Digest → Digest)
     (leafHash : (ChainIndex → Digest) → Digest)
     (nodeHash : Nat → Digest → Digest → Digest)
@@ -155,8 +155,8 @@ noncomputable def FreshEpochBadEventOccurs
       (leafHash (recoveredEndpoints step forgedEncoding forgedValue))
       (leafHash (fun i => Wots.publicChain (step i) (secret i))) level
 
-/-- The deterministic core of the fresh-epoch forgery reduction. -/
-theorem classify_freshEpoch_forgery
+/-- The deterministic core of the fresh-leaf-index forgery reduction. -/
+theorem classify_freshLeafIndex_forgery
     (step : ChainIndex → Nat → Digest → Digest)
     (leafHash : (ChainIndex → Digest) → Digest)
     (nodeHash : Nat → Digest → Digest → Digest)
@@ -196,8 +196,8 @@ theorem classify_freshEpoch_forgery
     · exact Or.inr <| Or.inr <| Or.inl hleafCollision
   · exact Or.inr <| Or.inr <| Or.inr hmerkle
 
-/-- Every fresh-epoch forgery selects one of the same 175 indexed bad-event slots. -/
-theorem freshEpoch_forgery_has_badEvent
+/-- Every fresh-leaf-index forgery selects one of the same 175 indexed bad-event slots. -/
+theorem freshLeafIndex_forgery_has_badEvent
     (step : ChainIndex → Nat → Digest → Digest)
     (leafHash : (ChainIndex → Digest) → Digest)
     (nodeHash : Nat → Digest → Digest → Digest)
@@ -209,9 +209,9 @@ theorem freshEpoch_forgery_has_badEvent
         (leafHash (recoveredEndpoints step forgedEncoding forgedValue)) =
       Merkle.ascend nodeHash honestPath 0 treeHeight
         (leafHash (fun i => Wots.publicChain (step i) (secret i)))) :
-    ∃ event, FreshEpochBadEventOccurs step leafHash nodeHash forgedEncoding forgedValue secret
+    ∃ event, FreshLeafIndexBadEventOccurs step leafHash nodeHash forgedEncoding forgedValue secret
       forgedPath honestPath hforgedValid event := by
-  rcases classify_freshEpoch_forgery step leafHash nodeHash forgedEncoding forgedValue secret
+  rcases classify_freshLeafIndex_forgery step leafHash nodeHash forgedEncoding forgedValue secret
       forgedPath honestPath hroot with hchain | hsuffix | hleaf | hmerkle
   · obtain ⟨chain, hchain⟩ := hchain
     exact ⟨.chain chain, hchain⟩

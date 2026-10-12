@@ -84,7 +84,7 @@ theorem merkleAddressInSubtree_step_sum
 open OracleComp OracleSpec
 
 theorem Concrete.treeNode_queryBound_merkleAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (targetLevel : MerkleLevel) (targetNode : MerkleNode)
     (levels : Nat) (node : MerkleNode)
     (hlevels : levels ≤ treeHeight) (hvalid : TreeSubtreeValid levels node) :
@@ -139,7 +139,7 @@ theorem Concrete.treeNode_queryBound_merkleAddress
         using hall
 
 theorem Concrete.rootTree_queryBound_merkleAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (targetLevel : MerkleLevel) (targetNode : MerkleNode) :
     (Concrete.treeNode parameter secret treeHeight Concrete.rootNode :
       OracleComp HashSpec Digest).IsQueryBoundP
@@ -151,7 +151,7 @@ theorem Concrete.rootTree_queryBound_merkleAddress
   split <;> omega
 
 theorem Concrete.CacheReplay.rootTree_cache_unique_merkleAddress
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (root : Digest) (cache : QueryCache HashSpec)
     (hmem : (root, cache) ∈ support
       ((simulateQ randomOracle

@@ -13,18 +13,18 @@ theorem detailed_execution_verified_chain_query_cached_as
     (encoding : Encoding) (hverified : execution.1.verified = true)
     (hdecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch
+        execution.1.forgery.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
         some encoding)
     (chain : ChainIndex) (offset : Nat)
     (hoffset : offset < chainLength - 1 - (encoding chain).val) :
     ∃ output, execution.2
       (Concrete.CacheView.chainInput execution.1.secretKey.parameter
-        execution.1.forgery.epoch chain
+        execution.1.forgery.leafIndex chain
         ⟨(encoding chain).val + offset, by omega⟩
         (Wots.walk
           (Concrete.CacheView.chainStep execution.2 execution.1.secretKey.parameter
-            execution.1.forgery.epoch chain)
+            execution.1.forgery.leafIndex chain)
           (encoding chain).val offset (execution.1.forgery.signature.chainValue chain))) =
         some output := by
   have hparameter :=
@@ -45,28 +45,28 @@ theorem detailed_execution_verified_chain_query_cached_as
   subst verified
   have hroute :
       simulateQ romImpl
-          (Concrete.scheme.verify publicKey forgery.epoch forgery.message forgery.signature) =
+          (Concrete.scheme.verify publicKey forgery.leafIndex forgery.message forgery.signature) =
         simulateQ (randomOracle : QueryImpl HashSpec (StateT (QueryCache HashSpec) ProbComp))
-          (Concrete.verify publicKey forgery.epoch forgery.message forgery.signature :
+          (Concrete.verify publicKey forgery.leafIndex forgery.message forgery.signature :
             OracleComp HashSpec Bool) := by
     simp only [Concrete.scheme, romImpl]
     change simulateQ (unifFwdImpl HashSpec +
       (randomOracle : QueryImpl HashSpec (StateT (QueryCache HashSpec) ProbComp)))
-      (liftM (Concrete.verify publicKey forgery.epoch forgery.message forgery.signature :
+      (liftM (Concrete.verify publicKey forgery.leafIndex forgery.message forgery.signature :
         OracleComp HashSpec Bool)) = _
     exact QueryImpl.simulateQ_add_liftM_right (unifFwdImpl HashSpec)
       (randomOracle : QueryImpl HashSpec (StateT (QueryCache HashSpec) ProbComp))
-      (Concrete.verify publicKey forgery.epoch forgery.message forgery.signature :
+      (Concrete.verify publicKey forgery.leafIndex forgery.message forgery.signature :
         OracleComp HashSpec Bool)
   rw [hroute] at hverify
   have hdecodePublic : TargetSum.decodeDigest
-      (Concrete.CacheView.encodingHash finalCache publicKey.parameter forgery.epoch
+      (Concrete.CacheView.encodingHash finalCache publicKey.parameter forgery.leafIndex
         (forgery.message, forgery.signature.randomness)) = some encoding := by
     rw [hparameter]
     exact hdecode
   rw [← hparameter]
   exact Concrete.CacheReplay.verify_true_chain_query_cached_as_in_largerCache publicKey
-    forgery.epoch forgery.message forgery.signature encoding chain offset hoffset
+    forgery.leafIndex forgery.message forgery.signature encoding chain offset hoffset
     adversaryCache finalCache finalCache hverify hdecodePublic le_rfl
 
 
@@ -79,7 +79,7 @@ theorem Wots.walk_signChain_eq_honest (step : Nat → Digest → Digest)
 
 noncomputable def keygenChainTargetInput (secretKey : SecretKey)
     (cache : QueryCache HashSpec) (input : HashInput) : HashInput :=
-  if h : ∃ address : Epoch × ChainIndex × ChainStep, ∃ value,
+  if h : ∃ address : LeafIndex × ChainIndex × ChainStep, ∃ value,
       input = Concrete.CacheView.chainInput secretKey.parameter address.1
         address.2.1 address.2.2 value then
     let address := h.choose
@@ -91,13 +91,13 @@ noncomputable def keygenChainTargetInput (secretKey : SecretKey)
 
 @[simp]
 theorem keygenChainTargetInput_chainInput (secretKey : SecretKey)
-    (cache : QueryCache HashSpec) (epoch : Epoch) (chain : ChainIndex)
+    (cache : QueryCache HashSpec) (leafIndex : LeafIndex) (chain : ChainIndex)
     (step : ChainStep) (value : Digest) :
     keygenChainTargetInput secretKey cache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step value) =
-      Concrete.CacheView.chainInput secretKey.parameter epoch chain step
-        (Wots.walk (Concrete.CacheView.chainStep cache secretKey.parameter epoch chain)
-          0 step.val (secretKey.chainStart epoch chain)) := by
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step value) =
+      Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step
+        (Wots.walk (Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain)
+          0 step.val (secretKey.chainStart leafIndex chain)) := by
   unfold keygenChainTargetInput
   split
   · rename_i h
@@ -105,44 +105,44 @@ theorem keygenChainTargetInput_chainInput (secretKey : SecretKey)
     have hdomain := domain_eq_of_tweakableHashInput_eq secretKey.parameter
       (hinput.trans rfl)
     simp only [HashDomain.chain.injEq] at hdomain
-    rcases hdomain with ⟨hepoch, hchain, hstep⟩
+    rcases hdomain with ⟨hleafIndex, hchain, hstep⟩
     dsimp only
-    rw [← hepoch, ← hchain, ← hstep]
+    rw [← hleafIndex, ← hchain, ← hstep]
   · rename_i h
     exfalso
-    exact h ⟨(epoch, chain, step), value, rfl⟩
+    exact h ⟨(leafIndex, chain, step), value, rfl⟩
 
 attribute [irreducible] keygenChainTargetInput
 
 theorem adaptiveFreshDigestCollisionWith_of_chainCollision
     (secretKey : SecretKey) (initialCache finalCache : QueryCache HashSpec)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (forgedValue : Digest) (forgedOutput honestOutput : HashOutput)
     (hforgedFinal : finalCache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step forgedValue) =
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step forgedValue) =
         some forgedOutput)
     (hforgedInitial : initialCache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step forgedValue) = none)
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step forgedValue) = none)
     (hhonestInitial : initialCache
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step
-        (Wots.walk (Concrete.CacheView.chainStep initialCache secretKey.parameter epoch chain)
-          0 step.val (secretKey.chainStart epoch chain))) = some honestOutput)
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step
+        (Wots.walk (Concrete.CacheView.chainStep initialCache secretKey.parameter leafIndex chain)
+          0 step.val (secretKey.chainStart leafIndex chain))) = some honestOutput)
     (hcollision : Concrete.CacheView.digestAt finalCache
-        (Concrete.CacheView.chainInput secretKey.parameter epoch chain step forgedValue) =
+        (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step forgedValue) =
       Concrete.CacheView.digestAt finalCache
-        (Concrete.CacheView.chainInput secretKey.parameter epoch chain step
-          (Wots.walk (Concrete.CacheView.chainStep initialCache secretKey.parameter epoch chain)
-            0 step.val (secretKey.chainStart epoch chain)))) :
+        (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step
+          (Wots.walk (Concrete.CacheView.chainStep initialCache secretKey.parameter leafIndex chain)
+            0 step.val (secretKey.chainStart leafIndex chain)))) :
     Rom.AdaptiveFreshDigestCollisionWith initialCache finalCache
       (keygenChainTargetInput secretKey initialCache) := by
-  let forgedInput := Concrete.CacheView.chainInput secretKey.parameter epoch chain step
+  let forgedInput := Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step
     forgedValue
   refine ⟨forgedInput, forgedOutput, honestOutput, hforgedFinal, hforgedInitial, ?_, ?_⟩
-  · rw [show forgedInput = Concrete.CacheView.chainInput secretKey.parameter epoch chain step
+  · rw [show forgedInput = Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step
       forgedValue by rfl]
     rw [keygenChainTargetInput_chainInput]
     exact hhonestInitial
-  · rw [show forgedInput = Concrete.CacheView.chainInput secretKey.parameter epoch chain step
+  · rw [show forgedInput = Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step
       forgedValue by rfl]
     rw [keygenChainTargetInput_chainInput]
     exact hcollision
@@ -158,19 +158,19 @@ theorem chainCollision_afterKeygen_orientation
         (detailedGameAfterKeygen Concrete.scheme adversary keyResult.1.1 keyResult.1.2)).run
           keyResult.2))
     (secretKey : SecretKey) (hsecret : secretKey = keyResult.1.2)
-    (epoch : Epoch) (chain : ChainIndex) (step : ChainStep)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (step : ChainStep)
     (forgedValue : Digest) (forgedOutput : HashOutput)
     (hforgedCached : execution.2
-      (Concrete.CacheView.chainInput secretKey.parameter epoch chain step forgedValue) =
+      (Concrete.CacheView.chainInput secretKey.parameter leafIndex chain step forgedValue) =
         some forgedOutput)
     (hne : forgedValue ≠ Wots.walk
-      (Concrete.CacheView.chainStep execution.2 secretKey.parameter epoch chain)
-      0 step.val (secretKey.chainStart epoch chain))
-    (hstepCollision : Concrete.CacheView.chainStep execution.2 secretKey.parameter epoch chain
+      (Concrete.CacheView.chainStep execution.2 secretKey.parameter leafIndex chain)
+      0 step.val (secretKey.chainStart leafIndex chain))
+    (hstepCollision : Concrete.CacheView.chainStep execution.2 secretKey.parameter leafIndex chain
         step.val forgedValue =
-      Concrete.CacheView.chainStep execution.2 secretKey.parameter epoch chain step.val
-        (Wots.walk (Concrete.CacheView.chainStep execution.2 secretKey.parameter epoch chain)
-          0 step.val (secretKey.chainStart epoch chain))) :
+      Concrete.CacheView.chainStep execution.2 secretKey.parameter leafIndex chain step.val
+        (Wots.walk (Concrete.CacheView.chainStep execution.2 secretKey.parameter leafIndex chain)
+          0 step.val (secretKey.chainStart leafIndex chain))) :
     Rom.AdaptiveFreshDigestCollisionWith keyResult.2 execution.2
       (keygenChainTargetInput keyResult.1.2 keyResult.2) := by
   subst secretKey
@@ -182,11 +182,11 @@ theorem chainCollision_afterKeygen_orientation
     simpa only [Concrete.scheme] using hkeygen
   have hstable := Concrete.precomputedKeygen_chainWalk_eq_of_cache_le keyResult hkeygen'
     execution.2
-    hafterCacheLe epoch chain step.val (Nat.le_of_lt step.isLt)
+    hafterCacheLe leafIndex chain step.val (Nat.le_of_lt step.isLt)
   obtain ⟨honestOutput, hhonestCached⟩ :=
-    Concrete.precomputedKeygen_cache_has_chainInput keyResult hkeygen' epoch chain step
+    Concrete.precomputedKeygen_cache_has_chainInput keyResult hkeygen' leafIndex chain step
   have hforgedInitial := Concrete.precomputedKeygen_cache_chainInput_eq_none_of_ne
-    keyResult hkeygen' epoch chain step forgedValue (by
+    keyResult hkeygen' leafIndex chain step forgedValue (by
       intro heq
       apply hne
       exact heq.trans hstable)
@@ -195,7 +195,7 @@ theorem chainCollision_afterKeygen_orientation
   rw [Concrete.CacheView.chainStep_eq _ _ _ _ _ _ step.isLt,
     Concrete.CacheView.chainStep_eq _ _ _ _ _ _ step.isLt] at hcollision
   exact adaptiveFreshDigestCollisionWith_of_chainCollision keyResult.1.2 keyResult.2
-    execution.2 epoch chain step forgedValue forgedOutput honestOutput hforgedCached
+    execution.2 leafIndex chain step forgedValue forgedOutput honestOutput hforgedCached
     hforgedInitial hhonestCached hcollision
 
 theorem same_suffix_collision_facts
@@ -203,9 +203,9 @@ theorem same_suffix_collision_facts
     (signature forgedSignature : Signature) (signedEncoding forgedEncoding : Encoding)
     (position : TargetSum.SuffixPosition signedEncoding)
     (hsignature : signature = Concrete.CacheReplay.signWithEncoding cache secretKey
-      request.epoch signature.randomness signedEncoding)
+      request.leafIndex signature.randomness signedEncoding)
     (hsuffix : Wots.IsSuffixCollisionAt
-      (fun chain => Concrete.CacheView.chainStep cache secretKey.parameter request.epoch chain)
+      (fun chain => Concrete.CacheView.chainStep cache secretKey.parameter request.leafIndex chain)
       signedEncoding forgedEncoding signature.chainValue forgedSignature.chainValue position) :
     let chain := position.1
     let suffixOffset := position.2.val
@@ -216,19 +216,19 @@ theorem same_suffix_collision_facts
         simpa only [chain, suffixOffset] using position.2.isLt
       omega⟩
     let forgedValue := Wots.walk
-      (Concrete.CacheView.chainStep cache secretKey.parameter request.epoch chain)
+      (Concrete.CacheView.chainStep cache secretKey.parameter request.leafIndex chain)
       (forgedEncoding chain).val recoveryOffset (forgedSignature.chainValue chain)
     recoveryOffset < chainLength - 1 - (forgedEncoding chain).val ∧
       forgedValue ≠ Wots.walk
-        (Concrete.CacheView.chainStep cache secretKey.parameter request.epoch chain)
-        0 targetStep.val (secretKey.chainStart request.epoch chain) ∧
-      Concrete.CacheView.chainStep cache secretKey.parameter request.epoch chain
+        (Concrete.CacheView.chainStep cache secretKey.parameter request.leafIndex chain)
+        0 targetStep.val (secretKey.chainStart request.leafIndex chain) ∧
+      Concrete.CacheView.chainStep cache secretKey.parameter request.leafIndex chain
           targetStep.val forgedValue =
-        Concrete.CacheView.chainStep cache secretKey.parameter request.epoch chain
+        Concrete.CacheView.chainStep cache secretKey.parameter request.leafIndex chain
           targetStep.val
           (Wots.walk
-            (Concrete.CacheView.chainStep cache secretKey.parameter request.epoch chain)
-            0 targetStep.val (secretKey.chainStart request.epoch chain)) := by
+            (Concrete.CacheView.chainStep cache secretKey.parameter request.leafIndex chain)
+            0 targetStep.val (secretKey.chainStart request.leafIndex chain)) := by
   dsimp only [Wots.IsSuffixCollisionAt] at hsuffix
   let chain := position.1
   let suffixOffset := position.2.val
@@ -240,14 +240,14 @@ theorem same_suffix_collision_facts
   simp only [Concrete.CacheReplay.signWithEncoding,
     Concrete.CacheReplay.signedChainValues] at hsignedValue
   rw [hsignedValue] at hne heq
-  let step := Concrete.CacheView.chainStep cache secretKey.parameter request.epoch chain
+  let step := Concrete.CacheView.chainStep cache secretKey.parameter request.leafIndex chain
   change Wots.walk step (signedEncoding chain).val suffixOffset
       (Wots.walk step (forgedEncoding chain).val
         ((signedEncoding chain).val - (forgedEncoding chain).val)
         (forgedSignature.chainValue chain)) ≠
     Wots.walk step (signedEncoding chain).val suffixOffset
       (Wots.signChain step (signedEncoding chain)
-        (secretKey.chainStart request.epoch chain)) at hne
+        (secretKey.chainStart request.leafIndex chain)) at hne
   change step ((signedEncoding chain).val + suffixOffset)
       (Wots.walk step (signedEncoding chain).val suffixOffset
         (Wots.walk step (forgedEncoding chain).val
@@ -256,7 +256,7 @@ theorem same_suffix_collision_facts
     step ((signedEncoding chain).val + suffixOffset)
       (Wots.walk step (signedEncoding chain).val suffixOffset
         (Wots.signChain step (signedEncoding chain)
-          (secretKey.chainStart request.epoch chain))) at heq
+          (secretKey.chainStart request.leafIndex chain))) at heq
   have hleVal : (forgedEncoding chain).val ≤ (signedEncoding chain).val := by
     exact_mod_cast hle
   have hforgedWalk := (Wots.walk_add step (forgedEncoding chain).val
@@ -264,7 +264,7 @@ theorem same_suffix_collision_facts
     (forgedSignature.chainValue chain)).symm
   rw [Nat.add_sub_of_le hleVal] at hforgedWalk
   have hhonestWalk := Wots.walk_signChain_eq_honest step (signedEncoding chain)
-    suffixOffset (secretKey.chainStart request.epoch chain)
+    suffixOffset (secretKey.chainStart request.leafIndex chain)
   change _ ∧ _ ∧ _
   constructor
   · have hoffset : suffixOffset < chainLength - 1 - (signedEncoding chain).val := by
@@ -276,15 +276,15 @@ theorem same_suffix_collision_facts
     exact ⟨hne, heq⟩
 
 theorem fresh_suffix_collision_facts
-    (cache : QueryCache HashSpec) (secretKey : SecretKey) (epoch : Epoch)
+    (cache : QueryCache HashSpec) (secretKey : SecretKey) (leafIndex : LeafIndex)
     (forgedSignature : Signature) (encoding : Encoding)
     (position : TargetSum.SuffixPosition encoding)
     (hsuffix : Wots.IsSuffixCollisionAt
-      (fun chain => Concrete.CacheView.chainStep cache secretKey.parameter epoch chain)
+      (fun chain => Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain)
       encoding encoding
       (fun chain => Wots.signChain
-        (Concrete.CacheView.chainStep cache secretKey.parameter epoch chain)
-        (encoding chain) (secretKey.chainStart epoch chain))
+        (Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain)
+        (encoding chain) (secretKey.chainStart leafIndex chain))
       forgedSignature.chainValue position) :
     let chain := position.1
     let suffixOffset := position.2.val
@@ -293,34 +293,34 @@ theorem fresh_suffix_collision_facts
         simpa only [chain, suffixOffset] using position.2.isLt
       omega⟩
     let forgedValue := Wots.walk
-      (Concrete.CacheView.chainStep cache secretKey.parameter epoch chain)
+      (Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain)
       (encoding chain).val suffixOffset (forgedSignature.chainValue chain)
     suffixOffset < chainLength - 1 - (encoding chain).val ∧
       forgedValue ≠ Wots.walk
-        (Concrete.CacheView.chainStep cache secretKey.parameter epoch chain)
-        0 targetStep.val (secretKey.chainStart epoch chain) ∧
-      Concrete.CacheView.chainStep cache secretKey.parameter epoch chain
+        (Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain)
+        0 targetStep.val (secretKey.chainStart leafIndex chain) ∧
+      Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain
           targetStep.val forgedValue =
-        Concrete.CacheView.chainStep cache secretKey.parameter epoch chain
+        Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain
           targetStep.val
           (Wots.walk
-            (Concrete.CacheView.chainStep cache secretKey.parameter epoch chain)
-            0 targetStep.val (secretKey.chainStart epoch chain)) := by
-  let request : SignRequest := ⟨epoch, 0⟩
+            (Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain)
+            0 targetStep.val (secretKey.chainStart leafIndex chain)) := by
+  let request : SignRequest := ⟨leafIndex, 0⟩
   let signedSignature := Concrete.CacheReplay.signWithEncoding cache secretKey
-    epoch forgedSignature.randomness encoding
+    leafIndex forgedSignature.randomness encoding
   have hsignature : signedSignature =
-      Concrete.CacheReplay.signWithEncoding cache secretKey request.epoch
+      Concrete.CacheReplay.signWithEncoding cache secretKey request.leafIndex
         signedSignature.randomness encoding := by
     rfl
   have hsuffix' : Wots.IsSuffixCollisionAt
       (fun chain => Concrete.CacheView.chainStep cache secretKey.parameter
-        request.epoch chain)
+        request.leafIndex chain)
       encoding encoding signedSignature.chainValue forgedSignature.chainValue
       position := by
     have hsignedValues : signedSignature.chainValue = fun chain => Wots.signChain
-        (Concrete.CacheView.chainStep cache secretKey.parameter epoch chain)
-        (encoding chain) (secretKey.chainStart epoch chain) := by
+        (Concrete.CacheView.chainStep cache secretKey.parameter leafIndex chain)
+        (encoding chain) (secretKey.chainStart leafIndex chain) := by
       funext chain
       rfl
     rw [hsignedValues]
@@ -342,19 +342,19 @@ theorem fresh_suffix_witness_afterKeygen_orientation
     (forgedEncoding : Encoding) (hverified : execution.1.verified = true)
     (hforgedDecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch
+        execution.1.forgery.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
         some forgedEncoding)
     (position : TargetSum.SuffixPosition forgedEncoding)
     (hsuffix : Wots.IsSuffixCollisionAt
       (fun chain => Concrete.CacheView.chainStep execution.2
-        execution.1.secretKey.parameter execution.1.forgery.epoch chain)
+        execution.1.secretKey.parameter execution.1.forgery.leafIndex chain)
       forgedEncoding forgedEncoding
       (fun chain => Wots.signChain
         (Concrete.CacheView.chainStep execution.2 execution.1.secretKey.parameter
-          execution.1.forgery.epoch chain)
+          execution.1.forgery.leafIndex chain)
         (forgedEncoding chain)
-        (execution.1.secretKey.chainStart execution.1.forgery.epoch chain))
+        (execution.1.secretKey.chainStart execution.1.forgery.leafIndex chain))
       execution.1.forgery.signature.chainValue position) :
     Rom.AdaptiveFreshDigestCollisionWith keyResult.2 execution.2
       (keygenChainTargetInput keyResult.1.2 keyResult.2) := by
@@ -363,7 +363,7 @@ theorem fresh_suffix_witness_afterKeygen_orientation
   have hgame := CappedLeaf.afterKeygen_execution_mem_detailedGame adversary keyResult hkeygen
     execution hafter
   have hfacts := fresh_suffix_collision_facts execution.2 execution.1.secretKey
-    execution.1.forgery.epoch execution.1.forgery.signature forgedEncoding position hsuffix
+    execution.1.forgery.leafIndex execution.1.forgery.signature forgedEncoding position hsuffix
   dsimp only at hfacts
   obtain ⟨hoffset, hne, hstepCollision⟩ := hfacts
   let chain := position.1
@@ -375,14 +375,14 @@ theorem fresh_suffix_witness_afterKeygen_orientation
   let targetStep : ChainStep := ⟨(forgedEncoding chain).val + suffixOffset, htargetStep⟩
   let forgedValue := Wots.walk
     (Concrete.CacheView.chainStep execution.2 execution.1.secretKey.parameter
-      execution.1.forgery.epoch chain)
+      execution.1.forgery.leafIndex chain)
     (forgedEncoding chain).val suffixOffset
     (execution.1.forgery.signature.chainValue chain)
   obtain ⟨forgedOutput, hforgedCached⟩ :=
     detailed_execution_verified_chain_query_cached_as adversary execution hgame
       forgedEncoding hverified hforgedDecode chain suffixOffset hoffset
   apply chainCollision_afterKeygen_orientation adversary keyResult hkeygen execution hafter
-    execution.1.secretKey hkeys.2 execution.1.forgery.epoch chain targetStep forgedValue
+    execution.1.secretKey hkeys.2 execution.1.forgery.leafIndex chain targetStep forgedValue
     forgedOutput
   · simpa [chain, suffixOffset, targetStep, forgedValue] using hforgedCached
   · simpa [chain, suffixOffset, targetStep, forgedValue] using hne
@@ -403,18 +403,18 @@ theorem same_suffix_witness_afterKeygen_orientation
     (signedEncoding forgedEncoding : Encoding)
     (hsignedDecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        request.epoch (request.message, signature.randomness)) = some signedEncoding)
+        request.leafIndex (request.message, signature.randomness)) = some signedEncoding)
     (hforgedDecode : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        request.epoch
+        request.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
         some forgedEncoding)
     (hreturned : SigningTranscript.Returned execution.1.signingLog request signature)
-    (hepoch : request.epoch = execution.1.forgery.epoch)
+    (hleafIndex : request.leafIndex = execution.1.forgery.leafIndex)
     (position : TargetSum.SuffixPosition signedEncoding)
     (hsuffix : Wots.IsSuffixCollisionAt
       (fun chain => Concrete.CacheView.chainStep execution.2
-        execution.1.secretKey.parameter request.epoch chain)
+        execution.1.secretKey.parameter request.leafIndex chain)
       signedEncoding forgedEncoding signature.chainValue
       execution.1.forgery.signature.chainValue position) :
     Rom.AdaptiveFreshDigestCollisionWith keyResult.2 execution.2
@@ -447,20 +447,20 @@ theorem same_suffix_witness_afterKeygen_orientation
       (signedEncoding chain).val + suffixOffset := by
     dsimp only [recoveryOffset]
     omega
-  let forgedValue : Epoch → Digest := fun candidateEpoch => Wots.walk
+  let forgedValue : LeafIndex → Digest := fun candidateLeafIndex => Wots.walk
     (Concrete.CacheView.chainStep execution.2 execution.1.secretKey.parameter
-      candidateEpoch chain)
+      candidateLeafIndex chain)
     (forgedEncoding chain).val recoveryOffset
     (execution.1.forgery.signature.chainValue chain)
-  have hdecodeEpoch := congrArg (fun candidateEpoch => TargetSum.decodeDigest
+  have hdecodeLeafIndex := congrArg (fun candidateLeafIndex => TargetSum.decodeDigest
     (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-      candidateEpoch
-      (execution.1.forgery.message, execution.1.forgery.signature.randomness))) hepoch
+      candidateLeafIndex
+      (execution.1.forgery.message, execution.1.forgery.signature.randomness))) hleafIndex
   have hforgedDecode' : TargetSum.decodeDigest
       (Concrete.CacheView.encodingHash execution.2 execution.1.secretKey.parameter
-        execution.1.forgery.epoch
+        execution.1.forgery.leafIndex
         (execution.1.forgery.message, execution.1.forgery.signature.randomness)) =
-        some forgedEncoding := hdecodeEpoch.symm.trans hforgedDecode
+        some forgedEncoding := hdecodeLeafIndex.symm.trans hforgedDecode
   obtain ⟨forgedOutput, hforgedCached⟩ :=
     detailed_execution_verified_chain_query_cached_as adversary execution hgame
       forgedEncoding hverified hforgedDecode' chain recoveryOffset hrecovery
@@ -472,10 +472,10 @@ theorem same_suffix_witness_afterKeygen_orientation
     apply Fin.ext
     exact hstepValueEq
   rw [hstepEq] at hforgedCached
-  rw [hepoch] at hne hstepCollision
+  rw [hleafIndex] at hne hstepCollision
   apply chainCollision_afterKeygen_orientation adversary keyResult hkeygen execution
-    hafter execution.1.secretKey hkeys.2 execution.1.forgery.epoch chain
-      targetStep (forgedValue execution.1.forgery.epoch) forgedOutput
+    hafter execution.1.secretKey hkeys.2 execution.1.forgery.leafIndex chain
+      targetStep (forgedValue execution.1.forgery.leafIndex) forgedOutput
   · simpa [chain, recoveryOffset, targetStep, forgedValue] using hforgedCached
   · simpa [chain, suffixOffset, recoveryOffset, targetStep, forgedValue] using hne
   · simpa [chain, suffixOffset, recoveryOffset, targetStep, forgedValue] using
@@ -497,31 +497,31 @@ theorem suffixCollision_event_afterKeygen_orientation
       (keygenChainTargetInput keyResult.1.2 keyResult.2) := by
   rcases hevent.2 with hsame | hfresh
   · obtain ⟨request, signature, signedEncoding, forgedEncoding, hsignedDecode,
-      hforgedDecode, hreturned, hepoch, hbad⟩ := hsame
+      hforgedDecode, hreturned, hleafIndex, hbad⟩ := hsame
     change ∃ position : TargetSum.SuffixPosition signedEncoding,
       TargetSum.enumerateSuffixPositions signedEncoding
         (TargetSum.decodeDigest_eq_some_iff.mp hsignedDecode).2 position = slot ∧
       Wots.IsSuffixCollisionAt
         (fun chain => Concrete.CacheView.chainStep execution.2
-          execution.1.secretKey.parameter request.epoch chain)
+          execution.1.secretKey.parameter request.leafIndex chain)
         signedEncoding forgedEncoding signature.chainValue
         execution.1.forgery.signature.chainValue position at hbad
     obtain ⟨position, _hslot, hsuffix⟩ := hbad
     exact same_suffix_witness_afterKeygen_orientation adversary keyResult hkeygen
       execution hafter hevent.1 request signature signedEncoding forgedEncoding
-      hsignedDecode hforgedDecode hreturned hepoch position hsuffix
+      hsignedDecode hforgedDecode hreturned hleafIndex position hsuffix
   · obtain ⟨forgedEncoding, hforgedValid, _hunsigned, hforgedDecode, hbad⟩ := hfresh
     change ∃ position : TargetSum.SuffixPosition forgedEncoding,
       TargetSum.enumerateSuffixPositions forgedEncoding hforgedValid position = slot ∧
       Wots.IsSuffixCollisionAt
         (fun chain => Concrete.CacheView.chainStep execution.2
-          execution.1.secretKey.parameter execution.1.forgery.epoch chain)
+          execution.1.secretKey.parameter execution.1.forgery.leafIndex chain)
         forgedEncoding forgedEncoding
         (fun chain => Wots.signChain
           (Concrete.CacheView.chainStep execution.2 execution.1.secretKey.parameter
-            execution.1.forgery.epoch chain)
+            execution.1.forgery.leafIndex chain)
           (forgedEncoding chain)
-          (execution.1.secretKey.chainStart execution.1.forgery.epoch chain))
+          (execution.1.secretKey.chainStart execution.1.forgery.leafIndex chain))
         execution.1.forgery.signature.chainValue position at hbad
     obtain ⟨position, _hslot, hsuffix⟩ := hbad
     exact fresh_suffix_witness_afterKeygen_orientation adversary keyResult hkeygen

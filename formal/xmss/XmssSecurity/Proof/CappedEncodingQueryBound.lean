@@ -11,7 +11,7 @@ noncomputable def cappedSourceUnloggedMappedAdversaryImpl
   cases input with
   | inl worldInput => exact liftM (OracleWorld.query worldInput)
   | inr request =>
-      exact Concrete.scheme.sign secretKey request.epoch request.message
+      exact Concrete.scheme.sign secretKey request.leafIndex request.message
 
 theorem cappedSourceUnloggedMappedAdversaryImpl_withTraceAppend_eq
     (publicKey : PublicKey) (secretKey : SecretKey) :
@@ -34,7 +34,7 @@ noncomputable def cappedSourceUnloggedDetailedGameAfterKeygen
   let forgery ← simulateQ
     (cappedSourceUnloggedMappedAdversaryImpl publicKey secretKey)
     (adversary.main publicKey)
-  let verified ← Concrete.scheme.verify publicKey forgery.epoch forgery.message
+  let verified ← Concrete.scheme.verify publicKey forgery.leafIndex forgery.message
     forgery.signature
   pure (forgery, verified)
 
@@ -52,7 +52,7 @@ theorem cappedDetailedGameAfterKeygen_unloggedProjection
     (cappedSourceUnloggedMappedAdversaryImpl publicKey secretKey)
     (adversary.main publicKey)
   let finish : Forgery → OracleComp OracleWorld (Forgery × Bool) := fun forgery => do
-    let verified ← Concrete.scheme.verify publicKey forgery.epoch forgery.message
+    let verified ← Concrete.scheme.verify publicKey forgery.leafIndex forgery.message
       forgery.signature
     pure (forgery, verified)
   have hprojection : Prod.fst <$> loggedAdversary = unloggedAdversary := by
@@ -63,7 +63,7 @@ theorem cappedDetailedGameAfterKeygen_unloggedProjection
     cappedSourceUnloggedMappedAdversaryImpl_withTraceAppend_eq]
   change (fun outcome : GameOutcome => (outcome.forgery, outcome.verified)) <$>
       (loggedAdversary >>= fun result => do
-        let verified ← Concrete.scheme.verify publicKey result.1.epoch
+        let verified ← Concrete.scheme.verify publicKey result.1.leafIndex
           result.1.message result.1.signature
         pure ⟨publicKey, secretKey, result.1, result.2, verified⟩) = _
   simp only [map_bind, map_pure]

@@ -28,8 +28,8 @@ variable {m : Type → Type} [Monad m] [LawfulMonad m] [HasQuery HashSpec m]
 omit [LawfulMonad m] in
 theorem tableSignFrom_own (randomizers : RandomizerOutputs) (secretKey : XmssSecurity.SecretKey)
     (message : SignRequest) (attempts trial : Nat) :
-    (tableSignFrom randomizers secretKey message.epoch message.message attempts trial : m TrialResult) =
-      tableSignFrom (fun position => randomizers (message, position.2)) secretKey message.epoch message.message attempts trial := by
+    (tableSignFrom randomizers secretKey message.leafIndex message.message attempts trial : m TrialResult) =
+      tableSignFrom (fun position => randomizers (message, position.2)) secretKey message.leafIndex message.message attempts trial := by
   induction attempts generalizing trial with
   | zero => rfl
   | succ attempts ih =>
@@ -42,8 +42,8 @@ theorem tableSignFrom_own (randomizers : RandomizerOutputs) (secretKey : XmssSec
 
 omit [LawfulMonad m] in
 theorem tableSign_own (randomizers : RandomizerOutputs) (secretKey : XmssSecurity.SecretKey) (message : SignRequest) :
-    (tableSign randomizers secretKey message.epoch message.message : m (Option Signature)) =
-      tableSign (fun position => randomizers (message, position.2)) secretKey message.epoch message.message := by
+    (tableSign randomizers secretKey message.leafIndex message.message : m (Option Signature)) =
+      tableSign (fun position => randomizers (message, position.2)) secretKey message.leafIndex message.message := by
   unfold tableSign
   rw [tableSignFrom_own randomizers secretKey message]
 
@@ -54,7 +54,7 @@ variable {State : Type}
 noncomputable def requestKernel (hash : QueryImpl HashSpec (StateT State ProbComp))
     (secretKey : XmssSecurity.SecretKey) (message : SignRequest) (tape : TrialTape) :
     StateT State ProbComp (Option Signature) :=
-  simulateQ (worldHandler hash) (liftM (tableSign (fun position => tape position.2) secretKey message.epoch message.message :
+  simulateQ (worldHandler hash) (liftM (tableSign (fun position => tape position.2) secretKey message.leafIndex message.message :
     OracleComp HashSpec (Option Signature)) : OracleComp OracleWorld (Option Signature))
 
 theorem simulateQ_runSigning {α : Type} (handler : QueryImpl OracleWorld (StateT State ProbComp))
@@ -95,10 +95,10 @@ theorem tableRun_requests {α : Type} (hash : QueryImpl HashSpec (StateT State P
     (secretKey : XmssSecurity.SecretKey) (tapes : RequestTapes)
     (computation : OracleComp (OracleWorld + SigningSpec) α) :
     tableRun (worldHandler hash) (requestKernel hash secretKey) tapes computation =
-      simulateQ (worldHandler hash) (runSigning (fun (message : SignRequest) => tableSign (Function.uncurry tapes) secretKey message.epoch message.message) computation) := by
+      simulateQ (worldHandler hash) (runSigning (fun (message : SignRequest) => tableSign (Function.uncurry tapes) secretKey message.leafIndex message.message) computation) := by
   exact tableRun_lift_requests (worldHandler hash)
-    (fun (message : SignRequest) tape => tableSign (fun position => tape position.2) secretKey message.epoch message.message)
-    (fun (message : SignRequest) => tableSign (Function.uncurry tapes) secretKey message.epoch message.message) tapes
+    (fun (message : SignRequest) tape => tableSign (fun position => tape position.2) secretKey message.leafIndex message.message)
+    (fun (message : SignRequest) => tableSign (Function.uncurry tapes) secretKey message.leafIndex message.message) tapes
     (fun (message : SignRequest) => (tableSign_own (m := OracleComp HashSpec) (Function.uncurry tapes) secretKey message).symm)
     computation
 
@@ -128,11 +128,11 @@ theorem evalDist_freshRequests {α : Type} (hash : QueryImpl HashSpec (StateT St
     (secretKey : XmssSecurity.SecretKey) (computation : OracleComp (OracleWorld + SigningSpec) α) (state : State) :
     𝒟[(freshRun (worldHandler hash) (requestKernel hash secretKey) computation).run state] =
       𝒟[(simulateQ ((worldHandler hash) + fun (message : SignRequest) => simulateQ (worldHandler hash)
-        (Concrete.precomputedCappedSign secretKey message.epoch message.message)) computation).run state] := by
+        (Concrete.precomputedCappedSign secretKey message.leafIndex message.message)) computation).run state] := by
   exact evalDist_freshRun_of_kernel (worldHandler hash) (requestKernel hash secretKey)
     (fun (message : SignRequest) => simulateQ (worldHandler hash)
-      (Concrete.precomputedCappedSign secretKey message.epoch message.message))
-    (fun message state => evalDist_tableSign hash secretKey message.epoch message.message state)
+      (Concrete.precomputedCappedSign secretKey message.leafIndex message.message))
+    (fun message state => evalDist_tableSign hash secretKey message.leafIndex message.message state)
     computation state
 
 theorem evalDist_uncurry_tapes :
@@ -144,9 +144,9 @@ theorem evalDist_tableRequests {α : Type} {used : Set SignRequest}
     (computation : OracleComp (OracleWorld + SigningSpec) α) (hfresh : FreshRequests used computation) (state : State) :
     𝒟[do
       let randomizers ← sampleRandomizerOutputs
-      (simulateQ (worldHandler hash) (runSigning (fun (message : SignRequest) => tableSign randomizers secretKey message.epoch message.message) computation)).run state] =
+      (simulateQ (worldHandler hash) (runSigning (fun (message : SignRequest) => tableSign randomizers secretKey message.leafIndex message.message) computation)).run state] =
       𝒟[(simulateQ ((worldHandler hash) + fun (message : SignRequest) => simulateQ (worldHandler hash)
-        (Concrete.precomputedCappedSign secretKey message.epoch message.message)) computation).run state] := by
+        (Concrete.precomputedCappedSign secretKey message.leafIndex message.message)) computation).run state] := by
   conv_lhs => rw [evalDist_bind, ← evalDist_uncurry_tapes, ← evalDist_bind, bind_map_left]
   simp_rw [← tableRun_requests]
   exact (hfresh.evalDist_tableRun (worldHandler hash) (requestKernel hash secretKey) state).trans

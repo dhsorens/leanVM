@@ -42,14 +42,14 @@ theorem length_fieldBytes (fields : TweakFields) : (fieldBytes fields).length = 
 theorem fieldBytes_injective : Function.Injective fieldBytes := by
   intro left right heq
   simp only [fieldBytes] at heq
-  obtain ⟨hfront, hepochBytes⟩ := List.append_inj heq (by simp)
+  obtain ⟨hfront, hleafIndexBytes⟩ := List.append_inj heq (by simp)
   have hfields := List.append_left_injective (List.replicate 4 0) hfront
   obtain ⟨hheader, hpositionBytes⟩ := List.append_inj hfields (by simp)
   have htagPrefix := List.append_left_injective [0, 0] hheader
   have htagBytes := List.append_right_injective [protocolDomainSep] htagPrefix
   have htag : left.tag = right.tag := bytesLE_injective 1 htagBytes
   have hposition : left.position = right.position := bytesLE_injective 4 hpositionBytes
-  have hepoch : left.epoch = right.epoch := bytesLE_injective 4 hepochBytes
+  have hleafIndex : left.leafIndex = right.leafIndex := bytesLE_injective 4 hleafIndexBytes
   cases left
   cases right
   simp_all
@@ -76,9 +76,9 @@ private theorem ofNat8_eq_of_lt {left right : Nat}
 private theorem hashDomainTag_lt_8 (domain : HashDomain) : hashDomainTag domain < 2 ^ 8 := by
   cases domain <;> norm_num [hashDomainTag]
 
-private theorem epoch_lt_32 (epoch : Epoch) : epoch.val < 2 ^ 32 := by
-  change epoch.val < lifetime
-  exact epoch.isLt
+private theorem leafIndex_lt_32 (leafIndex : LeafIndex) : leafIndex.val < 2 ^ 32 := by
+  change leafIndex.val < lifetime
+  exact leafIndex.isLt
 
 private theorem chainPosition_lt_32 (chain : ChainIndex) (step : ChainStep) :
     chainLength * chain.val + step.val < 2 ^ 32 := by
@@ -103,40 +103,40 @@ theorem hashDomainFields_injective : Function.Injective hashDomainFields := by
   have htag := ofNat8_eq_of_lt (hashDomainTag_lt_8 left) (hashDomainTag_lt_8 right) htagBits
   cases left <;> cases right <;> simp [hashDomainTag] at htag
   all_goals simp only [hashDomainFields, tweakFields] at heq
-  · rename_i leftEpoch leftChain leftStep rightEpoch rightChain rightStep
+  · rename_i leftLeafIndex leftChain leftStep rightLeafIndex rightChain rightStep
     have hposition := congrArg TweakFields.position heq
-    have hepoch := congrArg TweakFields.epoch heq
+    have hleafIndex := congrArg TweakFields.leafIndex heq
     have hpositionNat := ofNat32_eq_of_lt
       (chainPosition_lt_32 leftChain leftStep) (chainPosition_lt_32 rightChain rightStep) hposition
-    have hepochNat := ofNat32_eq_of_lt (epoch_lt_32 leftEpoch) (epoch_lt_32 rightEpoch) hepoch
+    have hleafIndexNat := ofNat32_eq_of_lt (leafIndex_lt_32 leftLeafIndex) (leafIndex_lt_32 rightLeafIndex) hleafIndex
     have hleftChain := leftChain.isLt
     have hrightChain := rightChain.isLt
     have hleftStep := leftStep.isLt
     have hrightStep := rightStep.isLt
     norm_num [chainLength, winternitzBits, numChains] at hpositionNat hleftChain hrightChain hleftStep hrightStep
     congr
-    · exact Fin.ext hepochNat
+    · exact Fin.ext hleafIndexNat
     · apply Fin.ext
       omega
     · apply Fin.ext
       omega
-  · rename_i leftEpoch rightEpoch
-    have hepoch := congrArg TweakFields.epoch heq
+  · rename_i leftLeafIndex rightLeafIndex
+    have hleafIndex := congrArg TweakFields.leafIndex heq
     exact congrArg HashDomain.leaf
-      (Fin.ext (ofNat32_eq_of_lt (epoch_lt_32 leftEpoch) (epoch_lt_32 rightEpoch) hepoch))
+      (Fin.ext (ofNat32_eq_of_lt (leafIndex_lt_32 leftLeafIndex) (leafIndex_lt_32 rightLeafIndex) hleafIndex))
   · rename_i leftLevel leftNode rightLevel rightNode
     have hposition := congrArg TweakFields.position heq
-    have hnode := congrArg TweakFields.epoch heq
+    have hnode := congrArg TweakFields.leafIndex heq
     have hlevelNat := ofNat32_eq_of_lt
       (merkleLevel_lt_32 leftLevel) (merkleLevel_lt_32 rightLevel) hposition
     have hnodeNat := ofNat32_eq_of_lt (merkleNode_lt_32 leftNode) (merkleNode_lt_32 rightNode) hnode
     congr
     · exact Fin.ext (by omega)
     · exact Fin.ext hnodeNat
-  · rename_i leftEpoch rightEpoch
-    have hepoch := congrArg TweakFields.epoch heq
+  · rename_i leftLeafIndex rightLeafIndex
+    have hleafIndex := congrArg TweakFields.leafIndex heq
     exact congrArg HashDomain.encoding
-      (Fin.ext (ofNat32_eq_of_lt (epoch_lt_32 leftEpoch) (epoch_lt_32 rightEpoch) hepoch))
+      (Fin.ext (ofNat32_eq_of_lt (leafIndex_lt_32 leftLeafIndex) (leafIndex_lt_32 rightLeafIndex) hleafIndex))
 
 theorem tweakBytes_injective : Function.Injective tweakBytes :=
   fieldBytes_injective.comp hashDomainFields_injective
@@ -224,12 +224,12 @@ theorem digestAt_eq_of_cache_eq_some {cache : QueryCache HashSpec} {input : Hash
   simp [digestAt, hcache]
 
 theorem encodingInput_cached_of_decode_some
-    (cache : QueryCache HashSpec) (parameter : PublicParameter) (epoch : Epoch)
+    (cache : QueryCache HashSpec) (parameter : PublicParameter) (leafIndex : LeafIndex)
     (message : Message) (randomness : Randomness) (encoding : Encoding)
     (hdecode : TargetSum.decodeDigest
-      (encodingHash cache parameter epoch (message, randomness)) = some encoding) :
-    ∃ output, cache (encodingInput parameter epoch (message, randomness)) = some output := by
-  cases hcache : cache (encodingInput parameter epoch (message, randomness)) with
+      (encodingHash cache parameter leafIndex (message, randomness)) = some encoding) :
+    ∃ output, cache (encodingInput parameter leafIndex (message, randomness)) = some output := by
+  cases hcache : cache (encodingInput parameter leafIndex (message, randomness)) with
   | some output => exact ⟨output, rfl⟩
   | none =>
       rw [encodingHash, digestAt, hcache, TargetSum.decodeDigest_zero_eq_none] at hdecode
@@ -237,61 +237,61 @@ theorem encodingInput_cached_of_decode_some
 
 @[simp]
 theorem chainStep_eq (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (epoch : Epoch) (chain : ChainIndex) (position : Nat) (value : Digest)
+    (leafIndex : LeafIndex) (chain : ChainIndex) (position : Nat) (value : Digest)
     (hposition : position < chainLength - 1) :
-    chainStep cache parameter epoch chain position value =
-      digestAt cache (chainInput parameter epoch chain ⟨position, hposition⟩ value) := by
+    chainStep cache parameter leafIndex chain position value =
+      digestAt cache (chainInput parameter leafIndex chain ⟨position, hposition⟩ value) := by
   simp [chainStep, hposition]
 
 @[simp]
 theorem nodeHash_eq (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (epoch : Epoch) (level : Nat) (left right : Digest)
+    (leafIndex : LeafIndex) (level : Nat) (left right : Digest)
     (hlevel : level < treeHeight) :
-    nodeHash cache parameter epoch level left right =
-      digestAt cache (nodeInput parameter epoch ⟨level, hlevel⟩ left right) := by
+    nodeHash cache parameter leafIndex level left right =
+      digestAt cache (nodeInput parameter leafIndex ⟨level, hlevel⟩ left right) := by
   simp [nodeHash, hlevel]
 
-theorem encodingInput_injective (parameter : PublicParameter) (epoch : Epoch) :
-    Function.Injective (encodingInput parameter epoch) := by
+theorem encodingInput_injective (parameter : PublicParameter) (leafIndex : LeafIndex) :
+    Function.Injective (encodingInput parameter leafIndex) := by
   intro left right heq
   apply Concrete.encodingPayload_injective
-  exact payload_eq_of_tweakableHashInput_eq parameter (.encoding epoch) heq
+  exact payload_eq_of_tweakableHashInput_eq parameter (.encoding leafIndex) heq
 
-/-- Serialized encoding inputs are separated by epoch as well as by message and randomness. -/
+/-- Serialized encoding inputs are separated by leaf index as well as by message and randomness. -/
 theorem encodingInput_eq_iff (parameter : PublicParameter)
-    (leftEpoch rightEpoch : Epoch) (left right : Message × Randomness) :
-    encodingInput parameter leftEpoch left =
-        encodingInput parameter rightEpoch right ↔
-      leftEpoch = rightEpoch ∧ left = right := by
+    (leftLeafIndex rightLeafIndex : LeafIndex) (left right : Message × Randomness) :
+    encodingInput parameter leftLeafIndex left =
+        encodingInput parameter rightLeafIndex right ↔
+      leftLeafIndex = rightLeafIndex ∧ left = right := by
   constructor
   · intro heq
-    have hdomain : HashDomain.encoding leftEpoch = .encoding rightEpoch :=
+    have hdomain : HashDomain.encoding leftLeafIndex = .encoding rightLeafIndex :=
       domain_eq_of_tweakableHashInput_eq parameter heq
-    have hepoch : leftEpoch = rightEpoch := HashDomain.encoding.inj hdomain
-    subst rightEpoch
-    exact ⟨rfl, encodingInput_injective parameter leftEpoch heq⟩
+    have hleafIndex : leftLeafIndex = rightLeafIndex := HashDomain.encoding.inj hdomain
+    subst rightLeafIndex
+    exact ⟨rfl, encodingInput_injective parameter leftLeafIndex heq⟩
   · rintro ⟨rfl, rfl⟩
     rfl
 
-theorem epoch_eq_of_encodingInput_eq (parameter : PublicParameter)
-    {leftEpoch rightEpoch : Epoch} {left right : Message × Randomness}
-    (heq : encodingInput parameter leftEpoch left =
-      encodingInput parameter rightEpoch right) :
-    leftEpoch = rightEpoch :=
-  (encodingInput_eq_iff parameter leftEpoch rightEpoch left right).mp heq |>.1
+theorem leafIndex_eq_of_encodingInput_eq (parameter : PublicParameter)
+    {leftLeafIndex rightLeafIndex : LeafIndex} {left right : Message × Randomness}
+    (heq : encodingInput parameter leftLeafIndex left =
+      encodingInput parameter rightLeafIndex right) :
+    leftLeafIndex = rightLeafIndex :=
+  (encodingInput_eq_iff parameter leftLeafIndex rightLeafIndex left right).mp heq |>.1
 
-theorem chainInput_injective (parameter : PublicParameter) (epoch : Epoch)
+theorem chainInput_injective (parameter : PublicParameter) (leafIndex : LeafIndex)
     (chain : ChainIndex) (position : ChainStep) :
-    Function.Injective (chainInput parameter epoch chain position) := by
+    Function.Injective (chainInput parameter leafIndex chain position) := by
   intro left right heq
   apply Concrete.digestBytes_injective
-  exact payload_eq_of_tweakableHashInput_eq parameter (.chain epoch chain position) heq
+  exact payload_eq_of_tweakableHashInput_eq parameter (.chain leafIndex chain position) heq
 
-theorem leafInput_injective (parameter : PublicParameter) (epoch : Epoch) :
-    Function.Injective (leafInput parameter epoch) := by
+theorem leafInput_injective (parameter : PublicParameter) (leafIndex : LeafIndex) :
+    Function.Injective (leafInput parameter leafIndex) := by
   intro left right heq
   apply Concrete.leafPayload_injective
-  exact payload_eq_of_tweakableHashInput_eq parameter (.leaf epoch) heq
+  exact payload_eq_of_tweakableHashInput_eq parameter (.leaf leafIndex) heq
 
 end CacheView
 

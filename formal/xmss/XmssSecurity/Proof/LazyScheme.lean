@@ -6,22 +6,22 @@ open OracleComp OracleSpec
 namespace XmssSecurity
 
 def SecretKey.withoutPrecomputation
-    (parameter : PublicParameter) (chainStart : Epoch → ChainIndex → Digest) :
+    (parameter : PublicParameter) (chainStart : LeafIndex → ChainIndex → Digest) :
     SecretKey :=
   ⟨parameter, chainStart, fun _ _ _ => 0, fun _ _ => 0⟩
 
 namespace Concrete
 
-noncomputable local instance : SampleableType (Epoch → ChainIndex → Digest) :=
-  SampleableType.ofFintype (Epoch → ChainIndex → Digest)
+noncomputable local instance : SampleableType (LeafIndex → ChainIndex → Digest) :=
+  SampleableType.ofFintype (LeafIndex → ChainIndex → Digest)
 
 @[simp]
 theorem probOutput_sampleSecret
-    (secret : Epoch → ChainIndex → Digest) :
+    (secret : LeafIndex → ChainIndex → Digest) :
     Pr[= secret | sampleSecret] =
-      (Fintype.card (Epoch → ChainIndex → Digest) : ENNReal)⁻¹ := by
+      (Fintype.card (LeafIndex → ChainIndex → Digest) : ENNReal)⁻¹ := by
   rw [sampleSecret_eq]
-  exact probOutput_uniformSample (Epoch → ChainIndex → Digest) secret
+  exact probOutput_uniformSample (LeafIndex → ChainIndex → Digest) secret
 
 noncomputable def keygen : OracleComp OracleWorld (PublicKey × SecretKey) := do
   let parameter ← liftM samplePublicParameter
@@ -33,67 +33,67 @@ noncomputable def keygen : OracleComp OracleWorld (PublicKey × SecretKey) := do
 attribute [irreducible] keygen
 
 def signedChainValues {m : Type → Type} [Monad m] [HasQuery HashSpec m]
-    (secretKey : SecretKey) (epoch : Epoch) (encoding : Encoding) :
+    (secretKey : SecretKey) (leafIndex : LeafIndex) (encoding : Encoding) :
     m (ChainIndex → Digest) :=
   sequenceFin fun chain =>
-    chainWalk secretKey.parameter epoch chain 0 (encoding chain).val
-      (secretKey.chainStart epoch chain)
+    chainWalk secretKey.parameter leafIndex chain 0 (encoding chain).val
+      (secretKey.chainStart leafIndex chain)
 
 def authenticationPath {m : Type → Type} [Monad m] [HasQuery HashSpec m]
-    (secretKey : SecretKey) (epoch : Epoch) : m (Fin treeHeight → Digest) :=
+    (secretKey : SecretKey) (leafIndex : LeafIndex) : m (Fin treeHeight → Digest) :=
   sequenceFin fun level =>
     treeNode secretKey.parameter secretKey.chainStart level.val
-      (authenticationPathNode epoch level)
+      (authenticationPathNode leafIndex level)
 
 def signWithEncoding {m : Type → Type} [Monad m] [HasQuery HashSpec m]
-    (secretKey : SecretKey) (epoch : Epoch) (randomness : Randomness)
+    (secretKey : SecretKey) (leafIndex : LeafIndex) (randomness : Randomness)
     (encoding : Encoding) : m Signature := do
-  let chainValue ← signedChainValues secretKey epoch encoding
-  let authPath ← authenticationPath secretKey epoch
+  let chainValue ← signedChainValues secretKey leafIndex encoding
+  let authPath ← authenticationPath secretKey leafIndex
   return ⟨randomness, chainValue, authPath⟩
 
 noncomputable def signAttempt {m : Type → Type} [Monad m] [HasQuery HashSpec m]
-    (secretKey : SecretKey) (epoch : Epoch) (message : Message)
+    (secretKey : SecretKey) (leafIndex : LeafIndex) (message : Message)
     (randomness : Randomness) : m (Option Signature) := do
-  let digest ← encodingHash secretKey.parameter epoch message randomness
+  let digest ← encodingHash secretKey.parameter leafIndex message randomness
   match TargetSum.decodeDigest digest with
   | none => pure none
-  | some encoding => some <$> signWithEncoding secretKey epoch randomness encoding
+  | some encoding => some <$> signWithEncoding secretKey leafIndex randomness encoding
 
 noncomputable def sign (secretKey : SecretKey)
-    (epoch : Epoch) (message : Message) : OracleComp OracleWorld (Option Signature) := do
+    (leafIndex : LeafIndex) (message : Message) : OracleComp OracleWorld (Option Signature) := do
   let randomness ← liftM signingRandomness
-  liftM (signAttempt secretKey epoch message randomness :
+  liftM (signAttempt secretKey leafIndex message randomness :
     OracleComp HashSpec (Option Signature))
 
 theorem sign_eq (secretKey : SecretKey)
-    (epoch : Epoch) (message : Message) :
-    sign secretKey epoch message = (do
+    (leafIndex : LeafIndex) (message : Message) :
+    sign secretKey leafIndex message = (do
       let randomness ← liftM signingRandomness
-      liftM (signAttempt secretKey epoch message randomness :
+      liftM (signAttempt secretKey leafIndex message randomness :
         OracleComp HashSpec (Option Signature))) := rfl
 
 attribute [irreducible] sign
 
-noncomputable def signBoundedAttempts : Nat → SecretKey → Epoch → Message →
+noncomputable def signBoundedAttempts : Nat → SecretKey → LeafIndex → Message →
     OracleComp OracleWorld (Option Signature)
-  | 0, _secretKey, _epoch, _message => pure none
-  | attempts + 1, secretKey, epoch, message => do
+  | 0, _secretKey, _leafIndex, _message => pure none
+  | attempts + 1, secretKey, leafIndex, message => do
       let randomness ← liftM signingRandomness
-      let result ← liftM (signAttempt secretKey epoch message randomness :
+      let result ← liftM (signAttempt secretKey leafIndex message randomness :
         OracleComp HashSpec (Option Signature))
       match result with
       | some signature => pure (some signature)
-      | none => signBoundedAttempts attempts secretKey epoch message
+      | none => signBoundedAttempts attempts secretKey leafIndex message
 
 noncomputable def cappedSign (secretKey : SecretKey)
-    (epoch : Epoch) (message : Message) : OracleComp OracleWorld (Option Signature) :=
-  signBoundedAttempts signingAttemptLimit secretKey epoch message
+    (leafIndex : LeafIndex) (message : Message) : OracleComp OracleWorld (Option Signature) :=
+  signBoundedAttempts signingAttemptLimit secretKey leafIndex message
 
 theorem cappedSign_eq (secretKey : SecretKey)
-    (epoch : Epoch) (message : Message) :
-    cappedSign secretKey epoch message =
-      signBoundedAttempts signingAttemptLimit secretKey epoch message := rfl
+    (leafIndex : LeafIndex) (message : Message) :
+    cappedSign secretKey leafIndex message =
+      signBoundedAttempts signingAttemptLimit secretKey leafIndex message := rfl
 
 attribute [irreducible] cappedSign
 

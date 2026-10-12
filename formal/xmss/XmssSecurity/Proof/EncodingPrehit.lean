@@ -4,9 +4,9 @@ namespace XmssSecurity
 
 def SigningCacheTrace.HasEncodingInputPrehitAt
     (trace : SigningCacheTrace) (secretKey : SecretKey)
-    (targetEpoch : Epoch) : Prop :=
+    (targetLeafIndex : LeafIndex) : Prop :=
   ∃ entry ∈ trace,
-    entry.request.epoch = targetEpoch ∧ entry.EncodingInputPrehit secretKey
+    entry.request.leafIndex = targetLeafIndex ∧ entry.EncodingInputPrehit secretKey
 
 def SigningCacheTrace.HasEncodingInputPrehit
     (trace : SigningCacheTrace) (secretKey : SecretKey) : Prop :=

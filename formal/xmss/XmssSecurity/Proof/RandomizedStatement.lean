@@ -26,8 +26,8 @@ noncomputable def romImpl : QueryImpl OracleWorld (StateT (QueryCache HashSpec) 
 /-- The interface of a synchronized signature scheme in the random-oracle experiment. -/
 structure Scheme (Key : Type := Seeded.SecretKey) where
   keygen : OracleComp OracleWorld (PublicKey × Key)
-  sign : Key → Epoch → Message → OracleComp OracleWorld (Option Signature)
-  verify : PublicKey → Epoch → Message → Signature → OracleComp OracleWorld Bool
+  sign : Key → LeafIndex → Message → OracleComp OracleWorld (Option Signature)
+  verify : PublicKey → LeafIndex → Message → Signature → OracleComp OracleWorld Bool
 
 /-- A classical adaptive adversary. After receiving the public key, it may query the shared random oracle, request signatures, and finally return a claimed forgery. -/
 structure Adversary where
@@ -36,7 +36,7 @@ structure Adversary where
 /-- The signing oracle used in the game. It records every request and response while forwarding the request to the scheme's signer. -/
 def signingOracle {Key : Type} (scheme : Scheme Key) (sk : Key) :
     QueryImpl SigningSpec (WriterT (QueryLog SigningSpec) (OracleComp OracleWorld)) :=
-  QueryImpl.withLogging fun request => scheme.sign sk request.epoch request.message
+  QueryImpl.withLogging fun request => scheme.sign sk request.leafIndex request.message
 
 /-- Forward the shared random oracle and uniform sampling to the adversary unchanged, alongside the logged signing oracle. -/
 def forwardOracles :
@@ -47,7 +47,7 @@ noncomputable def Seeded.gameRest {Key : Type} (randomizedScheme : Scheme Key) (
     (pk : PublicKey) (sk : Key) : OracleComp OracleWorld Bool := do
   let ((forgery, log) : Forgery × QueryLog SigningSpec) ←
     (simulateQ (forwardOracles + signingOracle randomizedScheme sk) (adversary.main pk)).run
-  let verified ← randomizedScheme.verify pk forgery.epoch forgery.message forgery.signature
+  let verified ← randomizedScheme.verify pk forgery.leafIndex forgery.message forgery.signature
   return decide (SigningTranscript.Valid log ∧ ¬SigningTranscript.Contains log forgery) && verified
 
 /-- Key generation, followed by the adversary and final verification. -/
@@ -76,8 +76,8 @@ def HasClassicalSecurityBits {Key : Type} (scheme : Scheme Key) (bits : Nat) : P
 
 noncomputable def Seeded.scheme : Scheme Seeded.SecretKey where
   keygen := Seeded.keygen
-  sign := fun sk epoch message => liftM (Seeded.sign sk epoch message : OracleComp HashSpec _)
-  verify := fun publicKey epoch message signature =>
-    liftM (Concrete.verify publicKey epoch message signature : OracleComp HashSpec Bool)
+  sign := fun sk leafIndex message => liftM (Seeded.sign sk leafIndex message : OracleComp HashSpec _)
+  verify := fun publicKey leafIndex message signature =>
+    liftM (Concrete.verify publicKey leafIndex message signature : OracleComp HashSpec Bool)
 
 end XmssSecurity

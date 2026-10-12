@@ -9,16 +9,16 @@ theorem simulate_chainWalk_run_eq_pure_of_table_matches
     (chain : ChainIndex) (table : ChainValueIndex → Digest)
     (hseeds : ChainTableSeedsMatch secretKey chain table)
     (hedges : ChainTableEdgesMatch cache secretKey.parameter chain table)
-    (epoch : Epoch) : ∀ (steps : Nat) (hsteps : steps < chainLength),
+    (leafIndex : LeafIndex) : ∀ (steps : Nat) (hsteps : steps < chainLength),
     (simulateQ randomOracle
-      (Concrete.chainWalk secretKey.parameter epoch chain 0 steps
-        (secretKey.chainStart epoch chain))).run cache =
-      pure (table (epoch, ⟨steps, hsteps⟩), cache) := by
+      (Concrete.chainWalk secretKey.parameter leafIndex chain 0 steps
+        (secretKey.chainStart leafIndex chain))).run cache =
+      pure (table (leafIndex, ⟨steps, hsteps⟩), cache) := by
   intro steps
   induction steps with
   | zero =>
       intro hsteps
-      simp [Concrete.chainWalk, hseeds epoch]
+      simp [Concrete.chainWalk, hseeds leafIndex]
   | succ steps ih =>
       intro hsteps
       have hprevious : steps < chainLength := by omega
@@ -29,7 +29,7 @@ theorem simulate_chainWalk_run_eq_pure_of_table_matches
       split
       · rename_i hvalid
         simp only [zero_add] at hvalid ⊢
-        let edge : ChainEdgeIndex := (epoch, ⟨steps, hedgeStep⟩)
+        let edge : ChainEdgeIndex := (leafIndex, ⟨steps, hedgeStep⟩)
         obtain ⟨output, hcached, htruncate⟩ := hedges edge
         let input := chainTableEdgeInput
           secretKey.parameter chain table edge

@@ -26,7 +26,7 @@ theorem transcriptWin_mono (forgery : Forgery) (original forwarded : QueryLog Si
 
 noncomputable def finishGame (publicKey : PublicKey) (result : Forgery × QueryLog SigningSpec) :
     OracleComp OracleWorld Bool := do
-  let verified ← liftM (Concrete.verify publicKey result.1.epoch result.1.message result.1.signature : OracleComp HashSpec Bool)
+  let verified ← liftM (Concrete.verify publicKey result.1.leafIndex result.1.message result.1.signature : OracleComp HashSpec Bool)
   return transcriptWin result.1 result.2 verified
 
 noncomputable def sourceGame (publicKey : PublicKey) (adversary : Adversary) :
@@ -37,7 +37,7 @@ noncomputable def transcriptReduction (publicKey : PublicKey) (adversary : Adver
     OracleComp (OracleWorld + SigningSpec) (Bool × Bool) := do
   let result ← withRequestLog (memoize (withRequestLog (adversary.main publicKey)) ∅)
   let verified ← baseLift (liftM
-    (Concrete.verify publicKey result.1.1.epoch result.1.1.message result.1.1.signature : OracleComp HashSpec Bool) :
+    (Concrete.verify publicKey result.1.1.leafIndex result.1.1.message result.1.1.signature : OracleComp HashSpec Bool) :
       OracleComp OracleWorld Bool)
   return (transcriptWin result.1.1 result.1.2 verified, transcriptWin result.1.1 result.2 verified)
 
@@ -47,13 +47,13 @@ theorem runSigning_baseLift {α : Type} (sign : SignRequest → OracleComp HashS
 
 theorem runSigning_sourceGame (randomizers : RandomizerOutputs) (secretKey : XmssSecurity.SecretKey)
     (publicKey : PublicKey) (adversary : Adversary) :
-    runSigning (fun (request : SignRequest) => tableSign randomizers secretKey request.epoch request.message) (sourceGame publicKey adversary) =
+    runSigning (fun (request : SignRequest) => tableSign randomizers secretKey request.leafIndex request.message) (sourceGame publicKey adversary) =
       gameRest (tableScheme randomizers) adversary publicKey secretKey := by
   simp only [sourceGame, runSigning, simulateQ_bind, simulateQ_baseLift, simulateQ_ofLift_eq_self]
   rw [show simulateQ (QueryImpl.ofLift OracleWorld (OracleComp OracleWorld) +
-      fun (request : SignRequest) => liftM (tableSign randomizers secretKey request.epoch request.message : OracleComp HashSpec (Option Signature)))
+      fun (request : SignRequest) => liftM (tableSign randomizers secretKey request.leafIndex request.message : OracleComp HashSpec (Option Signature)))
       (withRequestLog (adversary.main publicKey)) =
-        loggedRun (fun (request : SignRequest) => liftM (tableSign randomizers secretKey request.epoch request.message : OracleComp HashSpec (Option Signature)))
+        loggedRun (fun (request : SignRequest) => liftM (tableSign randomizers secretKey request.leafIndex request.message : OracleComp HashSpec (Option Signature)))
           (adversary.main publicKey) from runSigning_withRequestLog _ _]
   unfold loggedRun gameRest finishGame transcriptWin
   rfl

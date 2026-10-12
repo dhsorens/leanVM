@@ -1,4 +1,4 @@
-import XmssSecurity.Proof.AdaptiveEpochCollision
+import XmssSecurity.Proof.AdaptiveLeafIndexCollision
 
 open OracleComp ENNReal
 open scoped BigOperators

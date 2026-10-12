@@ -26,12 +26,10 @@ use crate::ntt::AdditiveNttF64;
 use fiat_shamir::merkle::PrunedMerklePaths;
 use fiat_shamir::transcript::{Challenger, Error as TranscriptError, Receiver, Transmitter};
 use primitives::{
-    field::{F64, F192, F192BaseUnreduced, F192Unreduced, powers},
+    field::{F64, F192, F192Unreduced, powers},
     multilinear::eq_eval,
-    pretty_integer,
     stream::Stream,
 };
-use zk_alloc::ArenaVec;
 
 pub use super::whir_config::{
     FinalBlockConfig, INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0, LevelShapes, MAX_LOG_INV_RATE, MIN_LOG_INV_RATE,
@@ -97,7 +95,7 @@ fn mle_eval_ext(table: &[F192], point: &[F192]) -> F192 {
     folded[0]
 }
 
-use primitives::multilinear::eq_table_arena as build_eq_table_ext_parallel;
+use primitives::multilinear::eq_table as build_eq_table_ext_parallel;
 
 /// Partially evaluate the multilinear extension of `evals` at the first
 /// `rs.len()` (LSB) variables. Mirror of `whir::partial_eval_lsb`.
@@ -161,42 +159,8 @@ pub struct Commitment {
 /// Prover-side state retained after commit for the opening phase. The message
 /// itself is not stored; the caller retains it for opening.
 pub struct ProverData {
-    pub codeword: ArenaVec<F64>,
-    pub merkle_tree: ArenaVec<Hash>,
-}
-
-/// Fill `codeword` with `2^r` replicas of `msg`: the exact state after the
-/// first `r` forward-NTT layers on the zero-padded coefficient vector
-/// `[msg, 0, ..., 0]`. Pair with `forward_transform_*_from_layer(.., r)`.
-fn replicate_message_fill_uninit<T: Copy + Send + Sync>(codeword: &mut [std::mem::MaybeUninit<T>], msg: &[T]) {
-    let msg_len = msg.len();
-    debug_assert!(codeword.len().is_multiple_of(msg_len));
-    let replicas = codeword.len() / msg_len;
-    const COPY_CHUNK: usize = 1 << 16;
-    // One task per (message chunk, replica). Ordering replica-innermost walks the
-    // MESSAGE rather than the codeword, so a worker's run of tasks copies one
-    // chunk into every replica while it is still in cache; walking the codeword
-    // instead re-reads the whole message per replica, and at scale that is a
-    // gigabyte fetched from DRAM again for each one. Chunking the message alone
-    // is not enough to fill the pool: down the recursion the message shrinks by
-    // 2^3 a level while the codeword shrinks by 2^1, so the deep levels would
-    // leave hundreds of megabytes to one thread.
-    let n_chunks = msg_len.div_ceil(COPY_CHUNK);
-    let dst = parallel::SendPtr(codeword.as_mut_ptr());
-    parallel::for_each(n_chunks * replicas, |t| {
-        let (c, r) = (t / replicas, t % replicas);
-        let start = c * COPY_CHUNK;
-        let len = COPY_CHUNK.min(msg_len - start);
-        // Nothing reads a replica until the transform's first pass, by which
-        // time a codeword this size is long evicted.
-        let stream = Stream::new();
-        // SAFETY: task `(c, r)` owns `[r * msg_len + start, + len)` of the
-        // codeword; those ranges are in bounds, pairwise disjoint, and disjoint
-        // from `msg`.
-        unsafe {
-            stream.copy_uninit(dst.add(r * msg_len + start).cast(), &msg[start..start + len]);
-        }
-    });
+    pub codeword: Vec<F64>,
+    pub merkle_tree: Vec<Hash>,
 }
 
 /// Commit to the `F64` message of a `2^log_n`-word witness: the message is its
@@ -232,31 +196,19 @@ pub fn commit(message: &[F64], log_n: usize, log_batch_size: usize, log_inv_rate
     // `transpose_lane_major` covers every word of the message region (its tiles are
     // asserted to), and `encode_interleaved_in_place` writes every other replica from
     // it before transforming that region in place.
-    let mut codeword = unsafe { zk_alloc::ArenaVec::<F64>::uninitialized(codeword_len) };
+    let mut codeword = unsafe { primitives::uninit_vec::<F64>(codeword_len) };
 
-    // Optional phase timing (WHIR_TRACE): one env lookup per commit, no
-    // work when unset.
-    let trace = std::env::var_os("WHIR_TRACE").is_some();
-    let t_ntt = std::time::Instant::now();
+    // Leaves are hashed as the encode finishes each block of rows.
+    let tree = merkle::MerkleBuilder::new(n_positions, n_lanes, 1usize << log_batch_size);
     tracing::info_span!("NTT", kind = "base encode", log_domain = k_code, lanes = n_lanes).in_scope(|| {
         crate::ntt::transpose_lane_major(&mut codeword[..message.len()], message, n_lanes, log_rows);
         let ntt = AdditiveNttF64::standard(k_code);
-        ntt.encode_interleaved_in_place(&mut codeword, n_lanes, log_inv_rate);
+        ntt.encode_interleaved_in_place_with(&mut codeword, n_lanes, log_inv_rate, &|row, rows| {
+            tree.absorb(row, rows)
+        });
     });
-    let ntt_elapsed = t_ntt.elapsed();
-    let t_merkle = std::time::Instant::now();
-
-    let merkle_tree = merkle::merkle_tree_padded_rows(&codeword, n_positions, n_lanes, 1usize << log_batch_size);
+    let merkle_tree = tracing::info_span!("Merkle").in_scope(|| tree.finish());
     let root = *merkle_tree.last().expect("merkle tree non-empty");
-    if trace {
-        let k_code = pretty_integer(k_code);
-        let lanes = pretty_integer(n_lanes);
-        eprintln!(
-            "[lig-commit] k_code={k_code} lanes={lanes}: ntt = {:.4} s, merkle = {:.4} s",
-            ntt_elapsed.as_secs_f64(),
-            t_merkle.elapsed().as_secs_f64(),
-        );
-    }
 
     (Commitment { root }, ProverData { codeword, merkle_tree })
 }
@@ -265,8 +217,8 @@ pub fn commit(message: &[F64], log_n: usize, log_batch_size: usize, log_inv_rate
 /// `mat[pos * num_interleaved + lane]`; each row (one `pos` across all lanes)
 /// is one Merkle leaf of `num_interleaved * 16` bytes.
 pub(crate) struct LigeroWitness {
-    pub mat: ArenaVec<F192>,
-    pub tree: ArenaVec<Hash>,
+    pub mat: Vec<F192>,
+    pub tree: Vec<Hash>,
     pub block_len: usize,
     pub num_interleaved: usize,
 }
@@ -284,9 +236,10 @@ impl LigeroWitness {
     }
 }
 
-/// Commit an extension-field polynomial at a recursive level: replicate the
-/// LSB-lane-layout message into all `2^log_inv_rate` sub-blocks, RS-encode
-/// each lane with the K-twiddle mixed-product NTT, and Merkle over rows.
+/// Commit an extension-field polynomial at one recursive WHIR level.
+///
+/// - Each lane of the row-major message is RS-encoded with base-field twiddles.
+/// - The codeword is then Merkle-committed, one leaf per row.
 pub(crate) fn ligero_commit_ext(
     poly: &[F192],
     log_msg_cols: usize,
@@ -302,50 +255,26 @@ pub(crate) fn ligero_commit_ext(
     assert!(log_block_len <= ntt.log_domain_size());
 
     let codeword_len = block_len * num_interleaved;
-    // Replicated up front rather than gathered by the first pass, unlike the base
-    // encode ([`AdditiveNttF64::encode_interleaved_in_place`]): the fused width here is
-    // radix 4 over `num_interleaved` = 8 F192 lanes, so a gather writes four 192-byte
-    // rows at a stride, against the base encode's radix 8 over 512-byte rows. A
-    // contiguous copy is the better shape at this granularity.
-    let mut mat = zk_alloc::alloc_uninit(codeword_len);
-    replicate_message_fill_uninit(&mut mat, poly);
-    // SAFETY: the replicate fill initializes every matrix element.
-    let mut mat = unsafe { zk_alloc::assume_init(mat) };
+    // The encode builds the replicas itself, so the codeword starts uninitialized.
+    //
+    // SAFETY: the encode writes every matrix element before reading it.
+    let mut mat = unsafe { primitives::uninit_vec::<F192>(codeword_len) };
 
-    // Optional per-level NTT/Merkle split (WHIR_TRACE): one env lookup per
-    // commit level, no work when unset.
-    let trace = std::env::var_os("WHIR_TRACE").is_some();
-    let t_ntt = std::time::Instant::now();
+    // One leaf per row, its F192s as K words: hashed as the encode finishes each block.
+    let row_words = 3 * num_interleaved;
+    let builder = merkle::MerkleBuilder::new(block_len, row_words, row_words);
     tracing::info_span!(
         "NTT",
         kind = "extension encode",
         log_domain = log_block_len,
         lanes = num_interleaved
     )
-    .in_scope(|| forward_transform_interleaved_ext_from_layer(ntt, &mut mat, num_interleaved, log_inv_rate));
-    let ntt_elapsed = t_ntt.elapsed();
-    let t_merkle = std::time::Instant::now();
-
-    // Merkle over rows, zero-copy.
-    // SAFETY: F192 is repr(C) with three u64 limbs (24 bytes, no padding);
-    // a `[F192]` slice is its contiguous byte image. The cast covers exactly
-    // `mat.len() * size_of::<F192>()` initialized
-    // bytes.
-    let leaf_size_bytes = num_interleaved * core::mem::size_of::<F192>();
-    let data_bytes: &[u8] =
-        unsafe { core::slice::from_raw_parts(mat.as_ptr() as *const u8, mat.len() * core::mem::size_of::<F192>()) };
-    debug_assert_eq!(data_bytes.len(), block_len * leaf_size_bytes);
-    let tree = merkle::merkle_tree(data_bytes, block_len);
-    if trace {
-        let log_block_len = pretty_integer(log_block_len);
-        let num_interleaved = pretty_integer(num_interleaved);
-        eprintln!(
-            "[lig] recursive_commit(log_block={log_block_len}, lanes={num_interleaved}): \
-             ntt = {:.4} s, merkle = {:.4} s",
-            ntt_elapsed.as_secs_f64(),
-            t_merkle.elapsed().as_secs_f64(),
-        );
-    }
+    .in_scope(|| {
+        encode_interleaved_ext(ntt, &mut mat, poly, num_interleaved, log_inv_rate, &|row, rows| {
+            builder.absorb(row, rows)
+        })
+    });
+    let tree = tracing::info_span!("Merkle").in_scope(|| builder.finish());
 
     LigeroWitness {
         mat,
@@ -442,8 +371,8 @@ trait RoundWitness: Copy + Sync + std::ops::Add<Output = Self> {
 }
 
 impl RoundWitness for F64 {
-    type Acc = F192BaseUnreduced;
-    const ZERO_ACC: Self::Acc = F192BaseUnreduced::ZERO;
+    type Acc = F192Unreduced;
+    const ZERO_ACC: Self::Acc = F192Unreduced::ZERO;
     #[inline]
     fn mul_basis_unreduced(self, b: F192) -> Self::Acc {
         b.mul_base_unreduced(self)
@@ -541,15 +470,15 @@ fn round_msg_and_eval_lsb_ext(f: &[F192], b: &[F192]) -> (SumcheckMessage, F192)
     (SumcheckMessage { u_0, u_2 }, y)
 }
 
-/// Arena-backed output for an initial-sumcheck fold.
+/// Uninitialized output for an initial-sumcheck fold.
 ///
 /// # Safety
 /// Every element must be written before it is read, which every fold kernel
 /// below does: one output slot per input pair.
 #[inline]
-unsafe fn fold_out_buf(n: usize) -> ArenaVec<F192> {
+unsafe fn fold_out_buf(n: usize) -> Vec<F192> {
     // SAFETY: forwarded to the caller's obligation, documented above.
-    unsafe { ArenaVec::uninitialized(n) }
+    unsafe { primitives::uninit_vec(n) }
 }
 
 /// Unreduced `(u_0, u_2)` over the already-folded E buffers, pair by pair. A
@@ -575,11 +504,7 @@ fn fold_msg_terms(nf: &[F192], nb: &[F192]) -> (F192Unreduced, F192Unreduced) {
 /// Fused fold + next-round message: the witness folds into E, the basis folds
 /// in E, and the next-round message is built over the freshly folded E values
 /// in the same pass. Mirror of `whir::fold_and_msg_lsb`.
-fn fold_and_msg_lsb<T: RoundWitness>(
-    f: &[T],
-    b: &[F192],
-    r: F192,
-) -> (ArenaVec<F192>, ArenaVec<F192>, SumcheckMessage) {
+fn fold_and_msg_lsb<T: RoundWitness>(f: &[T], b: &[F192], r: F192) -> (Vec<F192>, Vec<F192>, SumcheckMessage) {
     let n = f.len();
     debug_assert!(n.is_power_of_two() && n >= 2);
     debug_assert_eq!(b.len(), n);
@@ -589,8 +514,8 @@ fn fold_and_msg_lsb<T: RoundWitness>(
     let fold_b = |j: usize| -> F192 { F192::fold_pair(b[2 * j], b[2 * j + 1], r) };
     const PAR_THRESHOLD: usize = 4096;
     if half < PAR_THRESHOLD {
-        let mut nf = ArenaVec::with_capacity(half);
-        let mut nb = ArenaVec::with_capacity(half);
+        let mut nf = Vec::with_capacity(half);
+        let mut nb = Vec::with_capacity(half);
         for j in 0..half {
             nf.push(fold_f(j));
             nb.push(fold_b(j));
@@ -761,12 +686,12 @@ pub(crate) fn build_initial_basis(
     f: &[F64],
     block: usize,
     fill: impl Fn(usize, &mut [F192]) + Sync,
-) -> (ArenaVec<F192>, SumcheckMessage) {
+) -> (Vec<F192>, SumcheckMessage) {
     assert!(block.is_power_of_two() && f.len().is_multiple_of(block));
     let n_blocks = f.len() / block;
     let per = block.div_ceil(INITIAL_BASIS_CHUNK);
     // SAFETY: each task fills and publishes its disjoint lane windows before returning.
-    let mut basis = unsafe { ArenaVec::<F192>::uninitialized(f.len()) };
+    let mut basis = unsafe { primitives::uninit_vec::<F192>(f.len()) };
     let dst = parallel::SendPtr(basis.as_mut_ptr());
     let task = |t: usize| {
         let (pair, chunk) = (t / per, t % per);
@@ -791,7 +716,7 @@ pub(crate) fn build_initial_basis(
         unsafe { stream.copy(dst.slice(lo, len), &b0[..len]) };
         message
     };
-    let (u_0, u_2) = accumulate_msg(n_blocks.div_ceil(2) * per, f.len() / 2, F192BaseUnreduced::ZERO, task);
+    let (u_0, u_2) = accumulate_msg(n_blocks.div_ceil(2) * per, f.len() / 2, F192Unreduced::ZERO, task);
     (
         basis,
         SumcheckMessage {
@@ -815,7 +740,7 @@ fn fold_and_msg_blocks<T: RoundWitness>(
     r: F192,
     block: usize,
     last: bool,
-) -> (ArenaVec<F192>, ArenaVec<F192>, SumcheckMessage) {
+) -> (Vec<F192>, Vec<F192>, SumcheckMessage) {
     assert_eq!(b.len(), f.len());
     assert!(block > 0 && f.len().is_multiple_of(block));
     let n_in = f.len() / block;
@@ -913,7 +838,7 @@ fn fold_and_msg_blocks<T: RoundWitness>(
 /// E-vector afterwards.
 enum Witness<'a> {
     Base(&'a [F64]),
-    Ext(ArenaVec<F192>),
+    Ext(Vec<F192>),
 }
 
 /// Running sumcheck over the committed base witness and subsequent extension-field folds.
@@ -922,14 +847,14 @@ struct SumcheckProver<'a> {
     /// Single combined basis poly: `glue_pending(lambda)` folds each claim
     /// introduced since the last glue in as `combined_basis += lambda^tau *
     /// b_new`, `tau` counting from 1 (the running claim is `tau = 0`).
-    combined_basis: ArenaVec<F192>,
+    combined_basis: Vec<F192>,
     /// The running claim and its quadratic; `h(0) + h(1) = t_r` fixes the linear coefficient.
     t_r: F192,
     quad: RoundQuad,
     round: usize,
     /// The level's claims, in Protocol 1 step 1 order: the OOD claims, then the
     /// query batch. Drained by `glue_pending`.
-    pending: Vec<(ArenaVec<F192>, F192, RoundQuad)>,
+    pending: Vec<(Vec<F192>, F192, RoundQuad)>,
 }
 
 impl<'a> SumcheckProver<'a> {
@@ -938,7 +863,7 @@ impl<'a> SumcheckProver<'a> {
     /// whole blocks rather than adjacent words.
     fn new(
         f: &'a [F64],
-        b1: ArenaVec<F192>,
+        b1: Vec<F192>,
         h1: F192,
         block: usize,
         initial_message: Option<SumcheckMessage>,
@@ -999,10 +924,8 @@ impl<'a> SumcheckProver<'a> {
             Witness::Base(f) => fold_and_msg_lsb(f, &self.combined_basis, r),
             Witness::Ext(f) => fold_and_msg_lsb(f, &self.combined_basis, r),
         };
-        // Swap the freshly folded buffers in and drop the consumed ones, which
-        // at these sizes returns their slab space to the arena's reuse list, so
-        // the next round's `fold_out_buf` is served from it rather than growing
-        // the phase's cursor.
+        // Swap the freshly folded buffers in and drop the consumed ones, so the
+        // allocator serves the next round's `fold_out_buf` from their memory.
         drop(std::mem::replace(&mut self.f, Witness::Ext(nf)));
         drop(std::mem::replace(&mut self.combined_basis, nb));
         self.quad = RoundQuad::from_msg(msg, self.t_r);
@@ -1011,7 +934,7 @@ impl<'a> SumcheckProver<'a> {
 
     /// Introduce a fresh basis poly with claimed sum `h_new`; sends the
     /// (u_0, u_2) for `Σ_x f(x) · b_new(x)` at the current dim.
-    fn introduce_new(&mut self, b_new: ArenaVec<F192>, h_new: F192) -> SumcheckMessage {
+    fn introduce_new(&mut self, b_new: Vec<F192>, h_new: F192) -> SumcheckMessage {
         let msg = match &self.f {
             Witness::Base(f) => {
                 assert_eq!(b_new.len(), f.len());
@@ -1029,7 +952,7 @@ impl<'a> SumcheckProver<'a> {
     /// Introduce `b_new` and compute its claimed inner product in the same
     /// pass as the round message. OOD claims only occur after the first fold,
     /// when the witness has already been lifted from K to E.
-    fn introduce_new_with_eval(&mut self, b_new: ArenaVec<F192>) -> (SumcheckMessage, F192) {
+    fn introduce_new_with_eval(&mut self, b_new: Vec<F192>) -> (SumcheckMessage, F192) {
         let f = match &self.f {
             Witness::Ext(f) => f,
             Witness::Base(_) => panic!("OOD claim introduced before the first fold"),
@@ -1156,7 +1079,7 @@ pub fn recursive_prover_with_basis(
     config: &ProverConfig,
     log_n: usize,
     witness: &[F64],
-    b_initial: ArenaVec<F192>,
+    b_initial: Vec<F192>,
     target: F192,
     l0_codeword: &[F64],
     l0_tree: &[Hash],
@@ -1179,7 +1102,7 @@ pub(crate) fn recursive_prover_with_prepared_basis(
     config: &ProverConfig,
     log_n: usize,
     witness: &[F64],
-    b_initial: ArenaVec<F192>,
+    b_initial: Vec<F192>,
     target: F192,
     l0_codeword: &[F64],
     l0_tree: &[Hash],
@@ -1216,18 +1139,6 @@ pub(crate) fn recursive_prover_with_prepared_basis(
     assert_eq!(l0_codeword.len(), block_len_0 * n_lanes);
     assert_eq!(l0_tree.len(), 2 * block_len_0 - 1);
 
-    // Optional per-phase timing (WHIR_TRACE): mirror of the original's
-    // LIG_PROVE_TRACE. One env lookup per prove; the Instant reads are
-    // negligible and the accumulation/printing is gated on `trace`.
-    let trace = std::env::var_os("WHIR_TRACE").is_some();
-    let mut t_init_sumcheck = std::time::Duration::ZERO;
-    let mut t_commits = std::time::Duration::ZERO;
-    let mut t_opens = std::time::Duration::ZERO;
-    let mut t_induce = std::time::Duration::ZERO;
-    let mut t_sumcheck_folds = std::time::Duration::ZERO;
-    let mut t_intro_glue = std::time::Duration::ZERO;
-    let t_total = std::time::Instant::now();
-
     // Nothing is absorbed on entry. The commitment was bound by the `add_root`/`next_root` that
     // transmitted it, and the target is `sum_i lambda^i * claim_i` over claim values bound by their
     // own reads, with lambda drawn from the state: the state already determines both. Every caller
@@ -1238,8 +1149,8 @@ pub(crate) fn recursive_prover_with_prepared_basis(
     // here, the caller having transmitted it.
     // The codeword interleaves only the committed lanes, and its lane `t` is stack
     // block `n_lanes-1-t`, so a row IS the tail of the leaf image: the absent lanes
-    // are the image's leading zeros (`merkle::merkle_tree_padded_rows` shares their
-    // hash prefix, and only this tail rides the proof).
+    // are the image's leading zeros (`MerkleBuilder` shares their hash prefix, and only
+    // this tail rides the proof).
     let l0_row = |q: usize| -> Vec<F64> { l0_codeword[q * n_lanes..(q + 1) * n_lanes].to_vec() };
     // The same row for the induce, which folds a lane-ASCENDING row against the
     // lane eq table: reversing the image puts block `b` at index `b` and the absent
@@ -1254,7 +1165,6 @@ pub(crate) fn recursive_prover_with_prepared_basis(
 
     let ood_count = |lvl: usize| -> usize { config.ood_samples.get(lvl).copied().unwrap_or(0) };
 
-    let _t = std::time::Instant::now();
     let sumcheck_span = tracing::info_span!("Sumcheck");
     let (mut sc_prover, start_msg) =
         sumcheck_span.in_scope(|| SumcheckProver::new(witness, b_initial, target, lane_block, initial_message));
@@ -1268,9 +1178,6 @@ pub(crate) fn recursive_prover_with_prepared_basis(
         r_lane_fold.push(r_j);
     }
     drop(sumcheck_span);
-    if trace {
-        t_init_sumcheck += _t.elapsed();
-    }
 
     // Commit f^1 = folded (now E-valued) witness as wtns_1.
     let n1 = log_n - initial_k;
@@ -1278,7 +1185,7 @@ pub(crate) fn recursive_prover_with_prepared_basis(
     assert!(n1 >= log_num_interleaved_1);
     let log_msg_cols_1 = n1 - log_num_interleaved_1;
     let log_inv_rate_1 = config.log_inv_rates[1];
-    let _t = std::time::Instant::now();
+    let span = tracing::info_span!("Commit", level = 1).entered();
     let ntt_1 = AdditiveNttF64::standard(log_msg_cols_1 + log_inv_rate_1);
     let wtns_1 = ligero_commit_ext(
         sc_prover.f_ext(),
@@ -1287,9 +1194,7 @@ pub(crate) fn recursive_prover_with_prepared_basis(
         log_inv_rate_1,
         &ntt_1,
     );
-    if trace {
-        t_commits += _t.elapsed();
-    }
+    drop(span);
     ps.add_root(&wtns_1.root());
 
     // Bind the L1 Johnson list before drawing L0 queries. Each claimed random
@@ -1307,21 +1212,19 @@ pub(crate) fn recursive_prover_with_prepared_basis(
     // batches is fixed: the OOD claims above and these query positions.
     let lambda_0 = ps.sample();
     let weights_0 = powers(lambda_0, num_queries_0);
-    let _t = std::time::Instant::now();
+    let span = tracing::info_span!("Open", level = 0).entered();
     // Ordered (dup-possible) rows for the local induce math ...
     let opened_rows_0: Vec<Vec<F64>> = queries_0.iter().map(|&q| l0_fold_row(q)).collect();
     // ... but the stored proof carries the sorted-unique rows + one octopus over
     // the sorted-unique positions (the verifier re-fans them to ordered).
     ps.hint_merkle(PrunedMerklePaths::prune(l0_tree, block_len_0, &queries_0, l0_row));
-    if trace {
-        t_opens += _t.elapsed();
-    }
+    drop(span);
 
     // Induce basis_0 from the L0 opens. L0 dominates the induce phase, where
     // the sparse-prefix transposed-NTT path wins; the dispatcher auto-selects
     // it (deeper levels stay dense), mirroring the original.
     let sks_vks_n1 = eval_sk_at_vks(n1);
-    let _t = std::time::Instant::now();
+    let span = tracing::info_span!("Induce", level = 0).entered();
     let (basis_0_induced, enforced_sum_0) = induce_sumcheck_poly_auto_base(
         n1,
         log_inv_rate_0,
@@ -1331,18 +1234,14 @@ pub(crate) fn recursive_prover_with_prepared_basis(
         &queries_0,
         &weights_0,
     );
-    if trace {
-        t_induce += _t.elapsed();
-    }
+    drop(span);
 
     // Introduce basis_0, then batch the level's claims with powers of lambda_0.
-    let _t = std::time::Instant::now();
+    let span = tracing::info_span!("Introduce", level = 0).entered();
     let intro_msg_0 = sc_prover.introduce_new(basis_0_induced, enforced_sum_0);
     send_msg(ps, intro_msg_0, enforced_sum_0);
     sc_prover.glue_pending(lambda_0);
-    if trace {
-        t_intro_glue += _t.elapsed();
-    }
+    drop(span);
 
     // Recursive levels.
     let mut wtns_prev = wtns_1;
@@ -1350,7 +1249,6 @@ pub(crate) fn recursive_prover_with_prepared_basis(
     for i in 0..r {
         let k_i = config.level_ks[i];
         let mut level_rs = Vec::with_capacity(k_i);
-        let _t = std::time::Instant::now();
         let sumcheck_span = tracing::info_span!("Sumcheck");
         for _ in 0..k_i {
             let ri = ps.sample();
@@ -1359,9 +1257,6 @@ pub(crate) fn recursive_prover_with_prepared_basis(
             level_rs.push(ri);
         }
         drop(sumcheck_span);
-        if trace {
-            t_sumcheck_folds += _t.elapsed();
-        }
 
         if i == r - 1 {
             ps.add_scalars(sc_prover.f_ext());
@@ -1373,7 +1268,7 @@ pub(crate) fn recursive_prover_with_prepared_basis(
             // and its queries are bound, matching the verifier exactly.
             let lambda_last = ps.sample();
             let weights_last = powers(lambda_last, num_queries_last);
-            let _t = std::time::Instant::now();
+            let span = tracing::info_span!("Final level").entered();
             // Final level: stored (sorted-unique) only, no local induce; the
             // verifier fans these to ordered for its last-level induce.
             ps.hint_merkle(PrunedMerklePaths::prune(
@@ -1409,35 +1304,7 @@ pub(crate) fn recursive_prover_with_prepared_basis(
                     send_msg(ps, msg, sc_prover.claim());
                 }
             }
-            if trace {
-                t_opens += _t.elapsed();
-                let total = t_total.elapsed();
-                eprintln!("[lig-prove] total = {:.4} s", total.as_secs_f64());
-                eprintln!(
-                    "  initial sumcheck (initial_k folds + SC build): {:.4} s",
-                    t_init_sumcheck.as_secs_f64()
-                );
-                eprintln!(
-                    "  recursive commits (NTT + merkle):              {:.4} s",
-                    t_commits.as_secs_f64()
-                );
-                eprintln!(
-                    "  opens (rows + multi-proof, incl. final):      {:.4} s",
-                    t_opens.as_secs_f64()
-                );
-                eprintln!(
-                    "  induce_sumcheck_poly:                          {:.4} s",
-                    t_induce.as_secs_f64()
-                );
-                eprintln!(
-                    "  sumcheck recursive folds:                      {:.4} s",
-                    t_sumcheck_folds.as_secs_f64()
-                );
-                eprintln!(
-                    "  introduce_new + glue:                          {:.4} s",
-                    t_intro_glue.as_secs_f64()
-                );
-            }
+            drop(span);
             return;
         }
 
@@ -1446,7 +1313,7 @@ pub(crate) fn recursive_prover_with_prepared_basis(
         assert!(n_next >= log_num_interleaved_next);
         let log_msg_cols_next = n_next - log_num_interleaved_next;
         let log_inv_rate_next = config.log_inv_rates[i + 2];
-        let _t = std::time::Instant::now();
+        let span = tracing::info_span!("Commit", level = i + 2).entered();
         let ntt_next = AdditiveNttF64::standard(log_msg_cols_next + log_inv_rate_next);
         let wtns_next = ligero_commit_ext(
             sc_prover.f_ext(),
@@ -1455,9 +1322,7 @@ pub(crate) fn recursive_prover_with_prepared_basis(
             log_inv_rate_next,
             &ntt_next,
         );
-        if trace {
-            t_commits += _t.elapsed();
-        }
+        drop(span);
         ps.add_root(&wtns_next.root());
 
         send_ood(&mut sc_prover, ps, n_next, ood_count(i + 2));
@@ -1468,7 +1333,7 @@ pub(crate) fn recursive_prover_with_prepared_basis(
         let queries_i = sample_queries_ordered(ps, wtns_prev.block_len, num_queries_i);
         let lambda_i = ps.sample();
         let weights_i = powers(lambda_i, num_queries_i);
-        let _t = std::time::Instant::now();
+        let span = tracing::info_span!("Open", level = i + 1).entered();
         // Ordered rows for the local induce; sorted-unique rows + octopus stored.
         let opened_rows_i: Vec<Vec<F192>> = queries_i.iter().map(|&q| wtns_prev.row(q).to_vec()).collect();
         ps.hint_merkle(PrunedMerklePaths::prune(
@@ -1477,25 +1342,19 @@ pub(crate) fn recursive_prover_with_prepared_basis(
             &queries_i,
             |q| ext_row_words(wtns_prev.row(q)),
         ));
-        if trace {
-            t_opens += _t.elapsed();
-        }
+        drop(span);
 
         let sks_vks_i = eval_sk_at_vks(n_next);
-        let _t = std::time::Instant::now();
+        let span = tracing::info_span!("Induce", level = i + 1).entered();
         let (basis_i_induced, enforced_sum_i) =
             induce_sumcheck_poly(n_next, &sks_vks_i, &opened_rows_i, &level_rs, &queries_i, &weights_i);
-        if trace {
-            t_induce += _t.elapsed();
-        }
+        drop(span);
 
-        let _t = std::time::Instant::now();
+        let span = tracing::info_span!("Introduce", level = i + 1).entered();
         let intro_msg_i = sc_prover.introduce_new(basis_i_induced, enforced_sum_i);
         send_msg(ps, intro_msg_i, enforced_sum_i);
         sc_prover.glue_pending(lambda_i);
-        if trace {
-            t_intro_glue += _t.elapsed();
-        }
+        drop(span);
 
         wtns_prev = wtns_next;
     }
@@ -1743,7 +1602,7 @@ pub fn recursive_verifier_with_basis(
     // at the whole (rotated) point; every later slot is an induced basis evaluated
     // at a suffix of `ris`, so the two side vectors describe slots 1.. and are
     // indexed `[k - 1]`.
-    let mut basis_polys: Vec<ArenaVec<F192>> = vec![ArenaVec::from_slice(b_initial), basis_0_induced];
+    let mut basis_polys: Vec<Vec<F192>> = vec![b_initial.to_vec(), basis_0_induced];
     let mut basis_ris_starts: Vec<usize> = vec![initial_k];
     let mut basis_separations: Vec<F192> = vec![query_scalar_0];
     let mut ris = r_lane_fold;
@@ -2299,7 +2158,7 @@ mod tests {
             &pc,
             log_n,
             &witness,
-            ArenaVec::from_slice(&b_initial),
+            b_initial.to_vec(),
             target,
             &pd.codeword,
             &pd.merkle_tree,
@@ -2384,10 +2243,10 @@ mod tests {
                 "parallel mismatch at n={n}"
             );
             let g = rng.ext();
-            let mut seeded = zk_alloc::alloc_uninit(1 << n);
+            let mut seeded = Box::new_uninit_slice(1 << n).into_vec();
             primitives::multilinear::fill_eq_table_uninit(&point, g, &mut seeded);
             // SAFETY: fill_eq_table_uninit initializes every entry.
-            let seeded = unsafe { zk_alloc::assume_init(seeded) };
+            let seeded = unsafe { seeded.into_boxed_slice().assume_init() }.into_vec();
             let scaled: Vec<F192> = serial.iter().map(|&e| g * e).collect();
             assert_eq!(&*seeded, &scaled, "seeded mismatch at n={n}");
         }
@@ -2539,7 +2398,7 @@ mod tests {
                         &pc,
                         log_n,
                         msg,
-                        ArenaVec::from_slice(b),
+                        b.to_vec(),
                         target,
                         &pd.codeword,
                         &pd.merkle_tree,
@@ -2591,30 +2450,6 @@ mod tests {
         }
     }
 
-    /// The E-valued interleaved NTT with K-twiddles must act lane-wise on the
-    /// tower coordinates: transforming (c0, c1) packed as F192 equals two
-    /// independent F64 transforms of the c0 and c1 lanes.
-    #[test]
-    fn ext_ntt_matches_two_base_ntts() {
-        let mut rng = Rng::new(5);
-        for (log_d, lanes, start_layer) in [(6usize, 4usize, 0usize), (9, 2, 2), (10, 1, 1)] {
-            let ntt = AdditiveNttF64::standard(log_d);
-            let n = (1usize << log_d) * lanes;
-            let ext: Vec<F192> = (0..n).map(|_| rng.ext()).collect();
-            let mut c0: Vec<F64> = ext.iter().map(|e| F64(e.c0)).collect();
-            let mut c1: Vec<F64> = ext.iter().map(|e| F64(e.c1)).collect();
-            let mut c2: Vec<F64> = ext.iter().map(|e| F64(e.c2)).collect();
-            let mut ext_t = ext.clone();
-            forward_transform_interleaved_ext_from_layer(&ntt, &mut ext_t, lanes, start_layer);
-            ntt.forward_transform_interleaved_parallel_from_layer(&mut c0, lanes, start_layer);
-            ntt.forward_transform_interleaved_parallel_from_layer(&mut c1, lanes, start_layer);
-            ntt.forward_transform_interleaved_parallel_from_layer(&mut c2, lanes, start_layer);
-            for i in 0..n {
-                assert_eq!(ext_t[i], F192::new(c0[i].0, c1[i].0, c2[i].0), "mismatch at {i}");
-            }
-        }
-    }
-
     /// The sparse transposed-NTT induce must be byte-identical to the dense
     /// LCH-expansion induce (same guarantee the original pins). Covers both
     /// the windowed sparse-prefix path (log_block >= 12, k = 8) and the
@@ -2647,48 +2482,6 @@ mod tests {
                 induce_sumcheck_poly_via_ntt_base(log_msg_cols, log_inv_rate, &rows, &v_challenges, &qs, &weights);
             assert_eq!(dense.1, via_ntt.1, "enforced_sum mismatch");
             assert_eq!(&*dense.0, &*via_ntt.0, "basis_poly mismatch");
-        }
-    }
-
-    /// The scalar and parallel ext transforms agree (parallel path is only
-    /// taken for larger inputs; force both on the same data).
-    #[test]
-    fn ext_ntt_scalar_matches_parallel() {
-        let mut rng = Rng::new(6);
-        let log_d = 13;
-        let lanes = 2;
-        let ntt = AdditiveNttF64::standard(log_d);
-        let n = (1usize << log_d) * lanes;
-        let orig: Vec<F192> = (0..n).map(|_| rng.ext()).collect();
-        let mut a = orig.clone();
-        let mut b = orig;
-        forward_transform_interleaved_ext_scalar_from_layer(&ntt, &mut a, lanes, 1);
-        forward_transform_interleaved_ext_parallel_from_layer(&ntt, &mut b, lanes, 1);
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn ext_ntt_coefficient_view_matches_scalar() {
-        let mut rng = Rng::new(0xE192);
-        for (log_d, lanes) in [(3usize, 1usize), (8, 4), (12, 16), (14, 16)] {
-            let ntt = AdditiveNttF64::standard(log_d);
-            let original = rng.ext_vec((1 << log_d) * lanes);
-            for start_layer in [0, 1, 2, 3, 4, log_d / 2, log_d] {
-                if start_layer > log_d {
-                    continue;
-                }
-                let mut expected = original.clone();
-                forward_transform_interleaved_ext_scalar_from_layer(&ntt, &mut expected, lanes, start_layer);
-                let mut actual = original.clone();
-                crate::whir_ntt_ext::forward_transform_interleaved_ext_via_base(&ntt, &mut actual, lanes, start_layer);
-                assert_eq!(
-                    actual, expected,
-                    "log_d={log_d}, lanes={lanes}, start_layer={start_layer}"
-                );
-                let mut dispatched = original.clone();
-                forward_transform_interleaved_ext_from_layer(&ntt, &mut dispatched, lanes, start_layer);
-                assert_eq!(dispatched, expected);
-            }
         }
     }
 

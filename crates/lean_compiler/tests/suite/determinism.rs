@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::fs;
 
 use lean_compiler::{compile, parse};
-use lean_vm::cpu::Program;
+use leanvm_core::cpu::Program;
 
 /// `tests/programs/<name>.py` against the digest of the bytecode it compiles to.
 /// The list is closed: a new program must be added here, so one cannot be added
@@ -32,20 +32,20 @@ use lean_vm::cpu::Program;
 #[rustfmt::skip]
 const GOLDEN: &[(&str, &str)] = &[
     ("conditionals", "6a1ef19ac5e5d94b35f534351a9d9dfde572e370cbcf5100ab325f276bdd80e0"),
-    ("const_params", "81b5502efc8ab32738c119fdde90a971b07d5bea2914b634eceb03d4a6ee5d33"),
+    ("const_params", "aba4e0886e795cf4303b255b0f96faceebdfcbf23fdad21b51e4656bdb07cc92"),
     ("fibonacci", "aa209603fe71e4b8f322c9cca7a632f9659da8565077b798a3a52b1819551b24"),
     ("hash_heap_chain", "9b2df8aeeef61d26cae759b29cd0fd8bdcb1f7a8ee5b7326987a4b47854363df"),
     ("hash_slices", "317fa9a020d3edfe09f2acec4210898886f97d348e097b1e8d48ec2983039b68"),
     ("heapbuf_dyn", "fe2c06694cb7b93267cdff9f045700591a35e4d540587f7178eb5e88d74bb211"),
     ("hint", "5728813cbaa17ba91235673a692ee2b861460e1f70c2f6a91fa8f1a664167f3c"),
     ("identities", "48fc9ccbf94c4ca3957e1a41eb7e02d4e61a42194af53f2a2d83b90ce6b4f0ee"),
-    ("match", "2d6dcbd325d4f8c988c83977d2b0685c964571e2e50801dbf1185f5badd6d962"),
-    ("match_arms", "a824fccbeb458f716520da1b3b3798dacdc592ae0cd6e32e72cc3d5242ee6b25"),
-    ("nested", "1c9efdbb2bc881f4688714207cae102e50f9a120ee23fcb28a93539b2b7f20d9"),
+    ("match", "4507c7e4ab30eee23ae431a39bfff169c4977ca4da26609985bd0b879e738676"),
+    ("match_arms", "c010239750e67180116793ee27013149b443af2968c9ca5e9ed4188504a5f132"),
+    ("nested", "7873140424f55a35770ced3ff8fe0d7931ff985e4034f4531dac19b32a848b59"),
     ("runtime_loop", "ba2b3cc06b823521fd08ef47660349593faa207af2f144abaddf5a076ac3e63e"),
     ("scoping", "5da1ffb57966345dc02143bf2505ecb6e892b33859d96447d6a9fef9bf68b85c"),
     ("unroll", "c297a1290ecf61332f3bdd7c5b63bbad7bc016917cf1736c3564b29388d6c034"),
-    ("wots_walk", "739ede4e4feb4f93d7a29238ee4213e4093a3b5e9260ed243a718c93e1704eca"),
+    ("wots_walk", "473cd2e6a3832b69674c855a44ed3d17734a0c9ad1bd01b5f7b9174fc6e23cf3"),
 ];
 
 fn digest(p: &Program) -> String {

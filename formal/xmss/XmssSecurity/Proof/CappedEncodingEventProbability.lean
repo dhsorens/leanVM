@@ -31,7 +31,7 @@ theorem cappedWinning_encoding_event_trace_postSigning_decomposition
     obtain ⟨signature, _signedOutput, _forgedOutput, hsignature, _rest⟩ := hforged'
     cases hsignedFresh : entry.initialCache
         (Concrete.CacheView.encodingInput execution.1.secretKey.parameter
-          entry.request.epoch (entry.request.message, signature.randomness)) with
+          entry.request.leafIndex (entry.request.message, signature.randomness)) with
     | none =>
         exact ⟨entry, hentry, Or.inr (Or.inr
           (entry.postSigningFreshForgedEncodingCollision_of_valid_fresh

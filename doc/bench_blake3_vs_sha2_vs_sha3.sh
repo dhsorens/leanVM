@@ -11,7 +11,7 @@
 #     best kept: the test already medians its own passes, so a low run is the
 #     machine being busy rather than the hash being slow. From it comes the
 #     compression rate, and the time to generate one XMSS key over a
-#     2^LOG_LIFETIME lifetime at COMPRESSIONS compressions per epoch. Comparing
+#     2^LOG_LIFETIME lifetime at COMPRESSIONS compressions per leaf index. Comparing
 #     the three rates, mind that a 64-byte hash is one compression for BLAKE2s
 #     and one permutation for Keccak, but two compressions for SHA-256, whose
 #     padding spills a 64-byte input into a second block.
@@ -37,8 +37,8 @@ set -euo pipefail
 
 HASH_RUNS=5          # hash-throughput runs per branch, best kept
 HASH_COOLDOWN=10     # seconds between them, to let the machine settle
-LOG_LIFETIME=30      # XMSS lifetime, as log2 of the number of epochs
-COMPRESSIONS=390     # compressions per epoch of an XMSS keygen
+LOG_LIFETIME=30      # XMSS lifetime, as log2 of the number of leaf indices
+COMPRESSIONS=390     # compressions per leaf index of an XMSS keygen
 
 REPEAT=5             # measured proving passes per benchmark, after a warmup
 COOLDOWN=5           # idle seconds before each of them

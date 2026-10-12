@@ -16,7 +16,7 @@ inductive GlobalFilteredCausalHashPlan where
   | fresh
 
 structure GlobalLeafInputData where
-  epoch : Epoch
+  leafIndex : LeafIndex
   endpoints : ChainIndex → Digest
 
 noncomputable def globalLeafInputData?
@@ -25,7 +25,7 @@ noncomputable def globalLeafInputData?
   classical
   exact
   if h : ∃ data : GlobalLeafInputData,
-      input = Concrete.CacheView.leafInput parameter data.epoch data.endpoints then
+      input = Concrete.CacheView.leafInput parameter data.leafIndex data.endpoints then
     some h.choose
   else none
 
@@ -33,7 +33,7 @@ theorem globalLeafInputData?_eq_some_iff
     (parameter : PublicParameter) (input : HashInput)
     (data : GlobalLeafInputData) :
     globalLeafInputData? parameter input = some data ↔
-      input = Concrete.CacheView.leafInput parameter data.epoch data.endpoints := by
+      input = Concrete.CacheView.leafInput parameter data.leafIndex data.endpoints := by
   constructor
   · intro hdata
     unfold globalLeafInputData? at hdata
@@ -49,13 +49,13 @@ theorem globalLeafInputData?_eq_some_iff
     · rename_i hexists
       have hchosen := hexists.choose_spec
       have heq := (Concrete.CacheView.leafInput_eq_iff parameter
-        hexists.choose.epoch data.epoch hexists.choose.endpoints
+        hexists.choose.leafIndex data.leafIndex hexists.choose.endpoints
           data.endpoints).mp (hchosen.symm.trans hinput)
       apply congrArg some
       cases hchosenData : hexists.choose with
-      | mk chosenEpoch chosenEndpoints =>
+      | mk chosenLeafIndex chosenEndpoints =>
           cases hdata : data with
-          | mk epoch endpoints =>
+          | mk leafIndex endpoints =>
               simp only [hchosenData, hdata] at heq ⊢
               obtain ⟨rfl, rfl⟩ := heq
               rfl
@@ -64,30 +64,30 @@ theorem globalLeafInputData?_eq_some_iff
 
 @[simp]
 theorem globalLeafInputData?_leafInput
-    (parameter : PublicParameter) (epoch : Epoch)
+    (parameter : PublicParameter) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) :
     globalLeafInputData? parameter
-        (Concrete.CacheView.leafInput parameter epoch endpoints) =
-      some ⟨epoch, endpoints⟩ := by
+        (Concrete.CacheView.leafInput parameter leafIndex endpoints) =
+      some ⟨leafIndex, endpoints⟩ := by
   rw [globalLeafInputData?_eq_some_iff]
 
 noncomputable def globalHiddenLeafProbe?
-    (state : GlobalCausalHashState) (epoch : Epoch)
+    (state : GlobalCausalHashState) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) :
     Option (GlobalChainValueIndex × Digest) :=
   if h : ∃ chain : ChainIndex,
-      state.revealed (chain, epoch, chainEndpointDigit) = none then
+      state.revealed (chain, leafIndex, chainEndpointDigit) = none then
     let chain := h.choose
-    some ((chain, epoch, chainEndpointDigit), endpoints chain)
+    some ((chain, leafIndex, chainEndpointDigit), endpoints chain)
   else none
 
 theorem globalHiddenLeafProbe?_eq_some
-    (state : GlobalCausalHashState) (epoch : Epoch)
+    (state : GlobalCausalHashState) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
     (index : GlobalChainValueIndex) (target : Digest) :
-    globalHiddenLeafProbe? state epoch endpoints = some (index, target) →
+    globalHiddenLeafProbe? state leafIndex endpoints = some (index, target) →
       ∃ chain : ChainIndex,
-        index = (chain, epoch, chainEndpointDigit) ∧
+        index = (chain, leafIndex, chainEndpointDigit) ∧
         target = endpoints chain ∧
         state.revealed index = none := by
   intro hprobe
@@ -100,11 +100,11 @@ theorem globalHiddenLeafProbe?_eq_some
   · simp at hprobe
 
 theorem globalHiddenLeafProbe?_eq_none_iff
-    (state : GlobalCausalHashState) (epoch : Epoch)
+    (state : GlobalCausalHashState) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) :
-    globalHiddenLeafProbe? state epoch endpoints = none ↔
+    globalHiddenLeafProbe? state leafIndex endpoints = none ↔
       ∀ chain : ChainIndex,
-        state.revealed (chain, epoch, chainEndpointDigit) ≠ none := by
+        state.revealed (chain, leafIndex, chainEndpointDigit) ≠ none := by
   unfold globalHiddenLeafProbe?
   split
   · rename_i hexists
@@ -121,10 +121,10 @@ theorem globalHiddenLeafProbe?_eq_none_iff
       rfl
 
 def GlobalLeafRevealsMatch
-    (state : GlobalCausalHashState) (epoch : Epoch)
+    (state : GlobalCausalHashState) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) : Prop :=
   ∀ chain : ChainIndex,
-    state.revealed (chain, epoch, chainEndpointDigit) = some (endpoints chain)
+    state.revealed (chain, leafIndex, chainEndpointDigit) = some (endpoints chain)
 
 noncomputable def globalFilteredCausalLeafHashPlan
     (secretKey : SecretKey) (input : HashInput)
@@ -134,10 +134,10 @@ noncomputable def globalFilteredCausalLeafHashPlan
   match globalLeafInputData? secretKey.parameter input with
   | none => .fresh
   | some data =>
-      match globalHiddenLeafProbe? state data.epoch data.endpoints with
+      match globalHiddenLeafProbe? state data.leafIndex data.endpoints with
       | some (index, target) => .probeThenFresh index target
       | none =>
-          if GlobalLeafRevealsMatch state data.epoch data.endpoints then
+          if GlobalLeafRevealsMatch state data.leafIndex data.endpoints then
             match state.keygenCache
                 (keygenLeafTargetInput secretKey state.keygenCache input) with
             | some output => .redirect output
@@ -942,13 +942,13 @@ theorem relTriple_programmed_globalFilteredChainHashQuery_until_hit
 
 
 theorem globalLeafInput_not_signingComparable
-    (parameter : PublicParameter) (epoch : Epoch)
+    (parameter : PublicParameter) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) :
     ¬ GlobalSigningComparableHashInput parameter
-      (Concrete.CacheView.leafInput parameter epoch endpoints) := by
-  rintro ⟨encodingEpoch, message, randomness, hencoding⟩
-  exact Concrete.CacheView.encodingInput_ne_leafInput parameter encodingEpoch
-    epoch message randomness endpoints hencoding.symm
+      (Concrete.CacheView.leafInput parameter leafIndex endpoints) := by
+  rintro ⟨encodingLeafIndex, message, randomness, hencoding⟩
+  exact Concrete.CacheView.encodingInput_ne_leafInput parameter encodingLeafIndex
+    leafIndex message randomness endpoints hencoding.symm
 
 theorem programmedGlobal_left_endpoint_eq_table
     (left : ProgrammedGlobalChainKeygenView)
@@ -957,12 +957,12 @@ theorem programmedGlobal_left_endpoint_eq_table
       (GlobalChainEdgeIndex → Digest))
     (hrel : ProgrammedGlobalChainKeygenBaseHighStableRelation left right)
     (hleftSupport : left ∈ support trajectoryProgrammedGlobalChainKeygen)
-    (epoch : Epoch) (chain : ChainIndex) :
+    (leafIndex : LeafIndex) (chain : ChainIndex) :
     Concrete.CacheReplay.oneTimePublicKey left.cache
-        left.secretKey.parameter left.secretKey.chainStart epoch chain =
-      right.1.2 (chain, epoch, chainEndpointDigit) := by
+        left.secretKey.parameter left.secretKey.chainStart leafIndex chain =
+      right.1.2 (chain, leafIndex, chainEndpointDigit) := by
   exact programmedGlobal_left_chainValue_eq_table left right hrel hleftSupport
-    (chain, epoch, chainEndpointDigit)
+    (chain, leafIndex, chainEndpointDigit)
 
 theorem programmedGlobal_left_leaf_cache_none_of_endpoint_miss
     (left : ProgrammedGlobalChainKeygenView)
@@ -971,18 +971,18 @@ theorem programmedGlobal_left_leaf_cache_none_of_endpoint_miss
       (GlobalChainEdgeIndex → Digest))
     (hrel : ProgrammedGlobalChainKeygenBaseHighStableRelation left right)
     (hleftSupport : left ∈ support trajectoryProgrammedGlobalChainKeygen)
-    (epoch : Epoch) (endpoints : ChainIndex → Digest)
+    (leafIndex : LeafIndex) (endpoints : ChainIndex → Digest)
     (chain : ChainIndex)
-    (hmiss : right.1.2 (chain, epoch, chainEndpointDigit) ≠ endpoints chain) :
-    left.cache (Concrete.CacheView.leafInput left.secretKey.parameter epoch
+    (hmiss : right.1.2 (chain, leafIndex, chainEndpointDigit) ≠ endpoints chain) :
+    left.cache (Concrete.CacheView.leafInput left.secretKey.parameter leafIndex
       endpoints) = none := by
   apply Concrete.keygen_cache_leafInput_eq_none_of_ne left.keyResult
     (trajectoryProgrammedGlobalChainKeygen_support_keyResult left hleftSupport)
-      epoch endpoints
+      leafIndex endpoints
   intro heq
   apply hmiss
   rw [← programmedGlobal_left_endpoint_eq_table left right hrel hleftSupport
-    epoch chain]
+    leafIndex chain]
   exact congrFun heq.symm chain
 
 theorem globalLeafRevealsMatch_endpoints_eq_leftReplay
@@ -992,20 +992,20 @@ theorem globalLeafRevealsMatch_endpoints_eq_leftReplay
       (GlobalChainEdgeIndex → Digest))
     (hrel : ProgrammedGlobalChainKeygenBaseHighStableRelation left right)
     (hleftSupport : left ∈ support trajectoryProgrammedGlobalChainKeygen)
-    (state : GlobalCausalHashState) (epoch : Epoch)
+    (state : GlobalCausalHashState) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
     (hreveals : GlobalSigningRevealsAgree right.1.2 state)
-    (hmatch : GlobalLeafRevealsMatch state epoch endpoints) :
+    (hmatch : GlobalLeafRevealsMatch state leafIndex endpoints) :
     endpoints = Concrete.CacheReplay.oneTimePublicKey left.cache
-      left.secretKey.parameter left.secretKey.chainStart epoch := by
+      left.secretKey.parameter left.secretKey.chainStart leafIndex := by
   funext chain
-  have htable : right.1.2 (chain, epoch, chainEndpointDigit) =
+  have htable : right.1.2 (chain, leafIndex, chainEndpointDigit) =
       endpoints chain :=
-    hreveals (chain, epoch, chainEndpointDigit) (endpoints chain)
+    hreveals (chain, leafIndex, chainEndpointDigit) (endpoints chain)
       (hmatch chain)
   rw [← htable]
   exact (programmedGlobal_left_endpoint_eq_table left right hrel hleftSupport
-    epoch chain).symm
+    leafIndex chain).symm
 
 theorem programmedGlobal_secretKey_parameter_eq
     (left : ProgrammedGlobalChainKeygenView)
@@ -1030,10 +1030,10 @@ theorem programmedGlobal_secretKey_parameter_eq
 
 theorem leafBaseCachePair_of_treeCorrespondence
     (parameter : PublicParameter)
-    (leftSecret : Epoch → ChainIndex → Digest)
+    (leftSecret : LeafIndex → ChainIndex → Digest)
     (rightSecret : SecretKey)
     (leftCache rightCache : QueryCache HashSpec)
-    (leftEndpoints rightEndpoints : Epoch → ChainIndex → Digest)
+    (leftEndpoints rightEndpoints : LeafIndex → ChainIndex → Digest)
     (htree : GlobalTreeCacheCorrespondence parameter leftEndpoints
       rightEndpoints leftCache rightCache)
     (hleftReplay : ReplayEndpointsMatch parameter leftSecret leftEndpoints
@@ -1041,16 +1041,16 @@ theorem leafBaseCachePair_of_treeCorrespondence
     (hrightReplay : ReplayEndpointsMatch parameter rightSecret.chainStart
       rightEndpoints rightCache)
     (hparameter : rightSecret.parameter = parameter)
-    (input : HashInput) (epoch : Epoch)
+    (input : HashInput) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
-    (hinput : input = Concrete.CacheView.leafInput rightSecret.parameter epoch
+    (hinput : input = Concrete.CacheView.leafInput rightSecret.parameter leafIndex
       endpoints)
     (hendpoints : endpoints = Concrete.CacheReplay.oneTimePublicKey leftCache
-      parameter leftSecret epoch)
+      parameter leftSecret leafIndex)
     (hcached : ∃ output : HashOutput, leftCache
-      (Concrete.CacheView.leafInput parameter epoch
+      (Concrete.CacheView.leafInput parameter leafIndex
         (Concrete.CacheReplay.oneTimePublicKey leftCache parameter leftSecret
-          epoch)) = some output) :
+          leafIndex)) = some output) :
     ∃ output : HashOutput,
       leftCache input = some output ∧
       rightCache (keygenLeafTargetInput rightSecret rightCache input) =
@@ -1059,47 +1059,47 @@ theorem leafBaseCachePair_of_treeCorrespondence
     rightSecret.chainStart leftCache rightCache leftEndpoints rightEndpoints
       hleftReplay hrightReplay
   obtain ⟨output, hleftHonest⟩ := hcached
-  have hleftInput : input = Concrete.CacheView.leafInput parameter epoch
+  have hleftInput : input = Concrete.CacheView.leafInput parameter leafIndex
       (Concrete.CacheReplay.oneTimePublicKey leftCache parameter leftSecret
-        epoch) := by
+        leafIndex) := by
     calc
-      input = Concrete.CacheView.leafInput rightSecret.parameter epoch
+      input = Concrete.CacheView.leafInput rightSecret.parameter leafIndex
           endpoints := hinput
-      _ = Concrete.CacheView.leafInput parameter epoch endpoints :=
-        congrArg (fun p => Concrete.CacheView.leafInput p epoch endpoints)
+      _ = Concrete.CacheView.leafInput parameter leafIndex endpoints :=
+        congrArg (fun p => Concrete.CacheView.leafInput p leafIndex endpoints)
           hparameter
-      _ = Concrete.CacheView.leafInput parameter epoch
+      _ = Concrete.CacheView.leafInput parameter leafIndex
           (Concrete.CacheReplay.oneTimePublicKey leftCache parameter leftSecret
-            epoch) :=
-        congrArg (Concrete.CacheView.leafInput parameter epoch) hendpoints
+            leafIndex) :=
+        congrArg (Concrete.CacheView.leafInput parameter leafIndex) hendpoints
   have htarget : keygenLeafTargetInput rightSecret rightCache input =
-      Concrete.CacheView.leafInput parameter epoch
+      Concrete.CacheView.leafInput parameter leafIndex
         (Concrete.CacheReplay.oneTimePublicKey rightCache parameter
-          rightSecret.chainStart epoch) := by
+          rightSecret.chainStart leafIndex) := by
     calc
       keygenLeafTargetInput rightSecret rightCache input =
           keygenLeafTargetInput rightSecret rightCache
-            (Concrete.CacheView.leafInput rightSecret.parameter epoch
+            (Concrete.CacheView.leafInput rightSecret.parameter leafIndex
               endpoints) :=
         congrArg (keygenLeafTargetInput rightSecret rightCache) hinput
-      _ = Concrete.CacheView.leafInput rightSecret.parameter epoch
+      _ = Concrete.CacheView.leafInput rightSecret.parameter leafIndex
           (Concrete.CacheReplay.oneTimePublicKey rightCache
-            rightSecret.parameter rightSecret.chainStart epoch) :=
-        keygenLeafTargetInput_leafInput rightSecret rightCache epoch endpoints
-      _ = Concrete.CacheView.leafInput parameter epoch
+            rightSecret.parameter rightSecret.chainStart leafIndex) :=
+        keygenLeafTargetInput_leafInput rightSecret rightCache leafIndex endpoints
+      _ = Concrete.CacheView.leafInput parameter leafIndex
           (Concrete.CacheReplay.oneTimePublicKey rightCache parameter
-            rightSecret.chainStart epoch) :=
-        congrArg (fun p => Concrete.CacheView.leafInput p epoch
+            rightSecret.chainStart leafIndex) :=
+        congrArg (fun p => Concrete.CacheView.leafInput p leafIndex
           (Concrete.CacheReplay.oneTimePublicKey rightCache p
-            rightSecret.chainStart epoch)) hparameter
+            rightSecret.chainStart leafIndex)) hparameter
   have hcorrespond : hashCacheLookup leftCache
-      (Concrete.CacheView.leafInput parameter epoch
+      (Concrete.CacheView.leafInput parameter leafIndex
         (Concrete.CacheReplay.oneTimePublicKey leftCache parameter leftSecret
-          epoch)) = hashCacheLookup rightCache
-      (Concrete.CacheView.leafInput parameter epoch
+          leafIndex)) = hashCacheLookup rightCache
+      (Concrete.CacheView.leafInput parameter leafIndex
         (Concrete.CacheReplay.oneTimePublicKey rightCache parameter
-          rightSecret.chainStart epoch)) :=
-    hreplay epoch
+          rightSecret.chainStart leafIndex)) :=
+    hreplay leafIndex
   refine ⟨output, ?_, ?_⟩
   · show hashCacheLookup leftCache input = some output
     rw [hleftInput]
@@ -1118,12 +1118,12 @@ theorem programmedGlobal_leaf_base_cache_pair
     (hleftSupport : left ∈ support trajectoryProgrammedGlobalChainKeygen)
     (hrightSupport : right.1.1 ∈ support
       trajectoryProgrammedGlobalChainKeygen)
-    (input : HashInput) (epoch : Epoch)
+    (input : HashInput) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
     (hinput : input = Concrete.CacheView.leafInput
-      right.1.1.secretKey.parameter epoch endpoints)
+      right.1.1.secretKey.parameter leafIndex endpoints)
     (hendpoints : endpoints = Concrete.CacheReplay.oneTimePublicKey left.cache
-      left.secretKey.parameter left.secretKey.chainStart epoch) :
+      left.secretKey.parameter left.secretKey.chainStart leafIndex) :
     ∃ output : HashOutput,
       left.cache input = some output ∧
       right.1.1.cache
@@ -1140,8 +1140,8 @@ theorem programmedGlobal_leaf_base_cache_pair
   apply leafBaseCachePair_of_treeCorrespondence left.secretKey.parameter
     left.secretKey.chainStart right.1.1.secretKey left.cache right.1.1.cache
       leftEndpoints rightEndpoints htree hleftReplay hrightReplay hparameter
-        input epoch endpoints hinput hendpoints
-  exact Concrete.keygen_cache_has_leafInput left.keyResult hleftKey epoch
+        input leafIndex endpoints hinput hendpoints
+  exact Concrete.keygen_cache_has_leafInput left.keyResult hleftKey leafIndex
 
 theorem programmedGlobal_leaf_cache_pair_of_reveals_match
     (left : ProgrammedGlobalChainKeygenView)
@@ -1155,20 +1155,20 @@ theorem programmedGlobal_leaf_cache_pair_of_reveals_match
     (state : GlobalCausalHashState)
     (hkeygenCache : state.keygenCache = right.1.1.cache)
     (hreveals : GlobalSigningRevealsAgree right.1.2 state)
-    (input : HashInput) (epoch : Epoch)
+    (input : HashInput) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest)
     (hinput : input = Concrete.CacheView.leafInput
-      right.1.1.secretKey.parameter epoch endpoints)
-    (hmatch : GlobalLeafRevealsMatch state epoch endpoints) :
+      right.1.1.secretKey.parameter leafIndex endpoints)
+    (hmatch : GlobalLeafRevealsMatch state leafIndex endpoints) :
     ∃ output : HashOutput,
       left.cache input = some output ∧
       state.keygenCache
         (keygenLeafTargetInput right.1.1.secretKey state.keygenCache input) =
           some output := by
   have hendpoints := globalLeafRevealsMatch_endpoints_eq_leftReplay left right
-    hrel hleftSupport state epoch endpoints hreveals hmatch
+    hrel hleftSupport state leafIndex endpoints hreveals hmatch
   obtain ⟨output, hleft, hright⟩ := programmedGlobal_leaf_base_cache_pair
-    left right hrel hleftSupport hrightSupport input epoch endpoints hinput
+    left right hrel hleftSupport hrightSupport input leafIndex endpoints hinput
       hendpoints
   refine ⟨output, hleft, ?_⟩
   rw [hkeygenCache]

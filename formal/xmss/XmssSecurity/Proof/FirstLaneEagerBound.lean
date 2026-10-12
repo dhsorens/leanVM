@@ -35,15 +35,15 @@ theorem eagerTrace_query_bind_run
   rfl
 
 inductive EncodingRequest where
-  | query (epoch : Epoch)
-  | sign (epoch : Epoch)
+  | query (leafIndex : LeafIndex)
+  | sign (leafIndex : LeafIndex)
 
 def EncodingRequest.observed
     (request : EncodingRequest) (output : HashOutput) :
     EncodingMonitor.ObservedAction :=
   match request with
-  | .query epoch => .query epoch output
-  | .sign epoch => .sign epoch output
+  | .query leafIndex => .query leafIndex output
+  | .sign leafIndex => .sign leafIndex output
 
 def EncodingRequest.cost : EncodingRequest → Nat
   | .query _ => 1
@@ -103,16 +103,16 @@ noncomputable def runEagerQuery
   | .uniform n => do
       let output ← (liftM (unifSpec.query n) : ProbComp (Fin (n + 1)))
       resume output encodingState chainState fuel
-  | .encodingQuery epoch =>
+  | .encodingQuery leafIndex =>
       match fuel with
       | 0 => pure (RevealProbeOracleSimulation.tableHits chainState table)
       | remaining + 1 =>
-          applyEncodingRequest (.query epoch)
+          applyEncodingRequest (.query leafIndex)
             (fun output nextState =>
               resume output nextState chainState remaining)
             encodingState
-  | .encodingSignAttempt epoch =>
-      applyEncodingRequest (.sign epoch)
+  | .encodingSignAttempt leafIndex =>
+      applyEncodingRequest (.sign leafIndex)
         (fun output nextState => resume output nextState chainState fuel)
         encodingState
   | .probe index target =>
@@ -155,7 +155,7 @@ theorem applyEncodingRequest_true_probability_le
           ((2 ^ digestBits : Nat) : ENNReal)⁻¹ +
         encodingPendingRisk state := by
   cases request with
-  | query epoch =>
+  | query leafIndex =>
       cases state with
       | none =>
           unfold applyEncodingRequest EncodingRequest.cost encodingPendingRisk
@@ -168,14 +168,14 @@ theorem applyEncodingRequest_true_probability_le
           let activeResume := fun output nextState =>
             resume output (some nextState)
           have hdirect :
-              applyEncodingRequest (.query epoch) resume (some state) =
-                CappedEncodingMonitor.applyHashOutputQueryMonitor epoch
+              applyEncodingRequest (.query leafIndex) resume (some state) =
+                CappedEncodingMonitor.applyHashOutputQueryMonitor leafIndex
                   activeResume state := by
             rw [CappedEncodingMonitor.applyHashOutputQueryMonitor_eq_observed]
             unfold applyEncodingRequest EncodingRequest.observed activeResume
             apply bind_congr
             intro output
-            cases hsigned : state.signed epoch with
+            cases hsigned : state.signed leafIndex with
             | none =>
                 by_cases hvalid :
                     TargetSum.ValidDigest (truncateHash output) <;>
@@ -184,35 +184,35 @@ theorem applyEncodingRequest_true_probability_le
             | some target =>
                 simp [CappedEncodingMonitor.State.applyObserved, hsigned]
           have hdist :
-              evalDist (applyEncodingRequest (.query epoch) resume (some state)) =
-                evalDist (CappedEncodingMonitor.applyProgrammedQueryMonitor epoch
+              evalDist (applyEncodingRequest (.query leafIndex) resume (some state)) =
+                evalDist (CappedEncodingMonitor.applyProgrammedQueryMonitor leafIndex
                   activeResume state) := by
             rw [hdirect]
             exact
               CappedEncodingMonitor.applyProgrammedQueryMonitor_evalDist_eq
-                epoch activeResume state |>.symm
+                leafIndex activeResume state |>.symm
           refine (probEvent_congr' (fun _ _ => Iff.rfl) hdist).le.trans ?_
           simpa [EncodingRequest.cost, encodingPendingRisk, Nat.cast_add,
             HiddenValue.card_digest] using
             CappedEncodingMonitor.applyProgrammedQueryMonitor_true_probability_le
-              epoch activeResume state fuel fun output nextState => by
+              leafIndex activeResume state fuel fun output nextState => by
                 simpa [activeResume, encodingPendingRisk,
                   HiddenValue.card_digest] using
                   hresume output (some nextState)
-  | sign epoch =>
+  | sign leafIndex =>
       cases state with
       | none =>
           unfold applyEncodingRequest EncodingRequest.cost encodingPendingRisk
           exact probEvent_bind_le_of_forall_le fun output _ =>
             hresume output none
       | some state =>
-          cases hsigned : state.signed epoch with
+          cases hsigned : state.signed leafIndex with
           | none =>
               let activeResume := fun output nextState =>
                 resume output (some nextState)
               have hdirect :
-                  applyEncodingRequest (.sign epoch) resume (some state) =
-                    CappedEncodingMonitor.applyHashOutputSignAttemptMonitor epoch
+                  applyEncodingRequest (.sign leafIndex) resume (some state) =
+                    CappedEncodingMonitor.applyHashOutputSignAttemptMonitor leafIndex
                       activeResume state := by
                 rw [CappedEncodingMonitor.applyHashOutputSignAttemptMonitor_eq_observed]
                 unfold applyEncodingRequest EncodingRequest.observed activeResume
@@ -224,19 +224,19 @@ theorem applyEncodingRequest_true_probability_le
                     hvalid]
               have hdist :
                   evalDist
-                      (applyEncodingRequest (.sign epoch) resume (some state)) =
+                      (applyEncodingRequest (.sign leafIndex) resume (some state)) =
                     evalDist
                       (CappedEncodingMonitor.applyProgrammedSignAttemptMonitor
-                        epoch activeResume state) := by
+                        leafIndex activeResume state) := by
                 rw [hdirect]
                 exact
                   CappedEncodingMonitor.applyProgrammedSignAttemptMonitor_evalDist_eq
-                    epoch activeResume state |>.symm
+                    leafIndex activeResume state |>.symm
               refine (probEvent_congr' (fun _ _ => Iff.rfl) hdist).le.trans ?_
               simpa [EncodingRequest.cost, encodingPendingRisk,
                 HiddenValue.card_digest] using
                 CappedEncodingMonitor.applyProgrammedSignAttemptMonitor_true_probability_le
-                  epoch activeResume state fuel fun output nextState => by
+                  leafIndex activeResume state fuel fun output nextState => by
                     simpa [activeResume, encodingPendingRisk,
                       HiddenValue.card_digest] using
                       hresume output (some nextState)
@@ -249,12 +249,12 @@ theorem applyEncodingRequest_true_probability_le
                 fun output _ => ?_).trans ?_
               · by_cases hvalid : TargetSum.ValidDigest (truncateHash output)
                 · rw [show CappedEncodingMonitor.State.applyObserved state
-                      (.sign epoch output) = none by
+                      (.sign leafIndex output) = none by
                     simp [CappedEncodingMonitor.State.applyObserved, hsigned,
                       hvalid]]
                   exact (hresume output none).trans (by simp [encodingPendingRisk])
                 · rw [show CappedEncodingMonitor.State.applyObserved state
-                      (.sign epoch output) =
+                      (.sign leafIndex output) =
                         some (state, false) by
                     simp [CappedEncodingMonitor.State.applyObserved, hvalid]]
                   simp only [Bool.false_eq_true, ↓reduceIte]
@@ -536,7 +536,7 @@ theorem evalDist_runObserved_eagerTrace_eq_runStructural
           simpa [runObserved] using
             ih output encodingState chainState fuel
               (by simpa [IsHazardQuery] using hbound.2 output)
-      | encodingQuery epoch =>
+      | encodingQuery leafIndex =>
           cases fuel with
           | zero => simp [IsHazardQuery] at hbound
           | succ remaining =>
@@ -554,7 +554,7 @@ theorem evalDist_runObserved_eagerTrace_eq_runStructural
                   apply OracleComp.DeferredSampling.evalDist_bind_congr_left
                   intro output
                   cases happly : CappedEncodingMonitor.State.applyObserved state
-                    (.query epoch output) with
+                    (.query leafIndex output) with
                   | none =>
                       simpa [runObserved, happly] using
                         ih output none chainState remaining
@@ -570,7 +570,7 @@ theorem evalDist_runObserved_eagerTrace_eq_runStructural
                           simp [runObserved, happly]
                           apply OracleComp.ProgramLogic.Relational.spmf_map_const_of_no_failure
                           exact probFailure_of_liftM_PMF _
-      | encodingSignAttempt epoch =>
+      | encodingSignAttempt leafIndex =>
           rw [eagerTrace_query_bind_run, runStructural_query_bind]
           simp only [eagerImpl, traceFragment, map_bind, runEagerQuery,
             applyEncodingRequest, EncodingRequest.observed]
@@ -585,7 +585,7 @@ theorem evalDist_runObserved_eagerTrace_eq_runStructural
               apply OracleComp.DeferredSampling.evalDist_bind_congr_left
               intro output
               cases happly : CappedEncodingMonitor.State.applyObserved state
-                (.sign epoch output) with
+                (.sign leafIndex output) with
               | none =>
                   simpa [runObserved, happly] using
                     ih output none chainState fuel
@@ -720,7 +720,7 @@ theorem structuralExperiment_true_probability_le
             (fun _ _ => Iff.rfl) hdist).le.trans ?_
           exact probEvent_bind_le_of_forall_le fun output _ =>
             ih output encodingState chainState hvalid fuel
-      | encodingQuery epoch =>
+      | encodingQuery leafIndex =>
           cases fuel with
           | zero =>
               rw [structuralExperiment_query_bind]
@@ -734,61 +734,61 @@ theorem structuralExperiment_true_probability_le
                   evalDist (structuralExperiment encodingState chainState
                     (remaining + 1)
                     ((liftM (OracleSpec.query (spec := World Index)
-                      (.encodingQuery epoch)) :
+                      (.encodingQuery leafIndex)) :
                       OracleComp (World Index) _) >>= next)) =
                     evalDist
-                      (applyEncodingRequest (.query epoch) resume encodingState) := by
+                      (applyEncodingRequest (.query leafIndex) resume encodingState) := by
                 rw [structuralExperiment_query_bind]
                 simp only [runEagerQuery]
                 simpa [resume, structuralExperiment] using
                   evalDist_sample_applyEncodingRequest
                     RevealProbeOracleSimulation.eagerTableSample
                     (by simp [RevealProbeOracleSimulation.eagerTableSample])
-                    (.query epoch)
+                    (.query leafIndex)
                     (fun base output nextState =>
                       runStructural
                         (RevealProbeOracleSimulation.extendTable chainState base)
                         nextState chainState remaining (next output))
                     encodingState
               refine (probEvent_congr'
-                (oa' := applyEncodingRequest (.query epoch) resume encodingState)
+                (oa' := applyEncodingRequest (.query leafIndex) resume encodingState)
                 (fun _ _ => Iff.rfl) hdist).le.trans ?_
               simpa [resume, potential, EncodingRequest.cost,
                 HiddenValue.card_digest, Nat.add_assoc, Nat.add_comm,
                 Nat.add_left_comm] using
-                applyEncodingRequest_true_probability_le (.query epoch) resume
+                applyEncodingRequest_true_probability_le (.query leafIndex) resume
                   encodingState (remaining + chainState.pendingCount)
                   (fun output nextState => by
                     simpa [resume, potential, HiddenValue.card_digest] using
                       ih output nextState chainState hvalid remaining)
-      | encodingSignAttempt epoch =>
+      | encodingSignAttempt leafIndex =>
           let resume := fun output nextState =>
             structuralExperiment nextState chainState fuel (next output)
           have hdist :
               evalDist (structuralExperiment encodingState chainState fuel
                 ((liftM (OracleSpec.query (spec := World Index)
-                  (.encodingSignAttempt epoch)) :
+                  (.encodingSignAttempt leafIndex)) :
                   OracleComp (World Index) _) >>= next)) =
                 evalDist
-                  (applyEncodingRequest (.sign epoch) resume encodingState) := by
+                  (applyEncodingRequest (.sign leafIndex) resume encodingState) := by
             rw [structuralExperiment_query_bind]
             simp only [runEagerQuery]
             simpa [resume, structuralExperiment] using
               evalDist_sample_applyEncodingRequest
                 RevealProbeOracleSimulation.eagerTableSample
                 (by simp [RevealProbeOracleSimulation.eagerTableSample])
-                (.sign epoch)
+                (.sign leafIndex)
                 (fun base output nextState =>
                   runStructural
                     (RevealProbeOracleSimulation.extendTable chainState base)
                     nextState chainState fuel (next output))
                 encodingState
           refine (probEvent_congr'
-            (oa' := applyEncodingRequest (.sign epoch) resume encodingState)
+            (oa' := applyEncodingRequest (.sign leafIndex) resume encodingState)
             (fun _ _ => Iff.rfl) hdist).le.trans ?_
           simpa [resume, potential, EncodingRequest.cost,
             HiddenValue.card_digest] using
-            applyEncodingRequest_true_probability_le (.sign epoch) resume
+            applyEncodingRequest_true_probability_le (.sign leafIndex) resume
               encodingState (fuel + chainState.pendingCount)
               (fun output nextState => by
                 simpa [resume, potential, HiddenValue.card_digest] using

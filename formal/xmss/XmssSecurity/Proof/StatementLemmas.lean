@@ -27,19 +27,19 @@ def tweakableHash (cache : QueryCache HashSpec) (parameter : PublicParameter)
     (domain : HashDomain) (payload : HashInput) : Digest :=
   digestAt cache (XmssSecurity.tweakableHashInput parameter domain payload)
 
-def encodingInput (parameter : PublicParameter) (epoch : Epoch)
+def encodingInput (parameter : PublicParameter) (leafIndex : LeafIndex)
     (input : Message × Randomness) : HashInput :=
-  XmssSecurity.tweakableHashInput parameter (.encoding epoch)
+  XmssSecurity.tweakableHashInput parameter (.encoding leafIndex)
     (Concrete.encodingPayload input.1 input.2)
 
-def chainInput (parameter : PublicParameter) (epoch : Epoch) (chain : ChainIndex)
+def chainInput (parameter : PublicParameter) (leafIndex : LeafIndex) (chain : ChainIndex)
     (position : ChainStep) (value : Digest) : HashInput :=
-  XmssSecurity.tweakableHashInput parameter (.chain epoch chain position)
+  XmssSecurity.tweakableHashInput parameter (.chain leafIndex chain position)
     (Concrete.digestBytes value)
 
-def leafInput (parameter : PublicParameter) (epoch : Epoch)
+def leafInput (parameter : PublicParameter) (leafIndex : LeafIndex)
     (endpoints : ChainIndex → Digest) : HashInput :=
-  XmssSecurity.tweakableHashInput parameter (.leaf epoch)
+  XmssSecurity.tweakableHashInput parameter (.leaf leafIndex)
     (Concrete.leafPayload endpoints)
 
 def merkleInput (parameter : PublicParameter) (level : MerkleLevel)
@@ -48,43 +48,43 @@ def merkleInput (parameter : PublicParameter) (level : MerkleLevel)
     (Concrete.nodePayload left right)
 
 def encodingHash (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (epoch : Epoch) (input : Message × Randomness) : Digest :=
-  digestAt cache (encodingInput parameter epoch input)
+    (leafIndex : LeafIndex) (input : Message × Randomness) : Digest :=
+  digestAt cache (encodingInput parameter leafIndex input)
 
 def chainStep (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (epoch : Epoch) (chain : ChainIndex) (position : Nat) (value : Digest) : Digest :=
+    (leafIndex : LeafIndex) (chain : ChainIndex) (position : Nat) (value : Digest) : Digest :=
   if hposition : position < chainLength - 1 then
-    digestAt cache (chainInput parameter epoch chain ⟨position, hposition⟩ value)
+    digestAt cache (chainInput parameter leafIndex chain ⟨position, hposition⟩ value)
   else
     0
 
 def leafHash (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (epoch : Epoch) (endpoints : ChainIndex → Digest) : Digest :=
-  digestAt cache (leafInput parameter epoch endpoints)
+    (leafIndex : LeafIndex) (endpoints : ChainIndex → Digest) : Digest :=
+  digestAt cache (leafInput parameter leafIndex endpoints)
 
 def merkleHash (cache : QueryCache HashSpec) (parameter : PublicParameter)
     (level : MerkleLevel) (node : MerkleNode) (left right : Digest) : Digest :=
   digestAt cache (merkleInput parameter level node left right)
 
-abbrev nodeIndex (epoch : Epoch) (level : Nat) : MerkleNode :=
-  Concrete.nodeIndex epoch level
+abbrev nodeIndex (leafIndex : LeafIndex) (level : Nat) : MerkleNode :=
+  Concrete.nodeIndex leafIndex level
 
-def authenticationNodePayload (epoch : Epoch) (level : Nat)
+def authenticationNodePayload (leafIndex : LeafIndex) (level : Nat)
     (current sibling : Digest) : HashInput :=
-  if epoch.val.testBit level then
+  if leafIndex.val.testBit level then
     Concrete.nodePayload sibling current
   else
     Concrete.nodePayload current sibling
 
-def nodeInput (parameter : PublicParameter) (epoch : Epoch) (level : MerkleLevel)
+def nodeInput (parameter : PublicParameter) (leafIndex : LeafIndex) (level : MerkleLevel)
     (current sibling : Digest) : HashInput :=
-  XmssSecurity.tweakableHashInput parameter (.merkle level (nodeIndex epoch level.val))
-    (authenticationNodePayload epoch level.val current sibling)
+  XmssSecurity.tweakableHashInput parameter (.merkle level (nodeIndex leafIndex level.val))
+    (authenticationNodePayload leafIndex level.val current sibling)
 
 def nodeHash (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (epoch : Epoch) (level : Nat) (left right : Digest) : Digest :=
+    (leafIndex : LeafIndex) (level : Nat) (left right : Digest) : Digest :=
   if hlevel : level < treeHeight then
-    digestAt cache (nodeInput parameter epoch ⟨level, hlevel⟩ left right)
+    digestAt cache (nodeInput parameter leafIndex ⟨level, hlevel⟩ left right)
   else
     0
 
@@ -93,17 +93,17 @@ end CacheView
 namespace CacheReplay
 
 def oneTimePublicKey (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (epoch : Epoch) : ChainIndex → Digest :=
-  fun chain => Wots.walk (CacheView.chainStep cache parameter epoch chain) 0
-    (chainLength - 1) (secret epoch chain)
+    (secret : LeafIndex → ChainIndex → Digest) (leafIndex : LeafIndex) : ChainIndex → Digest :=
+  fun chain => Wots.walk (CacheView.chainStep cache parameter leafIndex chain) 0
+    (chainLength - 1) (secret leafIndex chain)
 
 def leafAt (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (epoch : Epoch) : Digest :=
-  CacheView.leafHash cache parameter epoch
-    (oneTimePublicKey cache parameter secret epoch)
+    (secret : LeafIndex → ChainIndex → Digest) (leafIndex : LeafIndex) : Digest :=
+  CacheView.leafHash cache parameter leafIndex
+    (oneTimePublicKey cache parameter secret leafIndex)
 
 def treeNode (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) : Nat → MerkleNode → Digest
+    (secret : LeafIndex → ChainIndex → Digest) : Nat → MerkleNode → Digest
   | 0, node => leafAt cache parameter secret node
   | levels + 1, node =>
       if hlevel : levels < treeHeight then
@@ -119,21 +119,21 @@ end CacheReplay
 
 attribute [local semireducible] treeNode CacheReplay.treeNode sampleSecret signingRandomness
 
-noncomputable local instance : SampleableType (Epoch → ChainIndex → Digest) :=
-  SampleableType.ofFintype (Epoch → ChainIndex → Digest)
+noncomputable local instance : SampleableType (LeafIndex → ChainIndex → Digest) :=
+  SampleableType.ofFintype (LeafIndex → ChainIndex → Digest)
 
 noncomputable local instance : SampleableType Randomness :=
   SampleableType.ofFintype Randomness
 
 @[simp]
 theorem treeNode_zero_eq {m : Type → Type} [Monad m] [HasQuery HashSpec m]
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (node : MerkleNode) :
     treeNode (m := m) parameter secret 0 node =
       leafAt (m := m) parameter secret node := rfl
 
 theorem treeNode_succ_eq {m : Type → Type} [Monad m] [HasQuery HashSpec m]
-    (parameter : PublicParameter) (secret : Epoch → ChainIndex → Digest)
+    (parameter : PublicParameter) (secret : LeafIndex → ChainIndex → Digest)
     (levels : Nat) (node : MerkleNode) :
     treeNode (m := m) parameter secret (levels + 1) node = (do
       let left ← treeNode (m := m) parameter secret levels (childNode node false)
@@ -143,7 +143,7 @@ theorem treeNode_succ_eq {m : Type → Type} [Monad m] [HasQuery HashSpec m]
       else
         pure 0) := rfl
 
-theorem sampleSecret_eq : sampleSecret = $ᵗ (Epoch → ChainIndex → Digest) := rfl
+theorem sampleSecret_eq : sampleSecret = $ᵗ (LeafIndex → ChainIndex → Digest) := rfl
 
 theorem signingRandomness_eq : signingRandomness = $ᵗ Randomness := rfl
 
@@ -151,12 +151,12 @@ namespace CacheReplay
 
 @[simp]
 theorem treeNode_zero_eq (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (node : MerkleNode) :
+    (secret : LeafIndex → ChainIndex → Digest) (node : MerkleNode) :
     treeNode cache parameter secret 0 node = leafAt cache parameter secret node := by
   with_unfolding_all rfl
 
 theorem treeNode_succ_eq (cache : QueryCache HashSpec) (parameter : PublicParameter)
-    (secret : Epoch → ChainIndex → Digest) (levels : Nat) (node : MerkleNode) :
+    (secret : LeafIndex → ChainIndex → Digest) (levels : Nat) (node : MerkleNode) :
     treeNode cache parameter secret (levels + 1) node =
       if hlevel : levels < treeHeight then
         CacheView.merkleHash cache parameter ⟨levels, hlevel⟩ node

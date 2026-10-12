@@ -22,9 +22,9 @@ pub const TWEAK_TYPE_CHAIN: u8 = 1;
 pub const TWEAK_TYPE_WOTS_PK: u8 = 2;
 pub const TWEAK_TYPE_MERKLE: u8 = 3;
 pub const TWEAK_TYPE_ENCODING: u8 = 4;
-pub const TWEAK_TYPE_PARAMETER: u8 = 10;
-pub const TWEAK_TYPE_FILLER: u8 = 11;
-pub const TWEAK_TYPE_RANDOMIZER: u8 = 12;
+pub const TWEAK_TYPE_PARAMETER: u8 = 5;
+pub const TWEAK_TYPE_FILLER: u8 = 6;
+pub const TWEAK_TYPE_RANDOMIZER: u8 = 7;
 
 pub const TWEAK_LEN: usize = 16;
 pub type Tweak = [u8; TWEAK_LEN];
@@ -34,7 +34,7 @@ pub const STATE_LEN: usize = 32;
 
 /// `[protocol_domain_sep:1 | type:1 | layer:1 | zero:1 | p:4 | tree:4 | index:4]`, little endian.
 /// XMSS sets `layer` and `tree` to zero.
-/// `index` is the epoch (chain / wots_pk / encoding) or the Merkle node index;
+/// `index` is the leaf index (chain / wots_pk / encoding) or the Merkle node index;
 /// `sub_position` is the chain position or the Merkle level.
 pub fn make_tweak(tweak_type: u8, sub_position: u32, index: u32) -> Tweak {
     let mut tweak = [0u8; TWEAK_LEN];
