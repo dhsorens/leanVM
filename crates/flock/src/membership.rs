@@ -1011,7 +1011,7 @@ pub fn prove(
 
     let [d0, d1] = [F192::ONE + mu, F192::ONE + mu * mu];
     let [u0, u1] = [weights[S] + weights[H], weights[S] + weights[F]];
-    assert!(u0 * u1 != F192::ZERO, "a degenerate block weight");
+    assert!(u0 * u1 * weights[S] != F192::ZERO, "a degenerate block weight");
     let index = index_claim(&rho, &q, alpha[1], weights, local, (u0 * u1).inv());
     let claims = Claims {
         witness: Claim {
@@ -1099,7 +1099,8 @@ pub fn reduce<S: Scalar>(channel: &mut impl Channel<S>) -> Result<Reduced<S>, Ve
     let [u0, u1] = [weights[S] + weights[H], weights[S] + weights[F]];
     // One inversion serves both claims.
     let (scale, kinds) = (comb * d0 * d1, u0 * u1);
-    if !(scale * kinds).is_nonzero() {
+    // A zero `w_S` would put the circuit's claim on the empty fourth type, true whatever `local` is.
+    if !(scale * kinds * weights[S]).is_nonzero() {
         return Err(VerifyError::Degenerate);
     }
     let both = inverse(scale * kinds);

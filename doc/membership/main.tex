@@ -95,7 +95,7 @@ Let $n = 22$. The prover commits $P = (z, m_0, m_1, m_2)$: the witness and three
     \item on the prover's commitment, $\mle t(q)$ as a single evaluation of $P$: the two extra coordinates set to $\mu/(1+\mu)$ and $\mu^2/(1+\mu^2)$ weight the four tables by $1, \mu, \mu^2, \mu^3$, up to a known factor;
     \item on the circuit's commitment, $V$ as a single evaluation of $\idx$: three weights are an eq vector up to a factor, so with $a/(1+a) = w_{\mathsf H}/w_{\mathsf S}$ and $b/(1+b) = w_{\mathsf F}/w_{\mathsf S}$ the type coordinates $(a, b)$ give $\mle\idx(\rho_\loc, q_\loc, (a, b), \alpha) = V \cdot w_{\mathsf S} / \bigl((w_{\mathsf S} + w_{\mathsf H})(w_{\mathsf S} + w_{\mathsf F})\bigr)$.
   \end{itemize}
-  One field inversion serves both claims.
+  The verifier rejects if $w_{\mathsf S}(w_{\mathsf S} + w_{\mathsf H})(w_{\mathsf S} + w_{\mathsf F}) = 0$, and one field inversion serves both claims.
 \end{enumerate}
 
 \noindent The proof is $(1 + 2n + 2) + (3 + 2n + 1) = 95$ scalars and one root. A challenge is one Keccak of the state and of the scalars sent since the last challenge. The masks cost only a negligible soundness error: each is committed, and its sum sent, before the challenge that multiplies it.
@@ -127,19 +127,19 @@ A transaction with $b$ calldata bytes and execution gas $X$ pays $21{,}000 + \ma
  & quantity & gas \\
 \midrule
 calldata, at 16 gas (4 for a zero byte) & 2{,}376 bytes & 37{,}872 \\
-execution of the contract & & 38{,}671 \\
-\quad of which \code{FIELD\_MUL} & 1{,}058 & 10{,}580 \\
+execution of the contract & & 38{,}718 \\
+\quad of which \code{FIELD\_MUL} & 1{,}059 & 10{,}590 \\
 \midrule
-$16\, b + X$ & & 76{,}543 \\
+$16\, b + X$ & & 76{,}590 \\
 floor today, $40\, b$ (10 for a zero byte) & & \textbf{94{,}680} \\
 floor under EIP-7976, $64\, b$ & & \textbf{152{,}064} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\noindent The calldata is the 64 bytes of public input and the 2{,}312 of the proof. The floor binds in both cases, so the cost is the proof's size and nothing else: 94{,}680 gas today and 152{,}064 under EIP-7976. Execution has room to spare, 18{,}000 gas today and 75{,}000 after, which the two claims would use if they cost 20{,}000 each (today the standard side would then bind, at 116{,}543).
+\noindent The calldata is the 64 bytes of public input and the 2{,}312 of the proof. The floor binds in both cases, so the cost is the proof's size and nothing else: 94{,}680 gas today and 152{,}064 under EIP-7976. Execution has room to spare, 18{,}000 gas today and 75{,}000 after, which the two claims would use if they cost 20{,}000 each (today the standard side would then bind, at 116{,}590).
 
-The contract is 16{,}638 bytes of straight-line code. Beyond the multiplications and 71 hashes, its gas goes to moving operands between memory and the stack.
+The contract is 16{,}643 bytes of straight-line code. Beyond the multiplications and 71 hashes, its gas goes to moving operands between memory and the stack.
 
 The prover commits one table of $2^{26}$ words and runs two sumchecks over $2^{22}$ entries; the claim on the circuit is about public data, so anyone can open it.
 

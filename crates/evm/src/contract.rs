@@ -106,9 +106,9 @@ pub fn decode(output: &[u8]) -> Option<(Hash, Claims)> {
         .iter()
         .map(|word| {
             let limb = |i: usize| u64::from_be_bytes(word[24 - 8 * i..32 - 8 * i].try_into().unwrap());
-            F192::new(limb(0), limb(1), limb(2))
+            (limb(3) == 0).then(|| F192::new(limb(0), limb(1), limb(2)))
         })
-        .collect();
+        .collect::<Option<_>>()?;
     let (root, claims) = words.split_at_checked(2)?;
     let n = flock::membership::COMMITTED_VARS + 1;
     let claim = |words: &[F192]| {

@@ -151,7 +151,7 @@ Given the challenges:
 
 | hypothesis | probability at most |
 | --- | --- |
-| some `r_i = 1`, `μ = 1`, or a zero in `(w_S + w_H)(w_S + w_F)` of the circuit's claim (the prover aborts), `λ = 0`, a coordinate of `ρ` in `{0, 1}`; in the opening, a coincidence `φ_j = π_j` or `σ^i φ_5 = π_5`, or `φ_0 = 0` | `2^-180` |
+| some `r_i = 1`, `μ = 1`, or a zero in `w_S(w_S + w_H)(w_S + w_F)` of the circuit's claim (the prover aborts), `λ = 0`, a coordinate of `ρ` in `{0, 1}`; in the opening, a coincidence `φ_j = π_j` or `σ^i φ_5 = π_5`, or `φ_0 = 0` | `2^-180` |
 | Lemma 2: `ρ_a ∈ K` | `2^-128` |
 | Lemma 2: one of the 121 products of `τ_j^(±1)` in `K` | `121·2^-128` |
 | Lemma 3: `μ ∈ K` | `2^-128` |
