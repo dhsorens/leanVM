@@ -115,23 +115,23 @@ Four things depend on the witness. Each gets its own randomness.
 
 \section{Cost}
 
-All three prices are assumptions: calldata at 40 gas per byte, the floor rate of EIP-7623~\cite{EIP7623}, and two prices for a future EVM.
+EIP-7623~\cite{EIP7623} charges a transaction $21{,}000 + \max(16 b + \text{execution},\ 40 b)$ gas for $b$ nonzero calldata bytes. The two execution prices are assumptions about a future EVM.
 
 \begin{center}
 \begin{tabular}{@{}lrr@{}}
 \toprule
  & quantity & gas \\
 \midrule
-calldata & 2{,}384 bytes & 95{,}360 \\
+calldata, at 16 gas & 2{,}384 bytes & 38{,}144 \\
 multiplications and squarings in $\E$, at 10 gas & 2{,}553 & 25{,}530 \\
 evaluation claims, at 20{,}000 gas & 2 & 40{,}000 \\
 \midrule
-total & & 160{,}890 \\
+total & & 103{,}674 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\noindent Not counted: the transaction's base cost, additions (XORs), transcript hashing, and one inversion in $\K$. Charging calldata at the floor rate on top of execution is pessimistic: under EIP-7623 as written the floor does not bind here, and the same three lines come to 103{,}674 with calldata at 16 gas per byte. Calldata dominates, hence two scalars a round and no scalar the verifier could derive. The prover commits one table of $2^{26}$ words and runs two sumchecks over $2^{22}$ entries; the claim on the circuit is about public data, so anyone can open it.
+\noindent The floor, $40 \times 2{,}384 = 95{,}360$, is below that total, so it does not bind. Not counted: the transaction's base cost, the 64 bytes of public input, additions (XORs), transcript hashing, and one inversion in $\K$. The three lines are of the same order, so none is worth trading against another: two scalars a round, no scalar the verifier could derive, and two claims. The prover commits one table of $2^{26}$ words and runs two sumchecks over $2^{22}$ entries; the claim on the circuit is about public data, so anyone can open it.
 
 \bibliographystyle{alpha}
 \bibliography{refs}
