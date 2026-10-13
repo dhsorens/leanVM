@@ -7,14 +7,16 @@ use crate::rec::circuit::{Builder, Dw, Ew, Kw};
 use crate::rec::transcript::{ProofSource, Transcript};
 use crate::tables::{Clock, PerTable};
 use fiat_shamir::arith::Verifier;
+use zk::{Recorder, Value};
 
-/// What fixes the rows of a RISC-V proof's verifier: the program, each table's height, and the commitment's rate.
+/// What fixes the rows of a RISC-V proof's verifier: the program, each table's height, the commitment's rate, and whether the proof is zero knowledge.
 ///
 /// Two proofs of one shape are verified by one circuit.
 pub struct ProofShape<'p> {
     program: &'p Program,
     taus: PerTable<usize>,
     rate: Rate,
+    kind: ProofKind,
     layout: Layout,
 }
 
@@ -32,14 +34,20 @@ impl<'p> ProofShape<'p> {
     /// # Errors
     ///
     /// Refuses what the native verifier refuses of an announcement: a height out of range, or a witness the commitment does not take.
-    pub fn new(program: &'p Program, taus: PerTable<usize>, rate: Rate) -> Result<Self, CpuError> {
-        let layout = Layout::announced(program.rv(), taus, ProofKind::Plain)?;
+    pub fn new(program: &'p Program, taus: PerTable<usize>, rate: Rate, kind: ProofKind) -> Result<Self, CpuError> {
+        let layout = Layout::announced(program.rv(), taus, kind)?;
         Ok(Self {
             program,
             taus,
             rate,
+            kind,
             layout,
         })
+    }
+
+    /// The kind of the proofs.
+    pub(crate) const fn kind(&self) -> ProofKind {
+        self.kind
     }
 
     /// The program.
@@ -61,6 +69,9 @@ impl<'p> ProofShape<'p> {
     ///
     /// The rows check everything the native core checks, and leave its deferred claims as wires.
     pub fn verify_core(&self, b: &mut Builder, output: [Kw; 4], source: ProofSource<'_>) -> CoreRows {
+        if self.kind == ProofKind::ZeroKnowledge {
+            return self.verify_core_zk(b, output, source);
+        }
         let mut t = Transcript::new(b, &self.program.session(), &output, source);
         let mut r = Rows::new(b, &mut t);
 
@@ -73,14 +84,46 @@ impl<'p> ProofShape<'p> {
         }
     }
 
-    /// The announced sizes: every height and the rate the shape's, the final clock a live clock at slot zero.
+    /// The verifier's core of a zero-knowledge proof, as rows: the native recorder's own code over the rows' arithmetic.
     ///
-    /// Returns the clock, which closes the run's last state on the bus.
-    fn read_announcement(&self, r: &mut Rows<'_, '_>) -> Ew {
+    /// The recorder makes the same record from wires as from values, so the outer proof is checked in rows as natively.
+    ///
+    /// It leaves the batched claims of the plain shape, which the tree carries as a plain leaf's.
+    fn verify_core_zk(&self, b: &mut Builder, output: [Kw; 4], source: ProofSource<'_>) -> CoreRows {
+        let mut t = Transcript::new(b, &self.program.zk_session(), &output, source);
+        let (claims, fits) = {
+            let mut r = Rows::new(b, &mut t);
+            r.scope("announcement", |r| self.read_shape(r));
+            let output = output.map(|o| Value::Public(r.b.k_to_e1(o)));
+            let mut rec = Recorder::new(r);
+            let core = infallible(self.layout.record_core(&mut rec, self.rate, &output));
+            let claims = infallible(core.claims.into_plain(&mut rec));
+            // A record too large for the key commitment has no outer proof: the rows then refuse every proof.
+            let fits = zk::outer::verify(rec, &core.keys).map(|mut r| infallible(r.check_eof()));
+            (claims, fits.is_ok())
+        };
+        if !fits {
+            b.fail("the record outgrows the key commitment");
+        }
+        CoreRows {
+            claims,
+            state: t.digest(b),
+        }
+    }
+
+    /// The announced shape: every height and the rate the shape's.
+    fn read_shape(&self, r: &mut Rows<'_, '_>) {
         for size in Announcement::sizes(&self.taus, self.rate) {
             let x = infallible(r.prover_message());
             r.b.eq_e_const(x, size);
         }
+    }
+
+    /// The announced sizes: the shape, then the final clock, a live clock at slot zero.
+    ///
+    /// Returns the clock, which closes the run's last state on the bus.
+    fn read_announcement(&self, r: &mut Rows<'_, '_>) -> Ew {
+        self.read_shape(r);
         let clock = infallible(r.prover_message());
         let [word, high, top] = r.b.e_to_k(clock);
         r.b.eq_k_const(high, 0);

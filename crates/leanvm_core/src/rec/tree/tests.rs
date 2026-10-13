@@ -15,6 +15,7 @@ use flock::lincheck::MatrixForm;
 use primitives::multilinear::mle_eval;
 use primitives::test_util::Rng;
 use std::sync::OnceLock;
+use zk::Randomness;
 
 // A program whose output is its one advice word, after a loop that reads every framework block.
 fn program() -> &'static Program {
@@ -853,5 +854,46 @@ fn a_tree_of_outputs_is_unchanged_from_tree_12() {
             131, 35, 57, 135, 111, 161, 159, 65, 198, 173, 203, 59, 29, 190, 76, 72, 162, 204, 82, 150, 192, 101, 73,
             98, 94, 12, 195, 130, 18, 239, 205, 34
         ]
+    );
+}
+
+#[test]
+fn a_tree_over_zero_knowledge_leaves_verifies() {
+    // Two zero-knowledge leaves of distinct advice under one first-level node, which is the root.
+    //
+    // The leaves hide their advice; the node holds only their proofs, so it need not be zero knowledge itself.
+    let leaves: Vec<(Proof, Output)> = [7, 8]
+        .map(|advice| {
+            let run = Prover::new(Rate::MIN)
+                .zero_knowledge(Randomness::Fixed([advice as u8; 32]))
+                .prove(program(), &[advice])
+                .expect("the run halts");
+            (run.proof, run.output)
+        })
+        .into();
+    let shape = LeafShape::of(&leaves[0].0).expect("a canonical announcement");
+    assert!(shape.is_zero_knowledge());
+    let tree = Tree::new(
+        program(),
+        TreeShape {
+            leaf: shape,
+            arity_0: 2,
+            arity: 2,
+            rate: Rate::MIN,
+            claims: None,
+        },
+    )
+    .expect("a tree");
+    let pair: Vec<Leaf<'_>> = leaves.iter().map(|(p, o)| Leaf::new(p, *o)).collect();
+    let root = tree.prove_first(&pair).expect("honest leaves");
+    let outputs: Vec<Output> = leaves.iter().map(|l| l.1).collect();
+    tree.verify(&root, &outputs).expect("the root");
+
+    // A plain leaf of the same run has another shape: the tree refuses it.
+    let plain = Prover::new(Rate::MIN).prove(program(), &[7]).expect("the run halts");
+    let mixed = [Leaf::new(&plain.proof, plain.output), pair[1]];
+    assert_eq!(
+        tree.prove_first(&mixed).err(),
+        Some(TreeError::ForeignLeaf { index: 0 })
     );
 }

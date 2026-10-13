@@ -37,7 +37,7 @@ struct Cli {
     #[arg(long, global = true)]
     tracing: bool,
 
-    /// Make zero-knowledge proofs, each from fresh randomness of the operating system.
+    /// Make zero-knowledge proofs, each from fresh randomness of the operating system: a single run's, or an aggregation tree's leaves.
     #[arg(long, global = true)]
     zk: bool,
 
@@ -200,9 +200,9 @@ fn main() {
             topology.efficiency
         );
     }
-    if cli.zk && matches!(cli.command, Command::Aggregate { .. } | Command::Bench { .. }) {
+    if cli.zk && matches!(cli.command, Command::Bench { .. }) {
         refuse(format_args!(
-            "--zk proves single runs: no aggregation tree verifies a zero-knowledge leaf yet, and the tracked benchmarks are plain proofs"
+            "--zk is not for the tracked benchmarks, which are plain proofs"
         ));
     }
     let prover = Prover::new(cli.rate);
@@ -212,6 +212,12 @@ fn main() {
         prover
     };
     let leaf_prover = Prover::new(cli.leaf_rate);
+    // An aggregation tree's leaves are zero knowledge with --zk; its own proofs need not be, as they hold only those leaves.
+    let leaf_prover = if cli.zk {
+        leaf_prover.zero_knowledge(Randomness::Os)
+    } else {
+        leaf_prover
+    };
     let plan = Plan::new(cli.repeat, cli.cooldown);
     if cli.tracing {
         bench::init_tracing();
