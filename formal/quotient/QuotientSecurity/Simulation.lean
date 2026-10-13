@@ -19,8 +19,23 @@ namespace QuotientSecurity
 
 variable {K E : Type} [Field K] [Field E] [Algebra K E]
 
-/-- A mask, as a polynomial. -/
-noncomputable def maskPoly (m : Fin 3 → K) : K[X] := C (m 0) + C (m 1) * X + C (m 2) * X ^ 2
+/-- A mask, as a polynomial: three coefficients on `1, X, X^2 + X`, the first three polynomials
+of the novel basis, as the prover lays them in its table. -/
+noncomputable def maskPoly (m : Fin 3 → K) : K[X] :=
+  C (m 0) + C (m 1) * X + C (m 2) * (X ^ 2 + X)
+
+/-- The same mask on `1, X, X^2`. -/
+def rebase (m : Fin 3 → K) : Fin 3 → K := ![m 0, m 1 + m 2, m 2]
+
+theorem rebase_bijective : Function.Bijective (rebase (K := K)) := by
+  refine Function.bijective_iff_has_inverse.mpr ⟨fun m => ![m 0, m 1 - m 2, m 2], ?_, ?_⟩
+  · intro m; funext i; fin_cases i <;> simp [rebase]
+  · intro m; funext i; fin_cases i <;> simp [rebase]
+
+theorem maskPoly_eq (m : Fin 3 → K) :
+    maskPoly m = C (rebase m 0) + C (rebase m 1) * X + C (rebase m 2) * X ^ 2 := by
+  simp only [maskPoly, rebase, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val, C_add]
+  ring
 
 /-- The first message: each row polynomial plus the vanishing polynomial times its mask. -/
 noncomputable def committed (gK : Fin 4 → K[X]) (van : K[X]) (m : Fin 4 → Fin 3 → K) :
@@ -31,8 +46,8 @@ theorem committed_comp_eval (gK : Fin 4 → K[X]) (van : K[X]) (m : Fin 4 → Fi
     (x : E) :
     ((committed (E := E) gK van m j).comp rowPoly).eval x
       = maskedValue (aeval (rowPoly.eval x) (gK j)) (aeval (rowPoly.eval x) van) (rowPoly.eval x)
-        (m j) := by
-  rw [eval_comp, committed, eval_map_algebraMap, maskPoly, aeval_masked]
+        (rebase (m j)) := by
+  rw [eval_comp, committed, eval_map_algebraMap, maskPoly_eq, aeval_masked]
 
 variable [DecidableEq E] [CharP E 2] [Fintype E] (P : Params E)
 
@@ -105,28 +120,59 @@ theorem realView_eq_simView (h3 : finrank K E = 3) (hE : P.Exact) (stmt : Fin P.
     (v : (Fin 4 → E) × E × Bool) :
     Pr[= v | realView P stmt gK van α β γ t ρ] = Pr[= v | simView (K := K) P α β t] := by
   classical
-  have hview : realView P stmt gK van α β γ t ρ
-      = (fun a : Fin 4 → E => (a, P.sigmaPoly.eval t, decide (NotRejected P α β t a))) <$>
-        realValues (K := K) (fun j => aeval (rowPoly.eval t) (gK j)) (aeval (rowPoly.eval t) van)
-          (rowPoly.eval t) := by
-    unfold realView realValues
-    rw [Functor.map_map]
-    congr 1
-    funext m
+  obtain ⟨h, hh⟩ : ∃ h : (Fin 4 → E) → (Fin 4 → E) × E × Bool,
+      h = fun a => (a, P.sigmaPoly.eval t, decide (NotRejected P α β t a)) := ⟨_, rfl⟩
+  obtain ⟨A, hA⟩ : ∃ A : (Fin 4 → Fin 3 → K) → Fin 4 → E, A = fun m j =>
+      maskedValue (aeval (rowPoly.eval t) (gK j)) (aeval (rowPoly.eval t) van) (rowPoly.eval t)
+        (m j) := ⟨_, rfl⟩
+  obtain ⟨Reb, hReb⟩ : ∃ Reb : (Fin 4 → Fin 3 → K) → Fin 4 → Fin 3 → K,
+      Reb = fun m j => rebase (m j) := ⟨_, rfl⟩
+  have hRebBij : Function.Bijective Reb := by
+    subst hReb
+    constructor
+    · intro m m' hm
+      funext j
+      exact rebase_bijective.injective (congrFun hm j)
+    · intro m
+      choose m' hm' using fun j => rebase_bijective.surjective (m j)
+      exact ⟨m', funext hm'⟩
+  have hpoint : ∀ m : Fin 4 → Fin 3 → K,
+      (Params.opened (committed (E := E) gK van m) t, P.sigmaPoly.eval t,
+        decide (P.Accepts stmt (committed gK van m) (Params.honest P (committed gK van m) α β γ)
+          α β γ t (Params.opened (committed gK van m) t) (P.sigmaPoly.eval t) ρ))
+        = h (A (Reb m)) := by
+    intro m
     have hc := cells_committed P gK van hvan m 0
-    have hopen : Params.opened (committed (E := E) gK van m) t
-        = fun j => maskedValue (aeval (rowPoly.eval t) (gK j)) (aeval (rowPoly.eval t) van)
-          (rowPoly.eval t) (m j) := by
+    have hopen : Params.opened (committed (E := E) gK van m) t = A (Reb m) := by
+      subst hA hReb
       funext j
       exact committed_comp_eval gK van m j t
     have hiff := accepts_iff_notRejected P hE stmt (committed gK van m) α β γ t ρ
       (by rw [hc]; exact hsat) (by rw [hc]; exact hd) (by rw [hc]; exact hd')
-    simp only [Function.comp_apply]
-    rw [← hopen]
+    rw [← hopen, hh]
     exact Prod.ext rfl (Prod.ext rfl (decide_eq_decide.mpr hiff))
-  rw [hview, simView]
+  have hview : realView P stmt gK van α β γ t ρ
+      = (h ∘ A) <$> (Reb <$> ($ᵗ (Fin 4 → Fin 3 → K))) := by
+    unfold realView
+    rw [Functor.map_map]
+    exact congrArg (· <$> ($ᵗ (Fin 4 → Fin 3 → K))) (funext hpoint)
+  have hreb : 𝒮[Reb <$> ($ᵗ (Fin 4 → Fin 3 → K))] = 𝒮[($ᵗ (Fin 4 → Fin 3 → K) : ProbComp _)] :=
+    evalSPMF_ext (probOutput_map_bijective_uniformSample _ hRebBij)
+  have e1 : Pr[= v | realView P stmt gK van α β γ t ρ]
+      = Pr[= v | (h ∘ A) <$> ($ᵗ (Fin 4 → Fin 3 → K))] := by
+    rw [hview]
+    exact probOutput_map_eq_of_evalSPMF_eq hreb (h ∘ A) v
+  have e2 : (h ∘ A) <$> ($ᵗ (Fin 4 → Fin 3 → K))
+      = h <$> realValues (K := K) (fun j => aeval (rowPoly.eval t) (gK j))
+          (aeval (rowPoly.eval t) van) (rowPoly.eval t) := by
+    unfold realValues
+    rw [Functor.map_map, hA]
+    rfl
+  have e3 : simView (K := K) P α β t = h <$> simValues (K := K) (rowPoly.eval t) := by
+    rw [hh]; rfl
+  rw [e1, e2, e3]
   exact probOutput_map_eq_of_evalSPMF_eq
-    (evalSPMF_ext (realValues_eq_simValues h3 gK van _ hu)) _ v
+    (evalSPMF_ext (realValues_eq_simValues h3 gK van _ hu)) h v
 
 end View
 
