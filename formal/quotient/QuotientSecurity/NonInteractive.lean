@@ -9,13 +9,15 @@ Commitments are ideal and hiding: a commitment is a uniformly random handle, and
 learns of the tables only whether its four claims are true. The transcript's hash is a random
 oracle on what it has absorbed: the statement and the handles, then the five values.
 
-The real experiment runs the honest prover against a lazily sampled oracle and outputs the
-proof, the verdict, the challenges and the oracle's final table. The simulator has no witness:
+The real experiment runs the honest prover against a lazily sampled oracle that may already
+hold answers (whatever anyone asked of it before, the statement and the witness possibly chosen
+from them) and outputs the proof, the verdict, the challenges and the oracle's final table. The simulator has no witness:
 it samples the handles, the challenges and four values (uniform in the field the row of `t`
 lies in), computes the verdict from the verifier's
 own check, and programs the oracle with its challenges. The two outputs have the same
-probability at every outcome whose challenges are good for the witness: no denominator vanishes
-on a cell, and the row of `t` is not a root of the rows' vanishing polynomial.
+probability at every outcome whose first handle is fresh (the oracle was never asked about it)
+and whose challenges are good for the witness: no denominator vanishes on a cell, and the row of
+`t` is not a root of the rows' vanishing polynomial.
 -/
 
 set_option linter.unusedSectionVars false
@@ -59,17 +61,25 @@ structure Outcome where
 
 variable {P H}
 
-/-- The oracle's table after a proof: its three challenges, and nothing else. -/
-noncomputable def table (stmt : Fin P.words → E) (c₁ c₂ : H) (a : Fin 4 → E) (s : E)
-    (ch : E × E × E) (t ρ : E) : (ofFn (ZAnswer P H)).QueryCache :=
-  (((∅ : (ofFn (ZAnswer P H)).QueryCache).cacheQuery (ZKey.first stmt c₁) ch).cacheQuery
-    (ZKey.second stmt c₁ c₂) t).cacheQuery (ZKey.third stmt c₁ c₂ a s) ρ
+/-- The oracle's table after a proof: what it held, and the proof's three challenges. -/
+noncomputable def table (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (c₁ c₂ : H) (a : Fin 4 → E) (s : E) (ch : E × E × E) (t ρ : E) :
+    (ofFn (ZAnswer P H)).QueryCache :=
+  ((c₀.cacheQuery (ZKey.first stmt c₁) ch).cacheQuery (ZKey.second stmt c₁ c₂) t).cacheQuery
+    (ZKey.third stmt c₁ c₂ a s) ρ
 
 /-- What a view of the interactive proof becomes: the outcome and the oracle's table. -/
-noncomputable def assemble (stmt : Fin P.words → E) (c : H × H × (E × E × E) × E × E)
-    (v : (Fin 4 → E) × E × Bool) : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache :=
+noncomputable def assemble (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (c : H × H × (E × E × E) × E × E) (v : (Fin 4 → E) × E × Bool) :
+    Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache :=
   (⟨c.1, c.2.1, v.1, v.2.1, v.2.2, c.2.2.1, c.2.2.2.1, c.2.2.2.2⟩,
-    table stmt c.1 c.2.1 v.1 v.2.1 c.2.2.1 c.2.2.2.1 c.2.2.2.2)
+    table c₀ stmt c.1 c.2.1 v.1 v.2.1 c.2.2.1 c.2.2.2.1 c.2.2.2.2)
+
+/-- A handle is fresh for an oracle state: the oracle holds no answer for a hash input that
+starts with the statement and this handle. -/
+def Fresh (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E) (c₁ : H) : Prop :=
+  c₀ (ZKey.first stmt c₁) = none ∧ (∀ c₂, c₀ (ZKey.second stmt c₁ c₂) = none) ∧
+    ∀ c₂ a s, c₀ (ZKey.third stmt c₁ c₂ a s) = none
 
 variable [SampleableType E] [SampleableType H]
 
@@ -85,6 +95,29 @@ theorem run_query_bind_fresh {α : Type} (k : ZKey P H)
   simp only [OracleQuery.input_query, OracleQuery.cont_query, id_map] at h ⊢
   erw [h]
   simp [bind_assoc]
+
+/-- Whatever the oracle holds, an output of a query followed by `f` is an output of `f` at some
+answer and some oracle state. -/
+theorem support_run_query_bind {α : Type} (k : ZKey P H)
+    (f : ZAnswer P H k → OracleComp (ofFn (ZAnswer P H)) α)
+    (c : (ofFn (ZAnswer P H)).QueryCache) (y : α × (ofFn (ZAnswer P H)).QueryCache)
+    (hy : y ∈ support ((simulateQ randomOracle
+      (liftM ((ofFn (ZAnswer P H)).query k) >>= f)).run c)) :
+    ∃ u cNext, y ∈ support ((simulateQ randomOracle (f u)).run cNext) := by
+  rw [simulateQ_query_bind, StateT.run_bind] at hy
+  have h := randomOracle.run_eq (spec₀ := ofFn (ZAnswer P H)) k c
+  simp only [OracleQuery.input_query, OracleQuery.cont_query, id_map] at h hy
+  erw [h] at hy
+  cases hck : c k with
+  | none =>
+    rw [hck] at hy
+    simp only [bind_assoc, pure_bind, mem_support_bind_iff] at hy
+    obtain ⟨u, -, hu⟩ := hy
+    exact ⟨u, _, hu⟩
+  | some u =>
+    rw [hck] at hy
+    simp only [pure_bind] at hy
+    exact ⟨u, _, hy⟩
 
 section Experiments
 
@@ -109,12 +142,13 @@ noncomputable def proverRO (stmt : Fin P.words → E) (gK : Fin 4 → K[X]) (van
   pure ⟨c₁, c₂, (viewAt stmt gK van m ch t ρ).1, (viewAt stmt gK van m ch t ρ).2.1,
     (viewAt stmt gK van m ch t ρ).2.2, ch, t, ρ⟩
 
-/-- **The real experiment**: masks and handles, then the prover against a fresh random oracle.
-It outputs the outcome and the oracle's table. -/
-noncomputable def realNI (stmt : Fin P.words → E) (gK : Fin 4 → K[X]) (van : K[X]) :
+/-- **The real experiment**: masks and handles, then the prover against the random oracle in
+the state `c₀`. It outputs the outcome and the oracle's table. -/
+noncomputable def realNI (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (gK : Fin 4 → K[X]) (van : K[X]) :
     ProbComp (Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache) :=
   ($ᵗ (Fin 4 → Fin 3 → K)) >>= fun m => ($ᵗ H) >>= fun c₁ => ($ᵗ H) >>= fun c₂ =>
-    (simulateQ randomOracle (proverRO stmt gK van m c₁ c₂)).run ∅
+    (simulateQ randomOracle (proverRO stmt gK van m c₁ c₂)).run c₀
 
 /-- The handles and the three challenges, uniform. -/
 noncomputable def challenges : ProbComp (H × H × (E × E × E) × E × E) :=
@@ -124,37 +158,81 @@ noncomputable def challenges : ProbComp (H × H × (E × E × E) × E × E) :=
 open Classical in
 /-- **The simulator**: no witness. It draws the handles, the challenges and four values, takes
 the verifier's own check for the verdict, and programs the oracle with its challenges. -/
-noncomputable def simNI (stmt : Fin P.words → E) :
+noncomputable def simNI (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E) :
     ProbComp (Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache) :=
   (challenges (E := E) (H := H)) >>= fun c =>
     simValues (K := K) (rowPoly.eval c.2.2.2.1) >>= fun a =>
-    pure (assemble stmt c
+    pure (assemble c₀ stmt c
       (a, P.sigmaPoly.eval c.2.2.2.1, decide (NotRejected P c.2.2.1.1 c.2.2.1.2.1 c.2.2.2.1 a)))
 
-theorem viewAt_fst_snd (stmt : Fin P.words → E) (gK : Fin 4 → K[X]) (van : K[X])
-    (m : Fin 4 → Fin 3 → K) (ch : E × E × E) (t ρ ρ' : E) :
-    (viewAt stmt gK van m ch t ρ).1 = (viewAt stmt gK van m ch t ρ').1 ∧
-      (viewAt stmt gK van m ch t ρ).2.1 = (viewAt stmt gK van m ch t ρ').2.1 := ⟨rfl, rfl⟩
+/-- The real experiment with the oracle's three answers drawn in the open, as it runs when the
+first handle is fresh. -/
+noncomputable def openNI (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (gK : Fin 4 → K[X]) (van : K[X]) :
+    ProbComp (Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache) :=
+  ($ᵗ (Fin 4 → Fin 3 → K)) >>= fun m => (challenges (E := E) (H := H)) >>= fun c =>
+    pure (assemble c₀ stmt c (viewAt stmt gK van m c.2.2.1 c.2.2.2.1 c.2.2.2.2))
 
-/-- The real experiment, with the oracle's three fresh answers drawn in the open. -/
-theorem realNI_eq (stmt : Fin P.words → E) (gK : Fin 4 → K[X]) (van : K[X]) :
-    realNI (H := H) stmt gK van
-      = ($ᵗ (Fin 4 → Fin 3 → K)) >>= fun m => (challenges (E := E) (H := H)) >>= fun c =>
-          pure (assemble stmt c (viewAt stmt gK van m c.2.2.1 c.2.2.2.1 c.2.2.2.2)) := by
-  unfold realNI challenges
-  simp only [bind_assoc, pure_bind]
-  refine bind_congr fun m => bind_congr fun c₁ => bind_congr fun c₂ => ?_
+/-- With a fresh first handle, the prover's three queries are three fresh draws. -/
+theorem run_proverRO_fresh (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (gK : Fin 4 → K[X]) (van : K[X]) (m : Fin 4 → Fin 3 → K) (c₁ c₂ : H)
+    (hf : Fresh c₀ stmt c₁) :
+    (simulateQ randomOracle (proverRO stmt gK van m c₁ c₂)).run c₀
+      = ($ᵗ (E × E × E)) >>= fun ch => ($ᵗ E) >>= fun t => ($ᵗ E) >>= fun ρ =>
+          pure (assemble c₀ stmt (c₁, c₂, ch, t, ρ) (viewAt stmt gK van m ch t ρ)) := by
+  obtain ⟨h1, h2, h3⟩ := hf
   unfold proverRO
-  refine (run_query_bind_fresh (ZKey.first stmt c₁) _ ∅ rfl).trans ?_
+  refine (run_query_bind_fresh (ZKey.first stmt c₁) _ c₀ h1).trans ?_
   refine bind_congr fun ch => ?_
   refine (run_query_bind_fresh (ZKey.second stmt c₁ c₂) _ _ (by
-    rw [QueryCache.cacheQuery_of_ne _ _ (by intro h; cases h)]; rfl)).trans ?_
+    rw [QueryCache.cacheQuery_of_ne _ _ (by intro h; cases h)]; exact h2 c₂)).trans ?_
   refine bind_congr fun t => ?_
   refine (run_query_bind_fresh (ZKey.third stmt c₁ c₂ _ _) _ _ (by
     rw [QueryCache.cacheQuery_of_ne _ _ (by intro h; cases h),
-      QueryCache.cacheQuery_of_ne _ _ (by intro h; cases h)]; rfl)).trans ?_
+      QueryCache.cacheQuery_of_ne _ _ (by intro h; cases h)]; exact h3 c₂ _ _)).trans ?_
   refine bind_congr fun ρ => ?_
   rfl
+
+/-- Whatever the oracle holds, the prover's outcome carries its first handle. -/
+theorem run_proverRO_handle (c : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (gK : Fin 4 → K[X]) (van : K[X]) (m : Fin 4 → Fin 3 → K) (c₁ c₂ : H)
+    (y : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache)
+    (hy : y ∈ support ((simulateQ randomOracle (proverRO stmt gK van m c₁ c₂)).run c)) :
+    y.1.c₁ = c₁ := by
+  unfold proverRO at hy
+  obtain ⟨ch, ca, hy⟩ := support_run_query_bind _ _ _ _ hy
+  obtain ⟨t, cb, hy⟩ := support_run_query_bind _ _ _ _ hy
+  obtain ⟨ρ, cc, hy⟩ := support_run_query_bind _ _ _ _ hy
+  rw [simulateQ_pure] at hy
+  simp only [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hy
+  rw [hy]
+
+/-- At an outcome whose first handle is fresh, the real experiment is the open one. -/
+theorem realNI_eq_openNI (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (gK : Fin 4 → K[X]) (van : K[X])
+    (o : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache) (hf : Fresh c₀ stmt o.1.c₁) :
+    Pr[= o | realNI c₀ stmt gK van] = Pr[= o | openNI c₀ stmt gK van] := by
+  unfold realNI openNI challenges
+  simp only [bind_assoc, pure_bind]
+  refine probOutput_bind_congr' _ o fun m => probOutput_bind_congr' _ o fun c₁ => ?_
+  by_cases hc : o.1.c₁ = c₁
+  · rw [hc] at hf
+    refine probOutput_bind_congr' _ o fun c₂ => ?_
+    rw [run_proverRO_fresh c₀ stmt gK van m c₁ c₂ hf]
+  · have hl : Pr[= o | ($ᵗ H) >>= fun c₂ =>
+        (simulateQ randomOracle (proverRO stmt gK van m c₁ c₂)).run c₀] = 0 := by
+      refine probOutput_eq_zero_of_not_mem_support fun hmem => hc ?_
+      rw [mem_support_bind_iff] at hmem
+      obtain ⟨c₂, -, hy⟩ := hmem
+      exact run_proverRO_handle c₀ stmt gK van m c₁ c₂ o hy
+    have hr : Pr[= o | ($ᵗ H) >>= fun c₂ => ($ᵗ (E × E × E)) >>= fun ch => ($ᵗ E) >>= fun t =>
+        ($ᵗ E) >>= fun ρ => (pure (assemble c₀ stmt (c₁, c₂, ch, t, ρ)
+          (viewAt stmt gK van m ch t ρ)) : ProbComp _)] = 0 := by
+      refine probOutput_eq_zero_of_not_mem_support fun hmem => hc ?_
+      simp only [mem_support_bind_iff, support_pure, Set.mem_singleton_iff] at hmem
+      obtain ⟨c₂, -, ch, -, t, -, ρ, -, rfl⟩ := hmem
+      rfl
+    rw [hl, hr]
 
 /-- The challenges that are good for a witness: no denominator vanishes on a cell, and the row of
 `t` is not a root of the vanishing polynomial. -/
@@ -163,11 +241,12 @@ def Good (gK : Fin 4 → K[X]) (van : K[X]) (ch : E × E × E) (t : E) : Prop :=
     (∀ i, ch.1 + P.cells (committed gK van 0) i + ch.2.1 * P.pt (P.σ i) ≠ 0) ∧
     aeval (rowPoly.eval t) van ≠ 0
 
-theorem not_mem_support_assemble {α : Type} (mx : ProbComp α) (stmt : Fin P.words → E)
+theorem not_mem_support_assemble {α : Type} (mx : ProbComp α)
+    (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
     (c : H × H × (E × E × E) × E × E) (g : α → (Fin 4 → E) × E × Bool)
     (o : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache)
     (h : ¬ (o.1.ch = c.2.2.1 ∧ o.1.t = c.2.2.2.1)) :
-    Pr[= o | mx >>= fun x => pure (assemble stmt c (g x))] = 0 := by
+    Pr[= o | mx >>= fun x => pure (assemble c₀ stmt c (g x))] = 0 := by
   refine probOutput_eq_zero_of_not_mem_support fun hmem => h ?_
   rw [mem_support_bind_iff] at hmem
   obtain ⟨x, -, hx⟩ := hmem
@@ -175,18 +254,22 @@ theorem not_mem_support_assemble {α : Type} (mx : ProbComp α) (stmt : Fin P.wo
   subst hx
   exact ⟨rfl, rfl⟩
 
-/-- **Zero knowledge of the non-interactive proof.** At every outcome whose challenges are good
-for the witness, the real experiment and the simulator's have the same probability: the proof,
-its verdict, its challenges and the oracle's table together. -/
-theorem realNI_eq_simNI (h3 : finrank K E = 3) (hE : P.Exact) (stmt : Fin P.words → E)
+/-- **Zero knowledge of the non-interactive proof.** Whatever the oracle held before, at every
+outcome whose first handle is fresh and whose challenges are good for the witness, the real
+experiment and the simulator's have the same probability: the proof, its verdict, its challenges
+and the oracle's table together. -/
+theorem realNI_eq_simNI (h3 : finrank K E = 3) (hE : P.Exact)
+    (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
     (gK : Fin 4 → K[X]) (van : K[X])
     (hvan : ∀ x : P.T, aeval (rowPoly.eval (x : E)) van = 0)
     (hsat : P.Sat stmt (P.cells (committed gK van 0)))
     (o : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache)
-    (hgood : Good (P := P) gK van o.1.ch o.1.t) :
-    Pr[= o | realNI (H := H) stmt gK van] = Pr[= o | simNI (K := K) (P := P) (H := H) stmt] := by
+    (hfresh : Fresh c₀ stmt o.1.c₁) (hgood : Good (P := P) gK van o.1.ch o.1.t) :
+    Pr[= o | realNI c₀ stmt gK van] = Pr[= o | simNI (K := K) c₀ stmt] := by
   classical
-  rw [realNI_eq, probOutput_bind_bind_swap]
+  rw [realNI_eq_openNI c₀ stmt gK van o hfresh]
+  unfold openNI
+  rw [probOutput_bind_bind_swap]
   unfold simNI
   refine probOutput_bind_congr' _ o fun c => ?_
   by_cases hc : o.1.ch = c.2.2.1 ∧ o.1.t = c.2.2.2.1
@@ -194,24 +277,24 @@ theorem realNI_eq_simNI (h3 : finrank K E = 3) (hE : P.Exact) (stmt : Fin P.word
     rw [hch, ht] at hgood
     obtain ⟨hd, hd', hu⟩ := hgood
     have h1 : (($ᵗ (Fin 4 → Fin 3 → K)) >>= fun m =>
-          (pure (assemble stmt c (viewAt stmt gK van m c.2.2.1 c.2.2.2.1 c.2.2.2.2)) :
+          (pure (assemble c₀ stmt c (viewAt stmt gK van m c.2.2.1 c.2.2.2.1 c.2.2.2.2)) :
             ProbComp _))
-        = assemble stmt c <$> realView P stmt gK van c.2.2.1.1 c.2.2.1.2.1 c.2.2.1.2.2 c.2.2.2.1
-            c.2.2.2.2 := by
+        = assemble c₀ stmt c <$> realView P stmt gK van c.2.2.1.1 c.2.2.1.2.1 c.2.2.1.2.2
+            c.2.2.2.1 c.2.2.2.2 := by
       unfold realView
       rw [Functor.map_map, map_eq_bind_pure_comp]
       rfl
     have h2 : (simValues (K := K) (rowPoly.eval c.2.2.2.1) >>= fun a =>
-          (pure (assemble stmt c (a, P.sigmaPoly.eval c.2.2.2.1,
+          (pure (assemble c₀ stmt c (a, P.sigmaPoly.eval c.2.2.2.1,
             decide (NotRejected P c.2.2.1.1 c.2.2.1.2.1 c.2.2.2.1 a))) : ProbComp _))
-        = assemble stmt c <$> simView (K := K) P c.2.2.1.1 c.2.2.1.2.1 c.2.2.2.1 := by
+        = assemble c₀ stmt c <$> simView (K := K) P c.2.2.1.1 c.2.2.1.2.1 c.2.2.2.1 := by
       unfold simView
       rw [Functor.map_map, map_eq_bind_pure_comp]
       rfl
     rw [h1, h2]
     exact probOutput_map_eq_of_evalSPMF_eq
       (evalSPMF_ext (realView_eq_simView P h3 hE stmt gK van hvan hsat _ _ _ _ _ hd hd' hu)) _ o
-  · rw [not_mem_support_assemble _ stmt c _ o hc, not_mem_support_assemble _ stmt c _ o hc]
+  · rw [not_mem_support_assemble _ c₀ stmt c _ o hc, not_mem_support_assemble _ c₀ stmt c _ o hc]
 
 open Classical in
 /-- **Few challenges are not good.** Of the `q^4` values of `(α, β, γ, t)`, at most

@@ -4,6 +4,7 @@ import QuotientSecurity.ZeroKnowledge
 import QuotientSecurity.Encoding
 import QuotientSecurity.NonInteractive
 import QuotientSecurity.Distance
+import QuotientSecurity.Instance
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -60,3 +61,19 @@ import QuotientSecurity.Distance
 /-- info: 'QuotientSecurity.sum_digitsEval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.sum_digitsEval
+
+/-- info: 'QuotientSecurity.Params.ofData_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Params.ofData_exact
+
+/-- info: 'QuotientSecurity.realValues_eq_simValues' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.realValues_eq_simValues
+
+/-- info: 'QuotientSecurity.mle_eq_digitsEval_div' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.mle_eq_digitsEval_div
+
+/-- info: 'QuotientSecurity.Params.card_consistent_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Params.card_consistent_le

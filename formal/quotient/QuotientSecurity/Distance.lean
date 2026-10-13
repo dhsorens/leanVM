@@ -6,8 +6,9 @@ import QuotientSecurity.Bits
 
 For every event on the outcome (the proof, its verdict, its challenges and the oracle's table),
 the real experiment and the simulator's give it probabilities that differ by at most
-`(2 N + 4 deg) / q`: the fraction of challenges that are not good for the witness. At the
-protocol's sizes this is below `2^-128`.
+`(2 N + 4 deg) / q + |U| / |H|`: the fraction of challenges that are not good for the witness,
+and of handles the oracle was already asked about. At the protocol's sizes the first is below
+`2^-128`.
 -/
 
 set_option linter.unusedSectionVars false
@@ -114,30 +115,73 @@ theorem prob_not_good_le (gK : Fin 4 → K[X]) (van : K[X]) (hvan0 : van ≠ 0)
     exact hc
   exact hstep.trans hch
 
-/-- **Zero knowledge, as one bound.** For every event on the outcome (the proof, its verdict, its
-challenges, the oracle's table), the real experiment and the simulator's give probabilities
-within `zkError` of each other. -/
-theorem zeroKnowledge (h3 : finrank K E = 3) (hE : P.Exact) (stmt : Fin P.words → E)
+/-- Two experiments that agree on the outcomes satisfying `p` give `p ∧ q` the same
+probability. -/
+theorem probEvent_and_congr {α : Type} (X Y : ProbComp α) (p q : α → Prop)
+    (heq : ∀ o, p o → Pr[= o | X] = Pr[= o | Y]) :
+    Pr[fun o => p o ∧ q o | X] = Pr[fun o => p o ∧ q o | Y] := by
+  classical
+  rw [probEvent_eq_tsum_ite, probEvent_eq_tsum_ite]
+  refine tsum_congr fun o => ?_
+  split_ifs with h
+  · exact heq o h.1
+  · rfl
+
+variable [Fintype H] [DecidableEq H]
+
+open Classical in
+/-- The first handle of an experiment that draws it uniformly is rarely one of a given set. -/
+theorem prob_handle_le (U : Finset H) (p : H → Prop) (hU : ∀ c₁, c₁ ∉ U → p c₁)
+    {α : Type} (inner : H → ProbComp α) (handle : α → H)
+    (hinner : ∀ c₁, ∀ y ∈ support (inner c₁), handle y = c₁) :
+    Pr[fun y => ¬ p (handle y) | ($ᵗ H) >>= inner]
+      ≤ (U.card : ENNReal) / (Fintype.card H : ENNReal) := by
+  have hstep : Pr[fun y => ¬ p (handle y) | ($ᵗ H) >>= inner] ≤ Pr[fun c₁ => c₁ ∈ U | $ᵗ H] := by
+    refine probEvent_bind_le_probEvent fun c₁ _ hc => ?_
+    refine probEvent_eq_zero fun y hy => ?_
+    rw [hinner c₁ y hy, not_not]
+    exact hU c₁ hc
+  refine hstep.trans (le_of_eq ?_)
+  have hfilter : (Finset.univ.filter fun c₁ : H => c₁ ∈ U) = U := by
+    ext c
+    simp
+  rw [probEvent_uniformSample, hfilter]
+
+/-- The error of the simulation: the challenges that are not good, and the handles that are not
+fresh. -/
+noncomputable def zkBound (P : Params E) (van : K[X]) (U : Finset H) : ENNReal :=
+  (zkError P van : ENNReal) + (U.card : ENNReal) / (Fintype.card H : ENNReal)
+
+attribute [local irreducible] Good Fresh in
+/-- **Zero knowledge, as one bound.** Let the oracle hold whatever it was asked before, `U`
+containing every handle it was asked about with this statement. Then for every event on the
+outcome (the proof, its verdict, its challenges, the oracle's table), the real experiment and
+the simulator's give probabilities within `zkBound` of each other. -/
+theorem zeroKnowledge (h3 : finrank K E = 3) (hE : P.Exact)
+    (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (U : Finset H) (hU : ∀ c₁, c₁ ∉ U → Fresh c₀ stmt c₁)
     (gK : Fin 4 → K[X]) (van : K[X]) (hvan0 : van ≠ 0)
     (hvan : ∀ x : P.T, aeval (rowPoly.eval (x : E)) van = 0)
     (hsat : P.Sat stmt (P.cells (committed gK van 0)))
     (S : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache → Prop) :
-    Pr[S | realNI (H := H) stmt gK van]
-        ≤ Pr[S | simNI (K := K) (P := P) (H := H) stmt] + (zkError P van : ENNReal) ∧
-      Pr[S | simNI (K := K) (P := P) (H := H) stmt]
-        ≤ Pr[S | realNI (H := H) stmt gK van] + (zkError P van : ENNReal) := by
+    Pr[S | realNI c₀ stmt gK van] ≤ Pr[S | simNI (K := K) c₀ stmt] + zkBound P van U ∧
+      Pr[S | simNI (K := K) c₀ stmt] ≤ Pr[S | realNI c₀ stmt gK van] + zkBound P van U := by
   classical
-  have heq := fun o hgood => realNI_eq_simNI (H := H) h3 hE stmt gK van hvan hsat o hgood
-  have hreal : Pr[fun o => ¬ Good (P := P) gK van o.1.ch o.1.t | realNI (H := H) stmt gK van]
+  set good : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache → Prop :=
+    fun o => Fresh c₀ stmt o.1.c₁ ∧ Good (P := P) gK van o.1.ch o.1.t with hgood
+  have heq : ∀ o, good o → Pr[= o | realNI c₀ stmt gK van] = Pr[= o | simNI (K := K) c₀ stmt] :=
+    fun o h => realNI_eq_simNI h3 hE c₀ stmt gK van hvan hsat o h.1 h.2
+  -- The open experiment's challenges are rarely not good.
+  have hopen : Pr[fun o => ¬ Good (P := P) gK van o.1.ch o.1.t | openNI c₀ stmt gK van]
       ≤ (zkError P van : ENNReal) := by
-    rw [realNI_eq]
+    unfold openNI
     refine probEvent_bind_le_of_forall_le fun m _ => ?_
     refine prob_not_good_le gK van hvan0 _ fun c o ho => ?_
     rw [support_pure, Set.mem_singleton_iff] at ho
     subst ho
     exact ⟨rfl, rfl⟩
-  have hsim : Pr[fun o => ¬ Good (P := P) gK van o.1.ch o.1.t |
-      simNI (K := K) (P := P) (H := H) stmt] ≤ (zkError P van : ENNReal) := by
+  have hsimGood : Pr[fun o => ¬ Good (P := P) gK van o.1.ch o.1.t | simNI (K := K) c₀ stmt]
+      ≤ (zkError P van : ENNReal) := by
     unfold simNI
     refine prob_not_good_le gK van hvan0 _ fun c o ho => ?_
     rw [mem_support_bind_iff] at ho
@@ -145,10 +189,55 @@ theorem zeroKnowledge (h3 : finrank K E = 3) (hE : P.Exact) (stmt : Fin P.words 
     rw [support_pure, Set.mem_singleton_iff] at ha
     subst ha
     exact ⟨rfl, rfl⟩
-  exact ⟨probEvent_le_add_of_eq_on _ _ _ _ heq hreal S,
-    probEvent_le_add_of_eq_on _ _ _ _ (fun o hgood => (heq o hgood).symm) hsim S⟩
+  -- The first handle is rarely not fresh, in both.
+  have hrealFresh : Pr[fun o => ¬ Fresh c₀ stmt o.1.c₁ | realNI c₀ stmt gK van]
+      ≤ (U.card : ENNReal) / (Fintype.card H : ENNReal) := by
+    unfold realNI
+    refine probEvent_bind_le_of_forall_le fun m _ => ?_
+    refine prob_handle_le U (Fresh c₀ stmt) hU _
+      (fun o : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache => o.1.c₁) fun c₁ y hy => ?_
+    rw [mem_support_bind_iff] at hy
+    obtain ⟨c₂, -, hy⟩ := hy
+    exact run_proverRO_handle c₀ stmt gK van m c₁ c₂ y hy
+  have hsimFresh : Pr[fun o => ¬ Fresh c₀ stmt o.1.c₁ | simNI (K := K) c₀ stmt]
+      ≤ (U.card : ENNReal) / (Fintype.card H : ENNReal) := by
+    unfold simNI challenges
+    simp only [bind_assoc, pure_bind]
+    refine prob_handle_le U (Fresh c₀ stmt) hU _
+      (fun o : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache => o.1.c₁) fun c₁ y hy => ?_
+    simp only [mem_support_bind_iff, support_pure, Set.mem_singleton_iff] at hy
+    obtain ⟨c₂, -, ch, -, t, -, ρ, -, a, -, rfl⟩ := hy
+    rfl
+  have hbadReal : Pr[fun o => ¬ good o | realNI c₀ stmt gK van] ≤ zkBound P van U := by
+    have hsplit : Pr[fun o => ¬ good o | realNI c₀ stmt gK van]
+        ≤ Pr[fun o => Fresh c₀ stmt o.1.c₁ ∧ ¬ Good (P := P) gK van o.1.ch o.1.t |
+              realNI c₀ stmt gK van]
+          + Pr[fun o => ¬ Fresh c₀ stmt o.1.c₁ | realNI c₀ stmt gK van] :=
+      probEvent_le_add_of_imp_or fun o _ ho => by
+        by_cases hf : Fresh c₀ stmt o.1.c₁
+        · exact Or.inl ⟨hf, fun hg => ho ⟨hf, hg⟩⟩
+        · exact Or.inr hf
+    have hcongr := probEvent_and_congr (realNI c₀ stmt gK van) (openNI c₀ stmt gK van)
+      (fun o => Fresh c₀ stmt o.1.c₁) (fun o => ¬ Good (P := P) gK van o.1.ch o.1.t)
+      (fun o hf => realNI_eq_openNI c₀ stmt gK van o hf)
+    have hle : Pr[fun o => Fresh c₀ stmt o.1.c₁ ∧ ¬ Good (P := P) gK van o.1.ch o.1.t |
+        openNI c₀ stmt gK van] ≤ (zkError P van : ENNReal) :=
+      (probEvent_mono fun o _ h => h.2).trans hopen
+    rw [hcongr] at hsplit
+    exact hsplit.trans (add_le_add hle hrealFresh)
+  have hbadSim : Pr[fun o => ¬ good o | simNI (K := K) c₀ stmt] ≤ zkBound P van U := by
+    have hsplit : Pr[fun o => ¬ good o | simNI (K := K) c₀ stmt]
+        ≤ Pr[fun o => ¬ Good (P := P) gK van o.1.ch o.1.t | simNI (K := K) c₀ stmt]
+          + Pr[fun o => ¬ Fresh c₀ stmt o.1.c₁ | simNI (K := K) c₀ stmt] :=
+      probEvent_le_add_of_imp_or fun o _ ho => by
+        by_cases hf : Fresh c₀ stmt o.1.c₁
+        · exact Or.inl fun hg => ho ⟨hf, hg⟩
+        · exact Or.inr hf
+    exact hsplit.trans (add_le_add hsimGood hsimFresh)
+  exact ⟨probEvent_le_add_of_eq_on _ _ _ _ heq hbadReal S,
+    probEvent_le_add_of_eq_on _ _ _ _ (fun o h => (heq o h).symm) hbadSim S⟩
 
-/-- **128 bits.** At the protocol's sizes the bound is below `2^-128`. -/
+/-- **128 bits.** At the protocol's sizes the challenges' part of the bound is below `2^-128`. -/
 theorem zkError_le (hq : Fintype.card E = 2 ^ 192) (hN : P.nCells = 2 ^ 22) (van : K[X])
     (hdeg : van.natDegree ≤ 2 ^ 20) : zkError P van ≤ 1 / 2 ^ 128 := by
   unfold zkError
