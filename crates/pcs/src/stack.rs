@@ -40,19 +40,46 @@
 //!
 //! - The prover never stores it: chunks for the first pass, a closed-form lane fold for the first fold.
 //! - The verifier evaluates it once, at the terminal sumcheck point.
+//!
+//! # The hiding opening
+//!
+//! A hiding commitment ends with an aligned group of four uniform lanes, and pads every lane past its power of two.
+//!
+//! - Each lane carries `k = q_0 + 2` uniform padding coefficients.
+//! - The uniform group needs no claim: no weight of the statement has to touch it.
+//!
+//! Its opening differs from the plain one in three steps, all right after the lane fold's last challenge:
+//!
+//! - in a zero-knowledge proof, the prover turns its transcript's hiding off and sends the running claim in the clear;
+//! - the verifier checks that claim against the one it holds, and continues from it;
+//! - the prover sends the padding folded as the lanes are, `g_1[j] = sum_u eq(r, u) pad_u[j]`.
+//!
+//! Each level-0 query then takes the padding's share off its folded row.
+//!
+//! What remains is the codeword of the folded data, which the rest of the opening proves about.
+//!
+//! # Why it hides
+//!
+//! - Level 0's opened rows: any `k` symbols of a padded lane are uniform, and a query opens at most `q_0` columns.
+//! - The folded witness and `g_1`: the uniform group adds a uniform element of `E` to each of their coordinates.
+//! - Everything after the lane fold is a function of that uniform folded witness and of public challenges.
+//! - Unopened leaves: every lane keeps two spare padding coefficients, so each leaf keeps a uniform symbol per lane.
+//!
+//! The doc's PCS annex, `sec:pcs-zk`, states and proves this.
 
 use std::mem::MaybeUninit;
 use std::ops::Range;
 
 use super::ring_switch::{DeferredWeight, RingFamily, RingSwitch};
 use super::verifier::OpeningVerifier;
-use super::whir::{Config, INITIAL_BASIS_CHUNK, InitialWeight, ProverData, WhirError};
+use super::whir::{Config, DenseWeight, INITIAL_BASIS_CHUNK, InitialWeight, ProverData, RANDOM_LANES, WhirError};
 use crate::merkle::Hash;
 use fiat_shamir::ProverState;
 use fiat_shamir::arith::{Arith, Native};
 use primitives::bit_fold::F192Map;
 use primitives::field::{F64, F192, powers};
 use primitives::multilinear::{eq_table, eq_table_seeded, fill_eq_table_uninit};
+use rand_core::CryptoRng;
 
 /// A point claim on the committed stack.
 ///
@@ -194,6 +221,31 @@ impl<E: Copy> Statement<'_, E> {
     }
 }
 
+/// The claim that the stack's leading words, weighted, sum to a value.
+///
+/// ```text
+///     sum_{x < |weight|} weight[x] * stack[x] = value
+/// ```
+///
+/// It states what no point or ring-switched claim does: a weight given word by word.
+///
+/// Its elements are field elements, or whatever a verifier holds them as.
+#[derive(Clone, Copy, Debug)]
+pub struct Weighted<'a, E = F192> {
+    /// One weight per leading word, a power of two of them.
+    pub weight: &'a [E],
+    /// The weighted sum.
+    pub value: E,
+}
+
+impl<E> Weighted<'_, E> {
+    /// The weight's variables, if it is a power of two of words that the committed ones hold.
+    fn vars(&self, committed: usize) -> Option<usize> {
+        let len = self.weight.len();
+        (len.is_power_of_two() && len <= committed).then(|| len.trailing_zeros() as usize)
+    }
+}
+
 /// A committed stack, as its prover keeps it for opening.
 ///
 /// The stack's words are not kept: the caller holds them, and hands them back to open.
@@ -215,7 +267,36 @@ impl CommittedStack {
     ///
     /// Panics unless `stack` is a whole number of lane blocks, at least one and at most the configuration's lane count.
     pub fn new(stack: &[F64], log_n: usize, config: Config) -> Self {
-        let data = super::whir::commit(stack, log_n, config.initial_k(), config.log_inv_rates()[0]);
+        let data = super::whir::commit(stack, log_n, config.initial_k(), config.log_inv_rates()[0], &[]);
+        Self { log_n, config, data }
+    }
+
+    /// The hiding commitment of a stack, which reveals nothing of it beyond the claims its openings prove.
+    ///
+    /// The stack's last four lanes are the random group: they are filled here, uniform, from `rng`.
+    ///
+    /// - Every lane, the group's too, is padded by the configuration's coefficients, drawn from `rng`.
+    /// - The lanes before the group hold the data, then zeros up to the group.
+    /// - No claim of an opening may weight the group.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a configuration that does not pad, or a stack whose lanes are not a multiple of four, at least eight.
+    pub fn new_hiding(stack: &mut [F64], log_n: usize, config: Config, rng: &mut impl CryptoRng) -> Self {
+        let k = config.padding();
+        assert!(k > 0, "a hiding commitment takes a configuration that pads");
+        let lane = 1usize << (log_n - config.initial_k());
+        let lanes = stack.len() / lane;
+        assert!(
+            stack.len() == lanes * lane && lanes.is_multiple_of(RANDOM_LANES) && lanes >= 2 * RANDOM_LANES,
+            "a hiding stack is whole lanes, its random group an aligned last four"
+        );
+
+        // The random group, then every lane's padding.
+        let group = &mut stack[(lanes - RANDOM_LANES) * lane..];
+        group.iter_mut().for_each(|w| *w = F64(rng.next_u64()));
+        let pads: Vec<F64> = (0..lanes * k).map(|_| F64(rng.next_u64())).collect();
+        let data = super::whir::commit(stack, log_n, config.initial_k(), config.log_inv_rates()[0], &pads);
         Self { log_n, config, data }
     }
 
@@ -257,6 +338,30 @@ impl CommittedStack {
         drop(span);
 
         super::whir::prove(&self.config, self.log_n, stack, &weight, target, &self.data, ps);
+    }
+
+    /// Prove a weighted claim about `stack`, the words committed.
+    ///
+    /// The opening observes neither the claim's value nor its weight, so the caller must have bound both before it.
+    ///
+    /// Each call site expects the workspace's `clippy::disallowed_methods` and says where its claim is bound.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a claim the verifier would refuse.
+    pub fn open_weighted(&self, ps: &mut ProverState, stack: &[F64], claim: Weighted<'_>) {
+        assert!(
+            claim.vars(stack.len()).is_some(),
+            "a weight on a power of two of committed words"
+        );
+        let lane_block = 1usize << (self.log_n - self.config.initial_k());
+        let mut weight = claim.weight.to_vec();
+        weight.resize(stack.len(), F192::ZERO);
+        let weight = DenseWeight {
+            weight,
+            block: lane_block,
+        };
+        super::whir::prove(&self.config, self.log_n, stack, &weight, claim.value, &self.data, ps);
     }
 }
 
@@ -334,9 +439,46 @@ impl<R: Copy> StackCommitment<R> {
                 v.mul_add(g, eq, acc)
             })
         };
-        v.scope("whir", |v| {
-            super::whir::verify(v, &self.config, self.log_n, self.n_lanes, target, self.root, weight_at)
-        })
+        v.scope("whir", |v| self.verify_whir(v, target, weight_at))
+    }
+
+    /// Verify an opening of a weighted claim, as the prover opened it.
+    ///
+    /// The weight's multilinear extension is evaluated once, at the terminal point.
+    ///
+    /// The opening observes neither the claim's value nor its weight, so the caller must have bound both before it.
+    ///
+    /// Each call site expects the workspace's `clippy::disallowed_methods` and says where its claim is bound.
+    ///
+    /// # Errors
+    ///
+    /// - A weight that is no power of two of committed words.
+    /// - The WHIR verifier's refusal.
+    pub fn verify_weighted<V: OpeningVerifier<Root = R>>(
+        &self,
+        v: &mut V,
+        claim: Weighted<'_, V::E>,
+    ) -> Result<(), WhirError> {
+        let committed = self.n_lanes << (self.log_n - self.config.initial_k());
+        let vars = claim.vars(committed).ok_or(WhirError::WeightedClaim)?;
+        // The weight's extension at x: its words at the low coordinates, zero high coordinates above them.
+        let weight_at = |v: &mut V, x: &[V::E]| {
+            let eq = v.eq_table(&x[..vars]);
+            let low = (eq.iter().zip(claim.weight)).fold(v.zero(), |acc, (&e, &w)| v.mul_add(e, w, acc));
+            let high = v.eq_bits(0, &x[vars..]);
+            v.mul(low, high)
+        };
+        v.scope("whir", |v| self.verify_whir(v, claim.value, weight_at))
+    }
+
+    /// The WHIR verifier of this commitment, against a target and the weight's extension at the terminal point.
+    fn verify_whir<V: OpeningVerifier<Root = R>>(
+        &self,
+        v: &mut V,
+        target: V::E,
+        weight_at: impl FnOnce(&mut V, &[V::E]) -> V::E,
+    ) -> Result<(), WhirError> {
+        super::whir::verify(v, &self.config, self.log_n, self.n_lanes, target, self.root, weight_at)
     }
 }
 
@@ -779,10 +921,12 @@ mod tests {
     use crate::ring_switch::SliceClaim;
     use crate::ring_switch::tests::s_hat_v_reference;
     use crate::whir::config::tests::{default_config, test_config_for};
-    use crate::whir::inner_product_base_ext;
+    use crate::whir::{MIN_LOG_N_HIDING, config_for_rate_hiding, hiding_lanes, inner_product_base_ext};
     use fiat_shamir::{ProofTranscript, ProverState, SessionId, VerifierState};
     use primitives::bit_fold::BLOCK;
     use primitives::test_util::Rng;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
 
     const DOMAIN: &[u8] = b"stack-open-test";
 
@@ -1294,5 +1438,195 @@ mod tests {
             commitment.verify(&mut vs, statement(&bad_ring)).is_err(),
             "tampered crossing-regime ring slice accepted"
         );
+    }
+
+    /// A statement on the data lanes of a hiding commitment.
+    struct HidingStatement {
+        log_n: usize,
+        config: Config,
+        data_lanes: usize,
+        stack: Vec<F64>,
+        points: Vec<StackClaim>,
+        rings: Vec<RingSwitch>,
+    }
+
+    impl HidingStatement {
+        fn new(log_inv_rate: usize, data_lanes: usize, seed: u64) -> Self {
+            let log_n = MIN_LOG_N_HIDING;
+            let config = config_for_rate_hiding(log_n, log_inv_rate).unwrap();
+            let lane_vars = log_n - config.initial_k();
+            let mut rng = Rng::new(seed);
+
+            // The data lanes, then room for the zero lanes and the random group.
+            let mut stack: Vec<F64> = (0..data_lanes << lane_vars).map(|_| F64(rng.next_u64())).collect();
+            stack.resize(hiding_lanes(data_lanes) << lane_vars, F64::ZERO);
+
+            // A ring-switched claim on lanes 0 and 1, a point claim on lane 2.
+            let qflock_vars = lane_vars + 1;
+            let suffix_point = rng.ext_vec(qflock_vars);
+            let s_hat_v = s_hat_v_reference(&stack[..1 << qflock_vars], &suffix_point);
+            let rings = vec![RingSwitch {
+                offset: 0,
+                qflock_vars,
+                claims: vec![SliceClaim { suffix_point, s_hat_v }],
+            }];
+            let offset = 2 << lane_vars;
+            let low_point = rng.ext_vec(lane_vars);
+            let value = inner_product_base_ext(&stack[offset..offset + (1 << lane_vars)], &eq_table(&low_point));
+            let points = vec![StackClaim::Point {
+                offset,
+                low_point,
+                value,
+            }];
+            assert!(data_lanes > 2, "the claims sit on three data lanes");
+            Self {
+                log_n,
+                config,
+                data_lanes,
+                stack,
+                points,
+                rings,
+            }
+        }
+
+        const fn statement(&self) -> Statement<'_> {
+            Statement {
+                points: self.points.as_slice(),
+                rings: self.rings.as_slice(),
+            }
+        }
+
+        /// Commit with the randomness of `seed` and open; `forge` may change the padding the prover folds.
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the test's statement is fixed before the transcript: public"
+        )]
+        fn prove(&self, seed: u64, forge: impl FnOnce(&mut Vec<F64>)) -> (Hash, ProofTranscript) {
+            let mut stack = self.stack.clone();
+            let mut rng = ChaCha20Rng::seed_from_u64(seed);
+            let mut committed = CommittedStack::new_hiding(&mut stack, self.log_n, self.config.clone(), &mut rng);
+            forge(&mut committed.data.pads);
+            // A zero-knowledge proof's opening starts hidden: zero keys leave the values as they are.
+            let mut ps = ProverState::new(&SessionId::new(DOMAIN), &0u64);
+            ps.set_keys(vec![F192::ZERO; 64]);
+            ps.set_hidden(true);
+            committed.open(&mut ps, &stack, self.statement());
+            (committed.root(), ps.into_proof())
+        }
+
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the test's statement is fixed before the transcript: public"
+        )]
+        fn verify(&self, root: Hash, fs: &ProofTranscript) -> Result<(), WhirError> {
+            let mut vs = VerifierState::new(&SessionId::new(DOMAIN), &0u64, fs);
+            vs.set_hidden(true);
+            let n_lanes = hiding_lanes(self.data_lanes);
+            let commitment = StackCommitment::new(root, self.log_n, n_lanes, self.config.clone());
+            commitment.verify(&mut vs, self.statement())
+        }
+
+        /// The byte range of the `i`-th scalar the opening sends: before the reveal, it sends scalars alone.
+        const fn scalar(i: usize) -> Range<usize> {
+            24 * i..24 * (i + 1)
+        }
+
+        /// The revealed claim's index: after the first round's message and the lane rounds' but the last, two scalars each.
+        const fn revealed_at(&self) -> usize {
+            2 * self.config.initial_k()
+        }
+    }
+
+    /// A proof with one scalar changed: its lowest bit flipped.
+    fn bump(fs: &ProofTranscript, at: Range<usize>) -> ProofTranscript {
+        let mut forged = fs.clone();
+        forged.narg[at.start] ^= 1;
+        forged
+    }
+
+    #[test]
+    fn a_hiding_opening_verifies_and_binds_what_it_reveals() {
+        // Small and large data, at rate 1/2 and 1/4; the random group sits at the next multiple of four.
+        for (log_inv_rate, data_lanes) in [(1usize, 3usize), (1, 60), (2, 37)] {
+            let st = HidingStatement::new(log_inv_rate, data_lanes, 0x41D + data_lanes as u64);
+            let (root, fs) = st.prove(7, |_| {});
+            let what = format!("rate 2^-{log_inv_rate}, {data_lanes} data lanes");
+            assert_eq!(st.verify(root, &fs), Ok(()), "honest opening, {what}");
+
+            // The revealed claim must be the one the lane rounds reach.
+            let claim = HidingStatement::scalar(st.revealed_at());
+            assert_eq!(
+                st.verify(root, &bump(&fs, claim)),
+                Err(WhirError::RevealedClaim),
+                "{what}"
+            );
+
+            // Each end of the padding's fold `g_1`, which follows the claim.
+            let k = st.config.padding();
+            for j in [1, k] {
+                let at = HidingStatement::scalar(st.revealed_at() + j);
+                assert!(st.verify(root, &bump(&fs, at)).is_err(), "tampered g_1, {what}");
+            }
+
+            // Mutation: the prover folds a padding other than the committed one.
+            //
+            //     committed pads  p
+            //     folded pads     p + e_0   (lane 0, coefficient 0)
+            //     -> g_1 is consistent with the forged pads, and level 0's correction misses the codeword
+            let (root, fs) = st.prove(7, |pads| pads[0] += F64::ONE);
+            assert!(st.verify(root, &fs).is_err(), "g_1 of other pads, {what}");
+        }
+    }
+
+    #[test]
+    fn a_hiding_opening_is_a_function_of_its_randomness() {
+        let st = HidingStatement::new(1, 6, 0x5EED);
+        let (root, fs) = st.prove(1, |_| {});
+        assert_eq!(st.prove(1, |_| {}), (root, fs.clone()), "same randomness, same proof");
+
+        // Other randomness: another valid proof, whose revealed claim and padding fold share no scalar with the first.
+        let (other_root, other_fs) = st.prove(2, |_| {});
+        assert_eq!(st.verify(other_root, &other_fs), Ok(()));
+        for j in 0..=st.config.padding() {
+            let at = HidingStatement::scalar(st.revealed_at() + j);
+            assert_ne!(fs.narg[at.clone()], other_fs.narg[at], "scalar {j} after the lane fold");
+        }
+    }
+
+    #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test's weight and value are fixed before the transcript: public"
+    )]
+    fn a_weighted_opening_binds_its_value() {
+        // A hiding stack of one data lane, then the zero lanes and the random group: eight lanes.
+        let log_n = MIN_LOG_N_HIDING;
+        let config = config_for_rate_hiding(log_n, 1).unwrap();
+        let lane = 1usize << (log_n - config.initial_k());
+        let mut rng = Rng::new(0x3E1);
+        let mut stack: Vec<F64> = (0..lane).map(|_| F64(rng.next_u64())).collect();
+        stack.resize(hiding_lanes(1) * lane, F64::ZERO);
+        let committed =
+            CommittedStack::new_hiding(&mut stack, log_n, config.clone(), &mut ChaCha20Rng::seed_from_u64(1));
+
+        // A weight on the data lane alone, word by word, and its sum.
+        let weight = rng.ext_vec(lane);
+        let value = inner_product_base_ext(&stack[..lane], &weight);
+        let mut ps = ProverState::new(&SessionId::new(DOMAIN), &0u64);
+        committed.open_weighted(&mut ps, &stack, Weighted { weight: &weight, value });
+        let fs = ps.into_proof();
+
+        let check = |weight: &[F192], value: F192| {
+            let mut vs = VerifierState::new(&SessionId::new(DOMAIN), &0u64, &fs);
+            let commitment = StackCommitment::new(committed.root(), log_n, hiding_lanes(1), config.clone());
+            commitment.verify_weighted(&mut vs, Weighted { weight, value })
+        };
+        assert_eq!(check(&weight, value), Ok(()));
+
+        // Mutation: the value off by one, which the terminal check refuses.
+        assert!(check(&weight, value + F192::ONE).is_err());
+
+        // Mutation: a weight of three words, no power of two, refused before any read.
+        assert_eq!(check(&weight[..3], value), Err(WhirError::WeightedClaim));
     }
 }

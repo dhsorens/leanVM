@@ -35,13 +35,14 @@ use primitives::multilinear::inner_product_base;
 
 pub use config::{
     Config, INITIAL_FOLDING_FACTOR, L0_LIST_BITS, LOG_INV_RATE_0, MAX_LOG_INV_RATE, MAX_LOG_N, MIN_LOG_INV_RATE,
-    MIN_LOG_N, QUERY_GRINDING_BITS, RESIDUAL_MAX_LOG, RS_DOMAIN_INITIAL_REDUCTION_FACTOR, SECURITY_BITS,
-    SUBSEQUENT_FOLDING_FACTOR, config_for_rate,
+    MIN_LOG_N, MIN_LOG_N_HIDING, QUERY_GRINDING_BITS, RANDOM_LANES, RESIDUAL_MAX_LOG,
+    RS_DOMAIN_INITIAL_REDUCTION_FACTOR, SECURITY_BITS, SUBSEQUENT_FOLDING_FACTOR, config_for_rate,
+    config_for_rate_hiding, hiding_lanes,
 };
 
 pub(crate) use commit::{ProverData, commit};
 pub(crate) use prove::prove;
-pub(crate) use sumcheck::{INITIAL_BASIS_CHUNK, InitialWeight};
+pub(crate) use sumcheck::{DenseWeight, INITIAL_BASIS_CHUNK, InitialWeight};
 pub use verify::WhirError;
 pub(crate) use verify::verify;
 
@@ -136,7 +137,7 @@ mod tests {
     use super::*;
     use crate::merkle::{Hash, PrunedMerklePaths};
     use crate::whir::config::tests::test_config_for;
-    use crate::whir::query::QueryBatch;
+    use crate::whir::query::{Padding, QueryBatch};
     use fiat_shamir::{ProofTranscript, ProverState, SessionId, TranscriptError, VerifierState};
     use primitives::multilinear::{eq_eval, eq_table, inner_product};
     use primitives::test_util::Rng;
@@ -158,7 +159,7 @@ mod tests {
         let pc = test_config_for(log_n);
         let mut rng = Rng::new(seed);
         let witness: Vec<F64> = (0..1usize << log_n).map(|_| F64(rng.next_u64())).collect();
-        let pd = commit(&witness, log_n, pc.initial_k(), pc.log_inv_rates()[0]);
+        let pd = commit(&witness, log_n, pc.initial_k(), pc.log_inv_rates()[0], &[]);
         let point: Vec<F192> = (0..log_n).map(|_| rng.ext()).collect();
         let b_initial = eq_table(&point);
         let target = inner_product_base_ext(&witness, &b_initial);
@@ -376,7 +377,7 @@ mod tests {
                 let target = inner_product_base_ext(&witness, &b_initial);
 
                 let prove_with = |msg: &[F64], b: &[F192]| {
-                    let pd = commit(msg, log_n, pc.initial_k(), pc.log_inv_rates()[0]);
+                    let pd = commit(msg, log_n, pc.initial_k(), pc.log_inv_rates()[0], &[]);
                     let mut ps = ProverState::new(&SessionId::new(b"whir-test"), &0u64);
                     let weight = Table {
                         weight: b.to_vec(),
@@ -480,7 +481,7 @@ mod tests {
                 weight[..used].copy_from_slice(&rng.ext_vec(used));
                 let target = inner_product_base_ext(&witness, &weight[..used]);
 
-                let pd = commit(&witness, log_n, pc.initial_k(), log_inv_rate);
+                let pd = commit(&witness, log_n, pc.initial_k(), log_inv_rate, &[]);
                 let mut ps = ProverState::new(&SessionId::new(b"whir-test"), &0u64);
                 let table = Table {
                     weight: weight[..used].to_vec(),
@@ -500,5 +501,191 @@ mod tests {
                 assert!(check(target + F192::ONE).is_err(), "{label}");
             }
         }
+    }
+
+    /// The novel basis at the point of codeword position `p` (the field element `F64(p)`): `X_j(p)` for `j < 2^m`, then `W_m(p)`.
+    ///
+    /// `X_j` is the product of the normalized subspace polynomials `W_b = s_b / s_b(v_b)` over the bits `b` of `j`, `s_b = s_{b-1} (s_{b-1} + s_{b-1}(v_{b-1}))`.
+    fn novel_basis_at(p: usize, m: usize) -> (Vec<F64>, F64) {
+        let sks = super::query::Normalizers::new(m).at_roots().to_vec();
+        let mut s = F64(p as u64);
+        let mut w = Vec::with_capacity(m + 1);
+        for b in 0..=m {
+            if b > 0 {
+                s *= s + sks[b - 1];
+            }
+            w.push(s * sks[b].inv());
+        }
+        let mut x = vec![F64::ONE];
+        for &w_b in &w[..m] {
+            let high: Vec<F64> = x.iter().map(|&v| v * w_b).collect();
+            x.extend(high);
+        }
+        (x, w[m])
+    }
+
+    /// Every lane of a hiding commitment is its `2^m + k` coefficients evaluated at every domain point: `Σ_j msg_j X_j(x) + W_m(x + s) Σ_j pad_j X_j(x)`, `s = F64(2^(m + r))`.
+    ///
+    /// The shapes take the encode's plans: replicas copied before a deep pass, and a gathered first pass at the rate layer (many lanes), at `r = 1` and beyond, the padding at most a whole lane.
+    #[test]
+    fn a_hiding_commitment_encodes_the_padded_lanes() {
+        let mut rng = Rng::new(0x9AD);
+        for (m, log_inv_rate, log_batch_size, n_lanes, k) in [
+            (3usize, 1usize, 2usize, 3usize, 8usize),
+            (5, 2, 3, 7, 5),
+            (6, 4, 1, 2, 64),
+            (9, 1, 3, 5, 37),
+            (8, 1, 11, 2048, 13),
+            (8, 2, 11, 2048, 9),
+        ] {
+            let log_n = m + log_batch_size;
+            let msg: Vec<F64> = (0..n_lanes << m).map(|_| F64(rng.next_u64())).collect();
+            let pads: Vec<F64> = (0..n_lanes * k).map(|_| F64(rng.next_u64())).collect();
+            let pd = commit(&msg, log_n, log_batch_size, log_inv_rate, &pads);
+            assert_eq!(pd.pads, pads);
+            // Every lane of a narrow commitment; the ends and a spread of a wide one's.
+            let lanes: Vec<usize> = (0..n_lanes)
+                .filter(|&u| n_lanes < 64 || u % 97 == 0 || u + 1 == n_lanes)
+                .collect();
+            let s = 1usize << (m + log_inv_rate);
+            for p in 0..s {
+                let (x, _) = novel_basis_at(p, m);
+                let (_, w_m_shifted) = novel_basis_at(p ^ s, m);
+                for &u in &lanes {
+                    let at = |coeffs: &[F64]| coeffs.iter().zip(&x).fold(F64::ZERO, |acc, (&c, &x_j)| acc + c * x_j);
+                    let want = at(&msg[u << m..(u + 1) << m]) + w_m_shifted * at(&pads[u * k..(u + 1) * k]);
+                    assert_eq!(
+                        pd.codeword[p * n_lanes + n_lanes - 1 - u],
+                        want,
+                        "lane {u}, position {p}, m={m}, rate={log_inv_rate}, n_lanes={n_lanes}, k={k}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// No domain point escapes the padding: a zero message padded by the constant one is nonzero everywhere.
+    ///
+    /// Padded by `W_m` alone, the first `2^m` points would show the message unmasked to any query landing there.
+    #[test]
+    fn a_hiding_commitment_pads_every_point() {
+        for (m, log_inv_rate) in [(3usize, 1usize), (6, 2), (10, 1), (8, 4)] {
+            let pd = commit(&vec![F64::ZERO; 1 << m], m + 1, 1, log_inv_rate, &[F64::ONE]);
+            assert!(
+                pd.codeword.iter().all(|&w| w != F64::ZERO),
+                "an unpadded point at m={m}, rate={log_inv_rate}"
+            );
+        }
+    }
+
+    /// The rank over `K` of elements of `E`, each its three coordinates over `K`.
+    fn k_rank(elements: &[F192]) -> usize {
+        let mut rows: Vec<[F64; 3]> = elements.iter().map(|x| [F64(x.c0), F64(x.c1), F64(x.c2)]).collect();
+        let mut rank = 0;
+        for col in 0..3 {
+            // Find a row with a nonzero entry in this column, below the rows already used.
+            let Some(pivot) = (rank..rows.len()).find(|&i| rows[i][col] != F64::ZERO) else {
+                continue;
+            };
+            rows.swap(rank, pivot);
+            let inv = rows[rank][col].inv();
+            let pivot_row = rows[rank];
+            // Clear the column in every other row.
+            for (i, row) in rows.iter_mut().enumerate() {
+                if i != rank && row[col] != F64::ZERO {
+                    let f = row[col] * inv;
+                    for c in 0..3 {
+                        row[c] += f * pivot_row[c];
+                    }
+                }
+            }
+            rank += 1;
+        }
+        rank
+    }
+
+    /// What a verifier computes at each level-0 query of a hiding opening: the folded row, the padding's share taken off.
+    ///
+    /// The data is fixed and the lane challenges `r` too, so only the prover's randomness moves the values.
+    /// With `random`, the uniform lanes the prover draws; the other lanes of the random group stay zero.
+    fn corrected_values(data: &[F64], r: &[F192], queries: &[usize], random: &[usize], seed: u64) -> Vec<F192> {
+        let config = config_for_rate_hiding(MIN_LOG_N_HIDING, 1).unwrap();
+        let (initial_k, k) = (config.initial_k(), config.padding());
+        let lane = 1usize << (MIN_LOG_N_HIDING - initial_k);
+        let data_lanes = data.len() / lane;
+        let n_lanes = hiding_lanes(data_lanes);
+        let mut rng = Rng::new(seed);
+
+        // The stack: the data, zero lanes, and only the chosen lanes of the random group drawn.
+        let mut stack = data.to_vec();
+        stack.resize(n_lanes * lane, F64::ZERO);
+        for &u in random {
+            stack[u * lane..(u + 1) * lane]
+                .iter_mut()
+                .for_each(|w| *w = F64(rng.next_u64()));
+        }
+        let pads: Vec<F64> = (0..n_lanes * k).map(|_| F64(rng.next_u64())).collect();
+        let pd = commit(&stack, MIN_LOG_N_HIDING, initial_k, 1, &pads);
+
+        // The padding's lane fold, as the prover sends it.
+        let eq = eq_table(r);
+        let g1: Vec<F192> = (0..k)
+            .map(|j| (0..n_lanes).fold(F192::ZERO, |acc, u| acc + eq[u].mul_base(pads[u * k + j])))
+            .collect();
+
+        // Each query's folded row, lane-ascending, plus the padding's share.
+        queries
+            .iter()
+            .map(|&q| {
+                let mut row = vec![F64::ZERO; 1 << initial_k];
+                for (t, &w) in pd.codeword[q * n_lanes..(q + 1) * n_lanes].iter().enumerate() {
+                    row[n_lanes - 1 - t] = w;
+                }
+                let (pos, one) = ([q], [F192::ONE]);
+                let batch = QueryBatch::new(&pos, &one);
+                batch.claimed_sum(&[row], r)
+                    + batch.padding_correction(&Padding::new(lane.trailing_zeros() as usize, 1), &g1)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_random_group_hides_every_coordinate_of_the_folded_witness() {
+        // A corrected level-0 value is the folded witness's codeword at the query, a functional with coefficients in `K`.
+        //
+        // Invariant: across fresh prover randomness, its differences must span all of `E` over `K`.
+        //
+        //     rank 3: uniform in E, nothing of the data shows
+        //     rank 1: only the line eq(r, u) * K moves, and the two other K coordinates are the data's
+        let config = config_for_rate_hiding(MIN_LOG_N_HIDING, 1).unwrap();
+        let lane = 1usize << (MIN_LOG_N_HIDING - config.initial_k());
+        let mut rng = Rng::new(0xF01D);
+        let data: Vec<F64> = (0..5 * lane).map(|_| F64(rng.next_u64())).collect();
+        let r = rng.ext_vec(config.initial_k());
+        let queries: Vec<usize> = (0..8).map(|_| rng.next_u64() as usize % (2 * lane)).collect();
+        let group = hiding_lanes(5) - RANDOM_LANES..hiding_lanes(5);
+
+        // The rank of each query's differences over four draws of the prover's randomness.
+        let ranks = |random: &[usize]| -> Vec<usize> {
+            let draws: Vec<Vec<F192>> = (0..4)
+                .map(|s| corrected_values(&data, &r, &queries, random, s))
+                .collect();
+            (0..queries.len())
+                .map(|i| k_rank(&(1..4).map(|t| draws[t][i] + draws[0][i]).collect::<Vec<_>>()))
+                .collect()
+        };
+
+        // The whole random group: every query's value moves in all three coordinates.
+        let all: Vec<usize> = group.clone().collect();
+        assert!(
+            ranks(&all).iter().all(|&rank| rank == 3),
+            "the random group hides every coordinate"
+        );
+
+        // Negative control: one uniform lane leaves two coordinates fixed by the data.
+        assert!(
+            ranks(&[group.start]).iter().all(|&rank| rank == 1),
+            "one lane masks one coordinate"
+        );
     }
 }

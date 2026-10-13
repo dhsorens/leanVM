@@ -214,6 +214,14 @@ impl Verifier for Recording<'_> {
     fn check_eof(&mut self) -> Result<(), TranscriptError> {
         self.vs.check_eof()
     }
+
+    fn set_hidden(&mut self, hidden: bool) {
+        self.vs.set_hidden(hidden);
+    }
+
+    fn is_hidden(&self) -> bool {
+        self.vs.is_hidden()
+    }
 }
 
 impl OpeningVerifier for Recording<'_> {

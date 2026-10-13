@@ -9,7 +9,8 @@
 //! - Every deeper level encodes a folded witness over `E`, with twiddles in `K`.
 
 use crate::merkle::{Hash, MerkleBuilder};
-use crate::ntt::AdditiveNttF64;
+use crate::ntt::{AdditiveNttF64, Pad};
+use crate::whir::query::padding_shift;
 use primitives::field::{F64, F192};
 use std::sync::Arc;
 
@@ -21,6 +22,8 @@ pub(crate) struct ProverData {
     pub(crate) codeword: Vec<F64>,
     /// Every node of the Merkle tree, the root last.
     pub(crate) merkle_tree: Vec<Hash>,
+    /// The padding of a hiding commitment, lane block `u`'s `k` coefficients at `[u k, (u + 1) k)`; empty otherwise.
+    pub(crate) pads: Vec<F64>,
 }
 
 impl ProverData {
@@ -59,7 +62,31 @@ impl ProverData {
 ///
 /// - If `log_inv_rate` is 0, or the witness is no wider than the interleaving.
 /// - If the message is not between one and `2^log_batch_size` whole lane blocks.
-pub(crate) fn commit(message: &[F64], log_n: usize, log_batch_size: usize, log_inv_rate: usize) -> ProverData {
+///
+/// # Padding
+///
+/// Non-empty `pads` make each lane's code longer by `k = pads.len() / n_lanes` coefficients.
+///
+/// With `m = log_n - log_batch_size` and `r = log_inv_rate`, lane `u` encodes:
+///
+/// ```text
+///     P_u(X) + W_m(X + s) * R_u(X),   s = F64(2^(m + r))
+/// ```
+///
+/// - `P_u` is the lane's `2^m` words as novel-basis coefficients.
+/// - `R_u` is its padding, `pads[u k..(u + 1) k]`.
+/// - `W_m(X + s) = W_m(X) + W_m(s)` and `X_{2^m + j} = W_m X_j`, so the lane is `2^m + k` coefficients on the same domain.
+/// - The encode adds one butterfly layer pairing the message with the padding.
+/// - The factor `W_m(X + s)` vanishes nowhere on the domain, so any `k` symbols of a lane are uniform whatever its message.
+///
+/// Also panics unless every lane has the same `k <= 2^m` padding coefficients.
+pub(crate) fn commit(
+    message: &[F64],
+    log_n: usize,
+    log_batch_size: usize,
+    log_inv_rate: usize,
+    pads: &[F64],
+) -> ProverData {
     assert!(log_inv_rate >= 1, "log_inv_rate must be >= 1 for a non-trivial RS code");
     assert!(log_n > log_batch_size, "witness must be wider than the interleaving");
     let log_rows = log_n - log_batch_size;
@@ -72,7 +99,17 @@ pub(crate) fn commit(message: &[F64], log_n: usize, log_batch_size: usize, log_i
     let k_code = log_rows + log_inv_rate;
     let n_positions = 1usize << k_code;
     let codeword_len = n_positions * n_lanes;
-
+    let k = pads.len() / n_lanes;
+    assert_eq!(pads.len(), k * n_lanes, "every lane takes as many padding coefficients");
+    assert!(k <= 1 << log_rows, "a lane's padding is at most its message's length");
+    // Row `j` of the padding is coefficient `j` of every codeword lane's `R`, lane `t` being block `n_lanes - 1 - t`.
+    let pad_rows: Vec<F64> = (0..k * n_lanes)
+        .map(|w| pads[(n_lanes - 1 - w % n_lanes) * k + w / n_lanes])
+        .collect();
+    let pad = (k > 0).then(|| Pad {
+        rows: &pad_rows,
+        offset: padding_shift(log_rows, log_inv_rate),
+    });
     let mut codeword = Box::new_uninit_slice(codeword_len);
 
     // Leaves are hashed as the encode finishes each block of rows.
@@ -85,14 +122,18 @@ pub(crate) fn commit(message: &[F64], log_n: usize, log_batch_size: usize, log_i
         let codeword = unsafe { primitives::write_only(&mut codeword) };
         crate::ntt::transpose_lane_major(&mut codeword[..message.len()], message, n_lanes, log_rows);
         let ntt = AdditiveNttF64::standard(k_code);
-        ntt.encode_interleaved_in_place_with(codeword, n_lanes, log_inv_rate, &|row, rows| {
+        ntt.encode_interleaved_in_place_with(codeword, n_lanes, log_inv_rate, pad, &|row, rows| {
             tree.absorb(row, rows);
         });
     });
     // SAFETY: the transpose and the encode above wrote every word of the codeword.
     let codeword = unsafe { codeword.assume_init() }.into_vec();
     let merkle_tree = tracing::info_span!("Merkle").in_scope(|| tree.finish());
-    ProverData { codeword, merkle_tree }
+    ProverData {
+        codeword,
+        merkle_tree,
+        pads: pads.to_vec(),
+    }
 }
 
 /// One deeper WHIR commitment level: its message and Merkle tree.

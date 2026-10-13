@@ -43,7 +43,7 @@ pub const SECURITY_BITS: usize = 128;
 /// A challenge drawn between the root and the opening must hold against every list member.
 /// By a union bound its error grows by a factor `L_0`.
 ///
-/// The value is `ceil(log2 L_0)` at its largest over every configured size and rate.
+/// The value is `ceil(log2 L_0)` at its largest over every configured size and rate, hiding or not.
 /// A test pins it to the derivation.
 pub const L0_LIST_BITS: usize = 12;
 
@@ -68,6 +68,12 @@ pub enum ConfigError {
     /// A witness size outside the tabulated range.
     #[error("log_n {log_n} is not in {MIN_LOG_N}..={MAX_LOG_N}")]
     SizeOutOfRange {
+        /// The log of the requested witness size, in words.
+        log_n: usize,
+    },
+    /// A witness size outside the tabulated range of the hiding opening.
+    #[error("log_n {log_n} is not in {MIN_LOG_N_HIDING}..={MAX_LOG_N} for a hiding opening")]
+    HidingSizeOutOfRange {
         /// The log of the requested witness size, in words.
         log_n: usize,
     },
@@ -170,10 +176,12 @@ pub struct Config {
     grinding_bits: Vec<usize>,
     /// Out-of-domain samples of each level, L0 first.
     ood_samples: Vec<usize>,
+    /// Coefficients a hiding commitment adds past each L0 lane's power of two; zero for a configuration that does not hide.
+    padding: usize,
 }
 
 impl Config {
-    /// A config of `level_ks.len()` recursive levels after the lane fold.
+    /// A config of `level_ks.len()` recursive levels after the lane fold, its L0 lanes padded by `padding` coefficients.
     ///
     /// # Panics
     ///
@@ -187,6 +195,7 @@ impl Config {
         queries: Vec<usize>,
         grinding_bits: Vec<usize>,
         ood_samples: Vec<usize>,
+        padding: usize,
     ) -> Self {
         let levels = level_ks.len() + 1;
         assert!(initial_k >= 1, "the lane fold binds at least one variable");
@@ -210,6 +219,7 @@ impl Config {
             queries,
             grinding_bits,
             ood_samples,
+            padding,
         }
     }
 
@@ -252,6 +262,11 @@ impl Config {
     /// L0 takes none: its commitment binds only to a list, which every challenge before the opening pays for.
     pub fn ood_samples(&self) -> &[usize] {
         &self.ood_samples
+    }
+
+    /// Coefficients a hiding commitment adds past each L0 lane's power of two, `k = q_0 + 2`, which the L0 query count was derived for; zero for a configuration that does not hide.
+    pub const fn padding(&self) -> usize {
+        self.padding
     }
 }
 
@@ -434,18 +449,133 @@ pub fn config_for_rate(log_n: usize, log_inv_rate: usize) -> Result<Config, Conf
     if !(MIN_LOG_N..=MAX_LOG_N).contains(&log_n) {
         return Err(ConfigError::SizeOutOfRange { log_n });
     }
+    let queries = WHIR_QUERIES[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N];
+    Ok(tabulated(log_n, log_inv_rate, queries, 0))
+}
+
+/// Smallest committed witness, `2^MIN_LOG_N_HIDING` words, that the hiding table covers.
+///
+/// A smaller zero-knowledge stack is committed at this size.
+///
+/// Its lanes of `2^14` words keep the padding a small share of each lane.
+pub const MIN_LOG_N_HIDING: usize = 20;
+
+/// Uniform lanes a hiding commitment holds, one aligned group of four.
+///
+/// They make the lane-folded witness uniform over `E`, which hides everything the opening reveals after the lane fold.
+///
+/// Why four, aligned:
+///
+/// - Lane `u` enters the fold with weight `eq(r, u)` in `E`, and a uniform lane of `K` words adds `eq(r, u)` times a uniform vector of `K`.
+/// - One lane masks only the line `eq(r, u) * K` of each coordinate: the other two `K` dimensions of `E` would show the witness.
+/// - Four lanes `4j..4j+4` have weights `P * {1, r_a, r_b, r_a r_b}` up to an invertible map, `P` the product over the other lane bits.
+/// - Those span `E` over `K` unless `r_a` or `r_b` lies in `K`, or `P` is zero: probability below `2^-120`.
+pub const RANDOM_LANES: usize = 4;
+
+/// The lanes a hiding commitment of `data_lanes` lanes of data commits.
+///
+/// The data, then zero lanes up to a multiple of four, then the random group.
+#[must_use]
+pub const fn hiding_lanes(data_lanes: usize) -> usize {
+    data_lanes.next_multiple_of(RANDOM_LANES) + RANDOM_LANES
+}
+
+/// Per-level query counts (L0, L1, ...) of the hiding opening, at `[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N_HIDING]`.
+///
+/// The derivation is the plain table's, with the L0 code of dimension `2^m + k` instead of `2^m`.
+///
+/// It is taken at its fixed point `k = q_0 + 2`, and a test pins the table to it.
+const WHIR_QUERIES_HIDING: [[&[usize]; MAX_LOG_N - MIN_LOG_N_HIDING + 1]; MAX_LOG_INV_RATE - MIN_LOG_INV_RATE + 1] = [
+    // Rate 2^-1.
+    [
+        &[228, 56, 32, 22],
+        &[226, 56, 32, 22],
+        &[225, 56, 32, 23],
+        &[224, 56, 32, 23],
+        &[224, 56, 32, 23, 17],
+        &[224, 56, 32, 23, 17],
+        &[224, 56, 32, 23, 18],
+        &[225, 56, 32, 23, 18],
+        &[225, 56, 32, 23, 18, 14],
+    ],
+    // Rate 2^-2.
+    [
+        &[112, 45, 28, 20],
+        &[112, 45, 28, 20],
+        &[112, 45, 28, 21],
+        &[112, 45, 28, 21],
+        &[112, 45, 28, 21, 16],
+        &[112, 45, 28, 21, 16],
+        &[112, 45, 28, 21, 16],
+        &[112, 45, 28, 21, 16],
+        &[112, 45, 28, 21, 16, 13],
+    ],
+    // Rate 2^-3.
+    [
+        &[75, 38, 25, 18],
+        &[75, 38, 25, 19],
+        &[75, 38, 25, 19],
+        &[75, 38, 25, 19],
+        &[75, 38, 25, 19, 15],
+        &[75, 38, 25, 19, 15],
+        &[75, 38, 25, 19, 15],
+        &[75, 38, 25, 19, 15],
+        &[75, 38, 25, 19, 15, 13],
+    ],
+    // Rate 2^-4.
+    [
+        &[56, 32, 23, 17],
+        &[56, 32, 23, 17],
+        &[56, 32, 23, 18],
+        &[56, 32, 23, 18],
+        &[56, 32, 23, 18, 14],
+        &[56, 32, 23, 18, 14],
+        &[56, 32, 23, 18, 14],
+        &[56, 32, 23, 18, 15],
+        &[56, 32, 23, 18, 15, 12],
+    ],
+];
+
+/// The shared prover/verifier config of a hiding opening of a `K`-witness of `2^log_n` F64 words at L0 inverse-rate logarithm `log_inv_rate`.
+///
+/// The shared prover and verifier config of a hiding opening of `2^log_n` words at L0 rate `2^-log_inv_rate`.
+///
+/// It is the plain configuration with two changes:
+///
+/// - the L0 query counts are those of the padded L0 code;
+/// - each committed lane is padded by `k = q_0 + 2` uniform coefficients.
+///
+/// Why `q_0 + 2`:
+///
+/// - `q_0` opened symbols of a lane are uniform once it has at least `q_0` padding coefficients.
+/// - The rest keep every unopened leaf's symbol of that lane uniform, which hides the Merkle root.
+///
+/// # Errors
+///
+/// A rate outside `MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE`, or a size outside `MIN_LOG_N_HIDING..=MAX_LOG_N`.
+pub fn config_for_rate_hiding(log_n: usize, log_inv_rate: usize) -> Result<Config, ConfigError> {
+    validate_log_inv_rate(log_inv_rate)?;
+    if !(MIN_LOG_N_HIDING..=MAX_LOG_N).contains(&log_n) {
+        return Err(ConfigError::HidingSizeOutOfRange { log_n });
+    }
+    let queries = WHIR_QUERIES_HIDING[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N_HIDING];
+    Ok(tabulated(log_n, log_inv_rate, queries, queries[0] + 2))
+}
+
+/// The production config with these query counts and this L0 padding.
+fn tabulated(log_n: usize, log_inv_rate: usize, queries: &[usize], padding: usize) -> Config {
     let shape = derive_ladder_shape(log_n, INITIAL_FOLDING_FACTOR, log_inv_rate)
         .expect("the tabulated window always has a ladder");
     let levels = shape.k_levels.len();
-    let queries = WHIR_QUERIES[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N];
-    Ok(Config::new(
+    Config::new(
         INITIAL_FOLDING_FACTOR,
         shape.k_levels[1..].to_vec(),
         shape.log_inv_rates,
         queries.to_vec(),
         vec![QUERY_GRINDING_BITS; levels],
         std::iter::once(0).chain(std::iter::repeat_n(1, levels - 1)).collect(),
-    ))
+        padding,
+    )
 }
 
 #[cfg(test)]
