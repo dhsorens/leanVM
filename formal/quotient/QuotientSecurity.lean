@@ -1,6 +1,7 @@
 import QuotientSecurity.Bits
 import QuotientSecurity.RandomOracle
 import QuotientSecurity.ZeroKnowledge
+import QuotientSecurity.Encoding
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
