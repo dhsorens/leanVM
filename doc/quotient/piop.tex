@@ -17,18 +17,18 @@ This note describes one polynomial IOP and nothing else: no commitment scheme, n
 
 \paragraph{Domain.} Let $S(X) = X^2 + X$ and $w_k = S \circ \dots \circ S$ ($k$ times), so $w_0(X) = X$ and $w_{k+1} = w_k^2 + w_k$. Fix $\beta_0 = 1, \beta_1, \dots, \beta_{m-1} \in \K$ with $S(\beta_{k+1}) = \beta_k$ (a Cantor basis). The domain is $H = \mathrm{span}_{\mathrm{GF}(2)}(\beta_0, \dots, \beta_{m-1})$, of size $N = 2^m$, and $w_m$ is its vanishing polynomial. Here $m = 22$.
 
-\paragraph{Rows.} Write $\theta = \beta_1$, so $\{0, 1, \theta, \theta + 1\} = \mathrm{GF}(4)$. Let $T = \mathrm{span}(\beta_2, \dots, \beta_{m-1})$, of size $n = N/4$, with vanishing polynomial $v_T$. Every point of $H$ is $x + c$ for one $x \in T$ and one $c \in \mathrm{GF}(4)$. The four points $x, x + 1, x + \theta, x + \theta + 1$ are a \emph{row}, and its four \emph{cells} are called $\mathsf X, \mathsf Y, \mathsf C, \mathsf V$. The polynomial $r(X) = X^4 + X = w_2(X)$ is constant on a row.
+\paragraph{Rows.} Write $\theta = \beta_1$, so $\{0, 1, \theta, \theta + 1\} = \mathrm{GF}(4)$. Let $T = \mathrm{span}(\beta_2, \dots, \beta_{m-1})$, of size $n = N/4 = 2^{\nu}$ with $\nu = m - 2$, and with vanishing polynomial $v_T$ (of degree $n$). Every point of $H$ is $x + c$ for one $x \in T$ and one $c \in \mathrm{GF}(4)$. The four points $x, x + 1, x + \theta, x + \theta + 1$ are a \emph{row}, and its four \emph{cells} are called $\mathsf X, \mathsf Y, \mathsf C, \mathsf V$. The polynomial $r(X) = X^4 + X = w_2(X)$ is constant on a row.
 
 \section{Relation}
 
-A witness is an assignment $w : H \to \K$ of a value to every cell. Fixed in advance: a permutation $\sigma$ of $H$, and eight weight functions $\lambda_0, \dots, \lambda_7 : H \to \E$. The statement is eight values $p_0, \dots, p_7 \in \E$. The witness satisfies the relation when three things hold.
+A witness is an assignment $w$ of a value to every cell, that is to every point of $H$. The honest prover's values are in $\K$; soundness holds for values in $\E$. Fixed in advance: a permutation $\sigma$ of $H$, and eight weight functions $\lambda_0, \dots, \lambda_7 : H \to \E$. The statement is eight values $p_0, \dots, p_7 \in \E$. The witness satisfies the relation when three things hold.
 \begin{enumerate}
   \item \textbf{Gate, on every row.} For every $x \in T$, $G\bigl(w(x), w(x+1), w(x+\theta), w(x+\theta+1)\bigr) = 0$, where
   \begin{gather*}
     G(\mathsf x, \mathsf y, \mathsf c, \mathsf v) = \mathsf v + b(\mathsf x) + b(\mathsf y) + k(\mathsf c) + \theta \bigl( b(\mathsf x) b(\mathsf y) + k(\mathsf c) (b(\mathsf x) + b(\mathsf y)) \bigr), \\
     b(u) = \theta u^2 + \theta^2 u, \qquad k(u) = u^2 + u .
   \end{gather*}
-  A cell holds an element of $\mathrm{GF}(4)$, read as a bit $b$ and a carry $k$, and the gate says the row is a full adder. There is one gate and no selector.
+  In a circuit a cell holds an element of $\mathrm{GF}(4)$, read as a bit $b$ and a carry $k$, and the gate says the row is a full adder. The gate alone does not force cells into $\mathrm{GF}(4)$: the copies and the public words do, for a wiring with no loop. There is one gate and no selector.
   \item \textbf{Copies.} $w(\sigma(x)) = w(x)$ for every $x \in H$: cells in one cycle of $\sigma$ are equal.
   \item \textbf{Public words.} $\sum_{x \in H} \lambda_J(x) \, w(x) = p_J$ for $J = 0, \dots, 7$.
 \end{enumerate}
@@ -49,12 +49,12 @@ Because $r(t + c) = r(t)$ for $c \in \mathrm{GF}(4)$, the four values $a_j = g_j
 \section{Protocol}
 
 \begin{enumerate}
-  \item \textbf{Prover} sends $g_0, g_1, g_2, g_3 \in \K[X]$. This defines $W$.
+  \item \textbf{Prover} sends $g_0, g_1, g_2, g_3$, of degree below $2n$ (the honest ones are in $\K[X]$, of degree below $n$ before masking). This defines $W = \sum_j X_j \, g_j(r)$.
   \item \textbf{Verifier} sends $\alpha, \beta, \gamma \in \E$. Let
   \[
     D = \alpha + W + \beta X, \qquad D' = \alpha + W + \beta \, \sigma, \qquad \tau = \sum_{J} \gamma^J p_J .
   \]
-  \item \textbf{Prover} sends $h$ of degree below $N$, and $q$, $q_G$, with
+  \item \textbf{Prover} sends $h$ of degree below $N$, and $q$, $q_G$ of degree below $4N$, with
   \begin{align}
     h \, D D' + q \, w_m &= D + D' + \Lambda_\gamma \, W \, D D', \label{eq:copy} \\
     q_G \, v_T &= G\bigl(W(X), W(X+1), W(X+\theta), W(X+\theta+1)\bigr), \label{eq:gate} \\
@@ -73,12 +73,17 @@ Because $r(t + c) = r(t)$ for $c \in \mathrm{GF}(4)$, the four values $a_j = g_j
 \midrule
 1 & $g_0, \dots, g_3$ & $\sum_j c_j \, g_j(r(t)) = \sum_j c_j \, a_j$ \\[2pt]
 2 & $\sigma$ & $\sigma(t) = s$ \\[2pt]
-3 & $h, q, q_G$ & $(1+\rho) \cdot \bigl[\text{\eqref{eq:copy} at } t\bigr] \;+\; \rho \cdot D(t) D'(t) \cdot \bigl[\text{\eqref{eq:gate} at } t\bigr]$ \\[2pt]
+3 & $h, q, q_G$ & equation \eqref{eq:three} below \\[2pt]
 4 & $h$ & $\sum_{x \in H} h(x) = \tau$ \\
 \bottomrule
 \end{tabular}
 \end{center}
-In claim 1 the weights are $c = \bigl((1+\rho)(1+\rho^2),\ \rho(1+\rho^2),\ (1+\rho)\rho^2,\ \rho^3\bigr)$. Claim 3 is one linear combination of $h(t)$, $q(t)$, $q_G(t)$ whose coefficients and right side the verifier has just computed. Claim 4 is one linear functional of $h$: for $\deg h < N$, the sum over $H$ is the coefficient of $h$ on $\prod_{k < m} w_k$. The quotients' values are never sent. A proof is two rounds of polynomials and five field elements, and the verifier's only test of its own is the nonzero product.
+In claim 1 the weights are $c = \bigl((1+\rho)(1+\rho^2),\ \rho(1+\rho^2),\ (1+\rho)\rho^2,\ \rho^3\bigr)$. Claim 3 is, with $\Delta = D(t) D'(t) + w_m(t)$ and $C = D + D' + \Lambda_\gamma W D D'$ the right side of \eqref{eq:copy},
+\begin{equation}\label{eq:three}
+  (1 + \rho) \, \frac{D(t) D'(t) \, h(t) + w_m(t) \, q(t)}{\Delta} + \rho \, \frac{D(t) D'(t) \, q_G(t)}{\Delta}
+  = \frac{(1 + \rho) \, C(t) \, v_T(t) + \rho \, D(t) D'(t) \, G(t)}{\Delta \, v_T(t)} .
+\end{equation}
+The left side is one linear combination of $h(t)$, $q(t)$, $q_G(t)$ with coefficients the verifier computed, and the right side is a value it computed. Multiplied by $\Delta \, v_T(t)$, which is why that product must not be zero, it reads $(1 + \rho) \, v_T(t) \cdot [\text{\eqref{eq:copy} at } t] + \rho \, D(t) D'(t) \cdot [\text{\eqref{eq:gate} at } t] = 0$. (The implementation's table has a fourth polynomial in this combination, which the honest prover leaves zero.) Claim 4 is one linear functional of $h$: for $\deg h < N$, the sum over $H$ is the coefficient of $h$ on $\prod_{k < m} w_k$. The quotients' values are never sent. A proof is two rounds of polynomials and five field elements, and the verifier's only test of its own is the nonzero product.
 
 \section{Why it works}
 
@@ -90,8 +95,9 @@ In claim 1 the weights are $c = \bigl((1+\rho)(1+\rho^2),\ \rho(1+\rho^2),\ (1+\
 \[
   \frac{2N^2 + 4N + 8}{|\E|}, \qquad \frac{d}{|\E|}, \qquad \frac{3}{|\E|},
 \]
-with $d \le 2^{27}$ the degree of the identities: each below $2^{-128}$.
+with $d \le 2^{27}$ the degree in $t$ of the identities under the degree bounds above: each below $2^{-128}$.
 
-\paragraph{Zero knowledge.} Each $g_j$ is sent as $g_j(X) + w_n(X) \cdot (m_0 + m_1 X + m_2 (X^2 + X))$ with $m_i \in \K$ uniform and $n = m - 2$. The mask vanishes on every row, so $W$ is unchanged on $H$, and whenever $r(t) \notin \K$ and $w_n(r(t)) \ne 0$ the four values $a_j$ are uniform in $\E$: $\E$ has degree 3 over $\K$, so three uniform coefficients of $\K$ on $1, r, r^2$ are a uniform element of $\E$.
+\paragraph{Zero knowledge.} Each $g_j$ is sent as $g_j(X) + w_\nu(X) \cdot (m_0 + m_1 X + m_2 (X^2 + X))$ with $m_i \in \K$ uniform, so of degree $n + 2$. The mask vanishes on every row, so $W$ is unchanged on $H$, and whenever $r(t) \notin \K$ and $w_\nu(r(t)) \ne 0$ the four values $a_j$ are uniform in $\E$: $\E$ has degree 3 over $\K$, so three uniform coefficients of $\K$ on $1, r, r^2$ are a uniform element of $\E$.
+ The five elements are all the verifier sees of the polynomials besides the truth of the four claims, so what remains is for the commitment to reveal nothing more than that truth, which is outside this note.
 
 \end{document}

@@ -383,7 +383,7 @@ noncomputable def simCoins (K E H : Type) [SampleableType H] [SampleableType (Fi
     ($ᵗ (Fin 4 → E)) >>= fun aE => pure (c₁, c₂, aK, aE)
 
 /-- **Soundness after a simulated proof**, in one oracle game. The simulator makes a proof of a
-statement of the adversary's choice by asking the oracle; the adversary, given it, then outputs a
+statement fixed in advance by asking the oracle; the adversary, given it, then outputs a
 statement and a proof. With binding commitments, the verifier accepts while the committed cells
 do not satisfy the relation with probability at most `(Q + 6)` times the largest round error. -/
 theorem simulationSoundness (h₁ : Injective com₁) (h₂ : Injective com₂)
