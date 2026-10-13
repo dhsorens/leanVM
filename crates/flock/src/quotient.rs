@@ -573,6 +573,20 @@ mod tests {
 
     /// On a small circuit: an honest proof leaves four true claims, and a witness that breaks one gate, one copy,
     /// one input's range or one public bit leaves a false one.
+    /// What `formal/quotient` assumes of the constants: a bit's weight is the product of the weights of the
+    /// set bits of its index, each a coordinate's, and the weight of a cell is that product on its word's power.
+    #[test]
+    fn public_weights_are_products_over_coordinates() {
+        let gamma = F192::new(3, 5, 7);
+        for cell in 0..1usize << REGION {
+            let product = (0..8)
+                .filter(|k| (cell >> k) & 1 == 1)
+                .fold(F192::ONE, |acc, k| acc * coordinate_weight(k).expect("a constant"));
+            let word = (0..cell >> 8).fold(F192::ONE, |acc, _| acc * gamma);
+            assert_eq!(public_weight(cell, gamma), product * word);
+        }
+    }
+
     #[test]
     fn claims_hold_exactly_for_a_witness() {
         let mut rng = Rng::new(0x51);
