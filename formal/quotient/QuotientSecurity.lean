@@ -5,6 +5,8 @@ import QuotientSecurity.Encoding
 import QuotientSecurity.NonInteractive
 import QuotientSecurity.Distance
 import QuotientSecurity.Instance
+import QuotientSecurity.Circuit
+import QuotientSecurity.Witness
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -85,3 +87,11 @@ import QuotientSecurity.Instance
 /-- info: 'QuotientSecurity.exists_handles' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.exists_handles
+
+/-- info: 'QuotientSecurity.AdderCircuit.determined' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.AdderCircuit.determined
+
+/-- info: 'QuotientSecurity.Params.exists_witness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Params.exists_witness
