@@ -104,4 +104,86 @@ theorem realValues_witness_independent (h3 : finrank K E = 3) (e e' : Fin 4 → 
 
 end Simulation
 
+/-! ## A row in the small field
+
+When `r` is in `K`, everything the prover sends is in `K`, and the four values are uniform there:
+a simulator that looks at `r` samples them in `K`. So the only challenges that leak are the roots
+of the rows' vanishing polynomial. -/
+
+section Fibers
+
+variable {α β : Type} [Fintype α] [Fintype β] [DecidableEq β] [SampleableType α]
+  [SampleableType β]
+
+/-- A uniform sample pushed through a map whose fibers all have the same size is uniform. -/
+theorem probOutput_map_uniform_of_fibers (f : α → β) (c : ℕ)
+    (hc : ∀ b, (Finset.univ.filter fun x => f x = b).card = c) (b : β) :
+    Pr[= b | f <$> ($ᵗ α)] = Pr[= b | $ᵗ β] := by
+  have hsum : Fintype.card α = c * Fintype.card β := by
+    rw [← Finset.card_univ, Finset.card_eq_sum_card_fiberwise (f := f) (t := Finset.univ)
+      (fun _ _ => Finset.mem_univ _)]
+    simp [hc, mul_comm]
+  have hα : 0 < Fintype.card α := Fintype.card_pos_iff.mpr ⟨OracleComp.defaultResult ($ᵗ α)⟩
+  have hc0 : (c : ENNReal) ≠ 0 := by
+    intro h
+    have : c = 0 := by exact_mod_cast h
+    rw [this, zero_mul] at hsum
+    omega
+  rw [probOutput_map, probEvent_uniformSample, probOutput_uniformSample, hc, hsum]
+  push_cast
+  rw [← mul_one (c : ENNReal), mul_assoc, one_mul,
+    ENNReal.mul_div_mul_left _ _ hc0 (ENNReal.natCast_ne_top c), one_div]
+
+/-- The fibers of an affine map over a surjective homomorphism all have the size of its kernel. -/
+theorem card_fiber_affine {G H : Type} [AddCommGroup G] [AddCommGroup H] [Fintype G]
+    [DecidableEq G] [DecidableEq H] (φ : G →+ H) (hs : Function.Surjective φ) (e b : H) :
+    (Finset.univ.filter fun x => e + φ x = b).card = (Finset.univ.filter fun x => φ x = 0).card := by
+  obtain ⟨x₀, hx₀⟩ := hs (b - e)
+  refine Finset.card_bij (fun x _ => x - x₀) ?_ ?_ ?_
+  · intro x hx
+    rw [Finset.mem_filter] at hx ⊢
+    refine ⟨Finset.mem_univ _, ?_⟩
+    rw [map_sub, hx₀, ← hx.2]
+    abel
+  · intro x _ y _ h
+    exact sub_left_injective h
+  · intro y hy
+    rw [Finset.mem_filter] at hy
+    refine ⟨y + x₀, ?_, by simp⟩
+    rw [Finset.mem_filter]
+    refine ⟨Finset.mem_univ _, ?_⟩
+    rw [map_add, hy.2, hx₀]
+    abel
+
+end Fibers
+
+section Base
+
+variable [Fintype K] [DecidableEq K] [SampleableType K]
+
+/-- In the small field, the masked value is the small field's. -/
+theorem maskedValue_algebraMap (e u ρ : K) (m : Fin 3 → K) :
+    maskedValue (algebraMap K E e) (algebraMap K E u) (algebraMap K E ρ) m
+      = algebraMap K E (e + u * ∑ i, m i * ρ ^ (i : ℕ)) := by
+  simp [maskedValue, Algebra.smul_def]
+
+/-- **Zero knowledge at a row of the small field.** The four values are exactly uniform in
+`K^4`, whatever the witness's values. -/
+theorem baseValues_uniform (e : Fin 4 → K) {u : K} (hu : u ≠ 0) (ρ : K) (a : Fin 4 → K) :
+    Pr[= a | (fun (m : Fin 4 → Fin 3 → K) (j : Fin 4) => e j + u * ∑ i, m j i * ρ ^ (i : ℕ)) <$>
+        ($ᵗ (Fin 4 → Fin 3 → K))] = Pr[= a | $ᵗ (Fin 4 → K)] := by
+  let φ : (Fin 4 → Fin 3 → K) →+ (Fin 4 → K) :=
+    AddMonoidHom.mk' (fun m j => u * ∑ i, m j i * ρ ^ (i : ℕ)) (by
+      intro m m'
+      funext j
+      simp [add_mul, Finset.sum_add_distrib, mul_add])
+  have hs : Function.Surjective φ := by
+    intro b
+    refine ⟨fun j i => if i = 0 then b j / u else 0, ?_⟩
+    funext j
+    simp [φ, Fin.sum_univ_three, mul_div_cancel₀ _ hu]
+  exact probOutput_map_uniform_of_fibers (fun m => e + φ m) _ (card_fiber_affine φ hs e) a
+
+end Base
+
 end QuotientSecurity
