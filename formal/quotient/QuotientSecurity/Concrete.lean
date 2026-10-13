@@ -256,39 +256,63 @@ theorem wiringTable_eval (hm : n + 2 ≤ N) (σ : Equiv.Perm (Fin (n + 2) → Bo
     (tablePoly (wiringTable B hm σ)).eval (B.point x) = B.point (σ x) :=
   (B.exists_table hm fun x => B.point (σ x)).choose_spec x
 
-/-- **The parameters of the protocol on a Cantor basis**, for any wiring of the cells and any
-public words. -/
+/-- A public weight exists for any public words, within the cells' size: a table's polynomial. -/
+theorem exists_pub (hm : n + 2 ≤ N) (words : ℕ)
+    (wordSum : Fin words → ((Fin (n + 2) → Bool) → F) →ₗ[F] F) :
+    ∃ pub : F → F[X], (∀ (γ : F) (w : (Fin (n + 2) → Bool) → F),
+        ∑ x, (pub γ).eval (B.point x) * w x = ∑ J : Fin words, γ ^ (J : ℕ) * wordSum J w) ∧
+      ∀ γ, (pub γ).natDegree ≤ 2 ^ (n + 2) := by
+  choose c hc using fun γ : F => B.exists_table hm fun x : Fin (n + 2) → Bool =>
+    ∑ J : Fin words, γ ^ (J : ℕ) * wordSum J (fun j => if x = j then 1 else 0)
+  refine ⟨fun γ => tablePoly (c γ), fun γ w => ?_, fun γ => natDegree_tablePoly_le _⟩
+  simp only [hc, Finset.sum_mul]
+  rw [Finset.sum_comm]
+  refine Finset.sum_congr rfl fun J _ => ?_
+  rw [(wordSum J).pi_apply_eq_sum_univ w, Finset.mul_sum]
+  refine Finset.sum_congr rfl fun i _ => ?_
+  rw [smul_eq_mul]
+  ring
+
+/-- **The parameters of the protocol on a Cantor basis**, for any wiring of the cells, any
+public words, and any public weight that carries them. -/
 noncomputable def Params.ofCantor (hm : n + 2 ≤ N) (σ : Equiv.Perm (Fin (n + 2) → Bool))
-    (words : ℕ) (wordSum : Fin words → ((Fin (n + 2) → Bool) → F) →ₗ[F] F) : Params F :=
-  let D := Params.ofData (B.β 1) (cantor_theta B (by omega)) (cantorT B n) (cantor_hT B hm)
-    ((cantorCells B hm).permCongr σ) words
-    fun J => (wordSum J).comp (LinearMap.funLeft F F (cantorCells B hm))
-  { θ := B.β 1
-    hθ := cantor_theta B (by omega)
-    T := cantorT B n
-    hT := cantor_hT B hm
-    vCells := digitPoly (n + 2)
-    vRows := D.vRows
-    hCells := cantor_hCells B hm
-    hRows := D.hRows
-    σ := (cantorCells B hm).permCongr σ
-    sigmaPoly := tablePoly (wiringTable B hm σ)
-    hσ := fun i => by
-      rw [cantorCells_symm_point B hm i, cantorCells_symm_point B hm, wiringTable_eval]
-      simp [Equiv.permCongr_apply]
-    words := words
-    wordSum := fun J => (wordSum J).comp (LinearMap.funLeft F F (cantorCells B hm))
-    pub := D.pub
-    hPub := D.hPub }
+    (words : ℕ) (wordSum : Fin words → ((Fin (n + 2) → Bool) → F) →ₗ[F] F) (pub : F → F[X])
+    (hPub : ∀ (γ : F) (w : (Fin (n + 2) → Bool) → F),
+      ∑ x, (pub γ).eval (B.point x) * w x = ∑ J : Fin words, γ ^ (J : ℕ) * wordSum J w) :
+    Params F where
+  θ := B.β 1
+  hθ := cantor_theta B (by omega)
+  T := cantorT B n
+  hT := cantor_hT B hm
+  vCells := digitPoly (n + 2)
+  vRows := ∏ x : cantorT B n, (X - C (x : F))
+  hCells := cantor_hCells B hm
+  hRows := fun x hx => by
+    rw [eval_prod]
+    exact Finset.prod_eq_zero (Finset.mem_univ (⟨x, hx⟩ : cantorT B n)) (by simp)
+  σ := (cantorCells B hm).permCongr σ
+  sigmaPoly := tablePoly (wiringTable B hm σ)
+  hσ := fun i => by
+    rw [cantorCells_symm_point B hm i, cantorCells_symm_point B hm, wiringTable_eval]
+    simp [Equiv.permCongr_apply]
+  words := words
+  wordSum := fun J => (wordSum J).comp (LinearMap.funLeft F F (cantorCells B hm))
+  pub := pub
+  hPub := fun γ w => by
+    refine ((Equiv.sum_comp (cantorCells B hm) _).symm.trans ?_).trans
+      (hPub γ fun x => w (cantorCells B hm x))
+    exact Finset.sum_congr rfl fun x _ => by rw [cantorCells_point]
 
 variable (hm : n + 2 ≤ N) (σ : Equiv.Perm (Fin (n + 2) → Bool)) (words : ℕ)
-  (wordSum : Fin words → ((Fin (n + 2) → Bool) → F) →ₗ[F] F)
+  (wordSum : Fin words → ((Fin (n + 2) → Bool) → F) →ₗ[F] F) (pub : F → F[X])
+  (hPub : ∀ (γ : F) (w : (Fin (n + 2) → Bool) → F),
+    ∑ x, (pub γ).eval (B.point x) * w x = ∑ J : Fin words, γ ^ (J : ℕ) * wordSum J w)
 
 theorem Params.ofCantor_pt (x : Fin (n + 2) → Bool) :
-    (Params.ofCantor B hm σ words wordSum).pt (cantorCells B hm x) = B.point x :=
+    (Params.ofCantor B hm σ words wordSum pub hPub).pt (cantorCells B hm x) = B.point x :=
   cantorCells_point B hm x
 
-theorem Params.ofCantor_nCells : (Params.ofCantor B hm σ words wordSum).nCells = 2 ^ (n + 2) := by
+theorem Params.ofCantor_nCells : (Params.ofCantor B hm σ words wordSum pub hPub).nCells = 2 ^ (n + 2) := by
   show Fintype.card (cantorT B n × Fin 4) = _
   rw [← Fintype.card_congr (cantorCells B hm)]
   simp
@@ -298,28 +322,18 @@ theorem card_cantorT : Fintype.card (cantorT B n) = 2 ^ n := by
   rw [← Fintype.card_congr (cantorRows B hm)]
   simp
 
-/-- The degrees of the instance: every table's polynomial within its table's size. -/
-noncomputable def Params.ofCantorBounds : (Params.ofCantor B hm σ words wordSum).Bounds where
+/-- The degrees of the instance: every table's polynomial within its table's size, and the
+public weight within a given bound. -/
+noncomputable def Params.ofCantorBounds (d : ℕ) (hd : ∀ γ, (pub γ).natDegree ≤ d) :
+    (Params.ofCantor B hm σ words wordSum pub hPub).Bounds where
   witness := 2 ^ (n + 1)
   quotient := 2 ^ (n + 2 + 2)
   sigma := 2 ^ (n + 2)
-  pub := 2 ^ (n + 2)
+  pub := d
   cells := 2 ^ (n + 2)
   rows := 2 ^ n
   hSigma := natDegree_tablePoly_le _
-  hPub := fun γ => by
-    have hinj : Set.InjOn (fun i : cantorT B n × Fin 4 => (i.1 : F) + shift (B.β 1) i.2)
-        (univ : Finset (cantorT B n × Fin 4)) := fun i _ j _ h => by
-      obtain ⟨h1, h2⟩ := cantor_hT B hm _ i.1.2 _ j.1.2 _ _ h
-      exact Prod.ext (Subtype.ext h1) h2
-    have hc : (univ : Finset (cantorT B n × Fin 4)).card = 2 ^ (n + 2) := by
-      rw [Finset.card_univ]
-      exact Params.ofCantor_nCells B hm σ words wordSum
-    show (Lagrange.interpolate univ (fun i : cantorT B n × Fin 4 => (i.1 : F) + shift (B.β 1) i.2)
-      _).natDegree ≤ 2 ^ (n + 2)
-    refine natDegree_le_of_degree_le (le_of_lt (lt_of_lt_of_eq
-      (Lagrange.degree_interpolate_lt _ hinj) ?_))
-    rw [hc]
+  hPub := hd
   hCells := natDegree_digitPoly_le _
   hRows := by
     show (∏ x : cantorT B n, (X - C (x : F))).natDegree ≤ 2 ^ n
@@ -335,31 +349,31 @@ theorem claims_iff_accepts_ofCantor
     (Y : F) (hY : 1 + Y ≠ 0) (hY2 : 1 + Y ^ 2 ≠ 0)
     (stmt : Fin words → F) (α β γ t ρ s : F) (a : Fin 4 → F)
     (ht : ∀ i : Fin (n + 2 + 1 + 1), 1 + sq^[(i : ℕ)] t ≠ 0)
-    (hnz : (Params.ofCantor B hm σ words wordSum).claimDen α β t a s * (Params.ofCantor B hm σ words wordSum).vRows.eval t ≠ 0) :
+    (hnz : (Params.ofCantor B hm σ words wordSum pub hPub).claimDen α β t a s * (Params.ofCantor B hm σ words wordSum pub hPub).vRows.eval t ≠ 0) :
     (mle cW (Fin.cons ρ (Fin.cons (ρ ^ 2) (claimPoint 2 (n + 1) t)))
           = (∑ j, Params.opening ρ j * a j) / claimScale 2 (n + 1) t ∧
         mle (wiringTable B hm σ) (claimPoint 0 (n + 2) t) = s / claimScale 0 (n + 2) t ∧
         mle cQ (Fin.snoc (Fin.snoc (Fin.snoc (Fin.snoc (claimPoint 0 (n + 2 + 1 + 1) t)
-            ((Params.ofCantor B hm σ words wordSum).vCells.eval t / (Params.ofCantor B hm σ words wordSum).claimDen α β t a s)) ρ) (Y / (1 + Y))) (Y ^ 2 / (1 + Y ^ 2)))
-          = (Params.ofCantor B hm σ words wordSum).claimValue α β γ t ρ a s / ((1 + Y) * (1 + Y ^ 2))
+            ((Params.ofCantor B hm σ words wordSum pub hPub).vCells.eval t / (Params.ofCantor B hm σ words wordSum pub hPub).claimDen α β t a s)) ρ) (Y / (1 + Y))) (Y ^ 2 / (1 + Y ^ 2)))
+          = (Params.ofCantor B hm σ words wordSum pub hPub).claimValue α β γ t ρ a s / ((1 + Y) * (1 + Y ^ 2))
             / claimScale 0 (n + 2 + 1 + 1) t ∧
-        mle cQ (sumPoint (n + 2) Y) = (Params.ofCantor B hm σ words wordSum).target stmt γ / ((1 + Y) * (1 + Y ^ 2)))
-      ↔ (Params.ofCantor B hm σ words wordSum).Accepts stmt (witnessOfTable cW) (quotientsOfTable Y cQ) α β γ t a s ρ :=
-  claims_iff_accepts (Params.ofCantor B hm σ words wordSum) B hm (cantorCells B hm)
-    (Params.ofCantor_pt B hm σ words wordSum) rfl cW (wiringTable B hm σ) rfl cQ Y hY hY2 stmt
+        mle cQ (sumPoint (n + 2) Y) = (Params.ofCantor B hm σ words wordSum pub hPub).target stmt γ / ((1 + Y) * (1 + Y ^ 2)))
+      ↔ (Params.ofCantor B hm σ words wordSum pub hPub).Accepts stmt (witnessOfTable cW) (quotientsOfTable Y cQ) α β γ t a s ρ :=
+  claims_iff_accepts (Params.ofCantor B hm σ words wordSum pub hPub) B hm (cantorCells B hm)
+    (Params.ofCantor_pt B hm σ words wordSum pub hPub) rfl cW (wiringTable B hm σ) rfl cQ Y hY hY2 stmt
     α β γ t ρ s a ht hnz
 
 /-- **The instance's vanishing polynomials are the exact ones**, so the honest prover's quotients
 exist on it (`Params.honest_consistent`). -/
-theorem Params.ofCantor_exact : (Params.ofCantor B hm σ words wordSum).Exact := by
+theorem Params.ofCantor_exact : (Params.ofCantor B hm σ words wordSum pub hPub).Exact := by
   refine ⟨?_, rfl⟩
-  set P := Params.ofCantor B hm σ words wordSum with hP
+  set P := Params.ofCantor B hm σ words wordSum pub hPub with hP
   show (digitPoly (n + 2) : F[X]) = ∏ i : P.T × Fin 4, (X - C (P.pt i))
   obtain ⟨hmon, hdeg⟩ := digitPoly_monic_natDegree (F := F) (n + 2)
   have hqmon : (∏ i : P.T × Fin 4, (X - C (P.pt i))).Monic :=
     monic_prod_of_monic _ _ fun i _ => monic_X_sub_C _
   have hcard : Fintype.card (P.T × Fin 4) = 2 ^ (n + 2) :=
-    Params.ofCantor_nCells B hm σ words wordSum
+    Params.ofCantor_nCells B hm σ words wordSum pub hPub
   have hqdeg : (∏ i : P.T × Fin 4, (X - C (P.pt i))).natDegree = 2 ^ (n + 2) := by
     rw [natDegree_prod_of_monic _ _ fun i _ => monic_X_sub_C _]
     simp [hcard]
@@ -389,40 +403,47 @@ section Sizes
 variable {F : Type} [Field F] [DecidableEq F] [CharP F 2] [Fintype F] [SampleableType F]
 variable {N : ℕ} (B : CantorBasis F N) (hm : 20 + 2 ≤ N)
   (σ : Equiv.Perm (Fin (20 + 2) → Bool))
-  (wordSum : Fin 8 → ((Fin (20 + 2) → Bool) → F) →ₗ[F] F)
+  (wordSum : Fin 8 → ((Fin (20 + 2) → Bool) → F) →ₗ[F] F) (pub : F → F[X])
+  (hPub : ∀ (γ : F) (w : (Fin (20 + 2) → Bool) → F),
+    ∑ x, (pub γ).eval (B.point x) * w x = ∑ J : Fin 8, γ ^ (J : ℕ) * wordSum J w)
+  (hd : ∀ γ, (pub γ).natDegree ≤ 2 ^ 22 + 9 * 2 ^ 10)
 
 theorem Params.ofCantor_identity :
-    (Params.ofCantorBounds B hm σ 8 wordSum).identity ≤ 2 ^ 27 := by
+    (Params.ofCantorBounds B hm σ 8 wordSum pub hPub _ hd).identity ≤ 2 ^ 27 := by
   norm_num [Params.Bounds.identity, Params.Bounds.denominator, Params.Bounds.cell,
     Params.ofCantorBounds]
 
 open OracleComp OracleSpec in
-/-- **128 bits, with no size left as a hypothesis.** On the instance of `2^20` rows and eight
-public words over a field of `2^192` elements, an adversary making `Q` queries wins with
-probability at most `(Q + 3) / 2^128`. -/
+/-- **128 bits on the instance.** With `2^20` rows and eight public words over a field of `2^192`
+elements, and a public weight of degree at most `2^22 + 9 * 2^10`, an adversary making `Q`
+queries wins with probability at most `(Q + 3) / 2^128`. -/
 theorem knowledgeSoundness_ofCantor (hq : Fintype.card F = 2 ^ 192)
-    (adv : OracleComp (ofFn (Answer (Params.ofCantor B hm σ 8 wordSum)
-      (Params.ofCantorBounds B hm σ 8 wordSum)))
-      (Proof (Params.ofCantor B hm σ 8 wordSum) (Params.ofCantorBounds B hm σ 8 wordSum)))
+    (adv : OracleComp (ofFn (Answer (Params.ofCantor B hm σ 8 wordSum pub hPub)
+      (Params.ofCantorBounds B hm σ 8 wordSum pub hPub _ hd)))
+      (Proof (Params.ofCantor B hm σ 8 wordSum pub hPub)
+        (Params.ofCantorBounds B hm σ 8 wordSum pub hPub _ hd)))
     (Q : ℕ) (hQ : IsTotalQueryBound adv Q) :
     Pr{let r ← (simulateQ randomOracle (experiment adv)).run' ∅}[
-        r.2 = true ∧ ¬ (Params.ofCantor B hm σ 8 wordSum).Sat r.1.stmt
-          ((Params.ofCantor B hm σ 8 wordSum).cells r.1.g.1)]
+        r.2 = true ∧ ¬ (Params.ofCantor B hm σ 8 wordSum pub hPub).Sat r.1.stmt
+          ((Params.ofCantor B hm σ 8 wordSum pub hPub).cells r.1.g.1)]
       ≤ ((Q + 3 : ℕ) : ENNReal) * (((1 / 2 ^ 128 : NNReal) : NNReal) : ENNReal) :=
-  knowledgeSoundness_bits (P := Params.ofCantor B hm σ 8 wordSum)
-    (B := Params.ofCantorBounds B hm σ 8 wordSum) hq
-    (Params.ofCantor_nCells B hm σ 8 wordSum) rfl (Params.ofCantor_identity B hm σ wordSum)
-    adv Q hQ
+  knowledgeSoundness_bits (P := Params.ofCantor B hm σ 8 wordSum pub hPub)
+    (B := Params.ofCantorBounds B hm σ 8 wordSum pub hPub _ hd) hq
+    (Params.ofCantor_nCells B hm σ 8 wordSum pub hPub) rfl
+    (Params.ofCantor_identity B hm σ wordSum pub hPub hd) adv Q hQ
 
-/-- **The instance exists** in every field of `2^192` elements: a Cantor basis, hence parameters
-of `2^22` cells and eight public words whose identities have degree at most `2^27`. -/
+omit [SampleableType F] in
+/-- **The instance exists** in every field of `2^192` elements: a Cantor basis and, for any
+wiring and public words, a public weight within the degree the theorem above asks. -/
 theorem exists_instance (hq : Fintype.card F = 2 ^ 192) :
-    ∃ B : CantorBasis F (20 + 2), ∀ σ wordSum,
-      (Params.ofCantor B le_rfl σ 8 wordSum).nCells = 2 ^ 22 ∧
-        (Params.ofCantorBounds B le_rfl σ 8 wordSum).identity ≤ 2 ^ 27 := by
+    ∃ B : CantorBasis F (20 + 2), ∀ wordSum : Fin 8 → ((Fin (20 + 2) → Bool) → F) →ₗ[F] F,
+      ∃ pub : F → F[X], (∀ (γ : F) (w : (Fin (20 + 2) → Bool) → F),
+          ∑ x, (pub γ).eval (B.point x) * w x = ∑ J : Fin 8, γ ^ (J : ℕ) * wordSum J w) ∧
+        ∀ γ, (pub γ).natDegree ≤ 2 ^ 22 + 9 * 2 ^ 10 := by
   obtain ⟨B⟩ := exists_cantorBasis_big hq (20 + 2) (by norm_num) (by norm_num)
-  exact ⟨B, fun σ wordSum => ⟨Params.ofCantor_nCells B le_rfl σ 8 wordSum,
-    Params.ofCantor_identity B le_rfl σ wordSum⟩⟩
+  refine ⟨B, fun wordSum => ?_⟩
+  obtain ⟨pub, h1, h2⟩ := exists_pub B le_rfl 8 wordSum
+  exact ⟨pub, h1, fun γ => (h2 γ).trans (by norm_num)⟩
 
 end Sizes
 

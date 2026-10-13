@@ -207,3 +207,7 @@ import QuotientSecurity.Concrete
 /-- info: 'QuotientSecurity.CantorBasis.point_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.CantorBasis.point_injective
+
+/-- info: 'QuotientSecurity.exists_pub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.exists_pub
