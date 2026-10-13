@@ -365,7 +365,12 @@ impl LeafShape {
     }
 
     /// The shape a proof's first scalars announce, if they are a valid announcement.
+    ///
+    /// A zero-knowledge proof has none here: no node verifies one yet.
     fn announced(proof: &Proof) -> Option<Self> {
+        if proof.is_zero_knowledge() {
+            return None;
+        }
         let mut narg = proof.0.narg.as_slice();
         let scalars: [F192; Announcement::LEN] =
             std::array::from_fn(|_| F192::from_narg(&mut narg).unwrap_or_default());

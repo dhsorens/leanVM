@@ -26,6 +26,15 @@
 //!
 //! What a program reads there, it must check itself.
 //!
+//! # Zero knowledge
+//!
+//! A plain proof hides nothing: a verifier who guesses the advice can recompute the proof and compare.
+//!
+//! A prover made zero knowledge proves the same statement and reveals nothing of the advice or the run beyond its shape.
+//!
+//! - The shape is each table's height and the rate.
+//! - A program whose advice is private must therefore prove at a fixed public shape.
+//!
 //! # Examples
 //!
 //! ```no_run
@@ -83,6 +92,7 @@ pub use rec::tree::{
     FalseClaim, Kind, Leaf, LeafShape, Part, TableStats, Tier, Tree, TreeError, TreeProof, TreeShape, Unsatisfied,
 };
 pub use rv::{ElfError, ProgramError, Region, Trap, asm};
+pub use zk::Randomness;
 
 #[doc(hidden)]
 pub use crate::pcs::{MAX_MU, MIN_MU};

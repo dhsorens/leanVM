@@ -1,7 +1,7 @@
 //! The verifier's core of one RISC-V proof, in rows: every check that depends on the proof.
 
 use super::{Rows, infallible};
-use crate::cpu::{Announcement, CpuError, DeferredClaims, Layout, Program};
+use crate::cpu::{Announcement, CpuError, DeferredClaims, Layout, Program, ProofKind};
 use crate::pcs::Rate;
 use crate::rec::circuit::{Builder, Dw, Ew, Kw};
 use crate::rec::transcript::{ProofSource, Transcript};
@@ -33,7 +33,7 @@ impl<'p> ProofShape<'p> {
     ///
     /// Refuses what the native verifier refuses of an announcement: a height out of range, or a witness the commitment does not take.
     pub fn new(program: &'p Program, taus: PerTable<usize>, rate: Rate) -> Result<Self, CpuError> {
-        let layout = Layout::announced(program.rv(), taus)?;
+        let layout = Layout::announced(program.rv(), taus, ProofKind::Plain)?;
         Ok(Self {
             program,
             taus,

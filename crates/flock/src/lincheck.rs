@@ -587,6 +587,21 @@ impl MatrixForm {
             .bilinear_form(self.alpha, &eq_inner, &w_col)
             .unwrap_or_else(|| inner_product(&circuit.fold_alpha_batched(self.alpha, &eq_inner), &w_col))
     }
+
+    /// The form's weight on each bit slice, so that its value is `sum_i s_hat_v[i] * weights[i]`.
+    ///
+    /// The form is linear in its slices, and the weights depend on its other coordinates alone.
+    #[must_use]
+    pub fn slice_weights(&self, circuit: &dyn LincheckCircuit) -> Vec<F192> {
+        let n_slices = self.s_hat_v.len();
+        let eq_inner = build_quirky_eq_table(self.z_skip, &self.x_inner_rest, n_slices.ilog2() as usize);
+        let marginal = circuit.fold_alpha_batched(self.alpha, &eq_inner);
+        let eq_rest = eq_table(&self.r_inner_rest);
+        // Column j * n_slices + i takes eq_rest[j] times slice i.
+        (0..n_slices)
+            .map(|i| (eq_rest.iter().enumerate()).fold(F192::ZERO, |acc, (j, &e)| acc + e * marginal[j * n_slices + i]))
+            .collect()
+    }
 }
 
 /// What the deferred replay leaves to the circuit: the terminal identity holds exactly when the form takes the value.
@@ -1349,6 +1364,29 @@ mod tests {
                 }
                 assert_eq!(slice, want, "slice {s}, m={m}, k_log={k_log}, k_skip={k_skip}");
             }
+        }
+    }
+
+    #[test]
+    fn a_form_is_its_slices_against_their_weights() {
+        // Invariant: the form is linear in its slices, with weights fixed by its other coordinates.
+        //
+        //     evaluate(form)  =  sum_i s_hat_v[i] * slice_weights(form)[i]
+        //
+        // Fixture state, (k_log, k_skip): no skip, a partial skip, the whole instance skipped.
+        for (k_log, k_skip) in [(6, 0), (6, 3), (7, 4), (6, 6)] {
+            let mut rng = Rng::new(88 + (k_log * 10 + k_skip) as u64);
+            let f = Fixture::new(10, k_log, k_skip, 3, &mut rng);
+            let form = MatrixForm {
+                alpha: rng.ext(),
+                z_skip: rng.ext(),
+                x_inner_rest: rng.ext_vec(k_log - k_skip),
+                r_inner_rest: rng.ext_vec(k_log - k_skip),
+                s_hat_v: rng.ext_vec(1 << k_skip),
+            };
+            let weights = form.slice_weights(&f.circuit);
+            let linear = (form.s_hat_v.iter().zip(&weights)).fold(F192::ZERO, |acc, (&s, &w)| acc + s * w);
+            assert_eq!(form.evaluate(&f.circuit), linear, "k_log={k_log}, k_skip={k_skip}");
         }
     }
 
