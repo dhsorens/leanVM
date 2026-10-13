@@ -16,9 +16,9 @@
 //! The next pass folds four rows into one and sums the next two rounds' polynomial on the way.
 //! Memory is therefore read once every two rounds.
 
-use super::lanes::{Lane, Lanes, Polynomial, Xor};
 use crate::PAR_THRESHOLD;
 use parallel::SendPtr;
+use primitives::field::lanes::{Lane, Lanes, Polynomial, Xor};
 use primitives::field::{F192, F192Unreduced};
 use primitives::multilinear::SplitEq;
 use primitives::stream::{Stream, prefetch};

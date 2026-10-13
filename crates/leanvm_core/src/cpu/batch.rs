@@ -10,13 +10,12 @@
 //! numbers: its summand is its forms' part on them alone, which the batch folds so that their bits share its point.
 
 use super::layout::Layout;
-use crate::colval::ColVal;
+use crate::bus;
+use crate::bus::{BusForm, BusProof, BusVerify, PackedForm, Producer};
 use crate::constraints::{Air, BitColumns, Residual, Summand};
-use crate::leaf;
-use crate::leaf::{BusForm, BusProof, BusVerify, PackedForm, Producer};
 use crate::tables::ClassTable;
 use fiat_shamir::arith::{Arith, Native};
-use primitives::field::F192;
+use primitives::field::{F192, Subfield};
 
 /// The two bus sides' weights in the batch, `1` and `xi`, shared by every table.
 ///
@@ -182,7 +181,7 @@ pub(super) struct ProducerTerm {
 
 impl Summand for Term {
     #[inline(always)]
-    fn eval<T: ColVal>(&self, cols: &[T], quadratic: bool) -> F192 {
+    fn eval<T: Subfield>(&self, cols: &[T], quadratic: bool) -> F192 {
         match self {
             Self::Table(bus) => T::reduce(bus.eval_unreduced(cols, quadratic)),
             // `sum_i c_i * (1 + b_i * P'_i)`, whose quadratic part is the products.
@@ -205,7 +204,7 @@ impl Summand for Term {
         match self {
             Self::Table(_) => Vec::new(),
             // Short of the program's columns, which the program claim settles.
-            Self::Producer(s) => leaf::producer_affine_evals(&mut Native, &s.producer, &s.weights, s.beta, chi),
+            Self::Producer(s) => bus::producer_affine_evals(&mut Native, &s.producer, &s.weights, s.beta, chi),
         }
     }
 }
@@ -330,7 +329,7 @@ impl<A: Arith> Residual<A> for OwedTerm<'_, A::E> {
                 weights,
                 beta,
                 ..
-            } => leaf::producer_affine_evals(a, producer, weights, *beta, chi),
+            } => bus::producer_affine_evals(a, producer, weights, *beta, chi),
         }
     }
 }

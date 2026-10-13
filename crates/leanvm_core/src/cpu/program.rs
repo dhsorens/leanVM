@@ -13,14 +13,13 @@ use super::reduce::TableClaims;
 use super::witness::Witness;
 use super::zero_knowledge;
 use super::{Output, Proof, Prover};
-use crate::class_flock::FlockId;
+use crate::bus::PublicColumns;
+use crate::commitment::{Committed, Rate, RingSwitch, StackClaim};
 use crate::constraints::{Claims, Columns};
-use crate::leaf::PublicColumns;
-use crate::pcs::{Committed, Rate, RingSwitch, StackClaim};
 use crate::rv::{ElfError, Guest, Machine, ProgramError, Region, RiscvProgram};
-use crate::tables::{ClassTable, Clock, PerTable, TableId};
-use crate::witness::StackShape;
-use crate::{constraints, leaf};
+use crate::stacking::StackShape;
+use crate::tables::{CircuitId, ClassTable, Clock, PerTable, TableId};
+use crate::{bus, constraints};
 use fiat_shamir::arith::Native;
 use fiat_shamir::{ProverState, SessionId, VerifierState};
 use flock::reduction;
@@ -283,7 +282,7 @@ impl Program {
         let reductions = std::mem::take(&mut w.reductions);
         let l = &w.layout;
         let slices = info_span!("Flock reductions").in_scope(|| {
-            let instances: Vec<reduction::Instance<'_>> = (FlockId::ALL.into_iter().zip(&reductions))
+            let instances: Vec<reduction::Instance<'_>> = (CircuitId::ALL.into_iter().zip(&reductions))
                 .map(|(f, tables)| {
                     let window = l.witness_window(f);
                     let column = &w.q[window.offset..window.offset + (1 << window.n_vars)];
@@ -300,7 +299,7 @@ impl Program {
         let (bus_claims, table_claims) = {
             let cols = w.columns();
             let mut bus = info_span!("Prove bus").in_scope(|| {
-                leaf::prove_balance(&l.push, &l.pull, &l.producers, l.grinding, &cols, spans.as_slice(), ps)
+                bus::prove_balance(&l.push, &l.pull, &l.producers, l.grinding, &cols, spans.as_slice(), ps)
             });
             // A settled table's columns at the bus point, short of its register numbers, which the batch folds.
             let settled: Vec<Claims> = (ClassTable::all().iter())
@@ -466,7 +465,7 @@ impl Program {
     pub(super) fn committed_size(&self, row_counts: PerTable<usize>, kind: ProofKind) -> Result<usize, ProveError> {
         let taus = PerTable::from_fn(|t: TableId| crate::log2_strict_usize(t.spec().provable_height(row_counts[t])));
         let (placements, shape) = Sizes::of(&self.rv).stack(&taus);
-        let placed = crate::witness::committed_len(&placements);
+        let placed = crate::stacking::committed_len(&placements);
         // A zero-knowledge proof commits the hiding stack: lanes long enough to hide, then the random group.
         let (mu, committed) = match kind {
             ProofKind::Plain => (shape.mu, placed),
@@ -475,7 +474,7 @@ impl Program {
                 (hiding.mu, hiding.committed_len())
             }
         };
-        if mu > crate::pcs::MAX_MU {
+        if mu > crate::commitment::MAX_MU {
             return Err(ProveError::TooLong);
         }
         Ok(committed)
@@ -549,26 +548,31 @@ impl Stats {
             .iter()
             .map(|&(name, c)| {
                 let pct = 100.0 * c as f64 / base_cycles as f64;
-                format!("{name} 2^{} ({pct:.1}%)", primitives::pretty_f64((c as f64).log2()))
+                format!("{name} 2^{} ({pct:.1}%)", log2_label(c))
             })
             .collect();
 
         // The committed size, as a power of two.
-        let log2 = |n: usize| primitives::pretty_f64((n.max(1) as f64).log2());
-        parts.push(format!("TOTAL_COMMITTED 2^{}", log2(self.committed)));
+        parts.push(format!("TOTAL_COMMITTED 2^{}", log2_label(self.committed)));
         parts.join("  ")
     }
+}
+
+/// `log2(n)` to three decimals, trailing zeros dropped: `1536` gives `10.585`, `1024` gives `10`.
+fn log2_label(n: usize) -> String {
+    let label = format!("{:.3}", (n.max(1) as f64).log2());
+    label.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bus::Coord;
+    use crate::bus::tests::unmatched_leaves;
+    use crate::commitment::Rate;
     use crate::cpu::execute::Row;
     use crate::cpu::filler::JUMP;
     use crate::cpu::layout::{Framework, Shared};
-    use crate::leaf::Coord;
-    use crate::leaf::tests::unmatched_leaves;
-    use crate::pcs::Rate;
     use crate::rv::asm::*;
     use crate::rv::semantics::Outcome;
     use crate::rv::{Alu, Class, Machine, ProgramError, Reg, RegisterFile, Trap};
@@ -784,7 +788,7 @@ mod tests {
         assert_eq!(program.run(&mut m, &mut counter), Err(ProveError::TooLong));
         let counts = counter.row_counts();
         let rows: usize = counts.values().sum();
-        assert!(rows < 1 << crate::pcs::MAX_MU, "{rows} rows counted");
+        assert!(rows < 1 << crate::commitment::MAX_MU, "{rows} rows counted");
         assert_eq!(
             program.committed_size(counts, ProofKind::Plain),
             Err(ProveError::TooLong)

@@ -6,8 +6,8 @@
 //! - Each flock circuit's two matrices at prefixes of one row point and one column point.
 
 use super::claims::DensePoly;
-use crate::class_flock::{FlockId, N_FLOCKS};
 use crate::rec::circuit::{Builder, Dw, Ew, Kw, Limbs, chain};
+use crate::tables::{CircuitId, N_CIRCUITS};
 use primitives::field::F192;
 use std::ops::Range;
 
@@ -111,7 +111,7 @@ impl StatementLayout {
         Self {
             n_dense,
             n_polys,
-            n_matrix: FlockId::MAX_K_LOG,
+            n_matrix: CircuitId::MAX_K_LOG,
         }
     }
 
@@ -128,7 +128,7 @@ impl StatementLayout {
             Section::DensePoint => self.n_dense,
             Section::DenseValues => self.n_polys,
             Section::Rows | Section::Cols => self.n_matrix,
-            Section::Matrices => 2 * N_FLOCKS,
+            Section::Matrices => 2 * N_CIRCUITS,
         }
     }
 
@@ -214,7 +214,7 @@ impl<E: Copy> TreeStatement<E> {
     }
 
     /// Flock circuit `f`'s two matrices at their prefixes of the points.
-    pub(crate) fn matrices(&self, f: FlockId) -> [E; 2] {
+    pub(crate) fn matrices(&self, f: CircuitId) -> [E; 2] {
         let m = self.section(Section::Matrices);
         [m[2 * f.index()], m[2 * f.index() + 1]]
     }

@@ -358,7 +358,7 @@ impl Arith for Native {
     }
 
     fn inv(&mut self, a: F192) -> F192 {
-        if a.is_zero() { F192::ZERO } else { a.inv() }
+        a.inv()
     }
 
     fn frobenius2(&mut self, a: F192) -> F192 {
@@ -370,35 +370,36 @@ impl Arith for Native {
     }
 }
 
+/// The native verifier computes in the clear, as the prover does.
 impl<H: DuplexSponge> Arith for VerifierState<'_, H> {
     type E = F192;
 
     fn constant(&mut self, c: F192) -> F192 {
-        c
+        Native.constant(c)
     }
 
     fn mul_add(&mut self, a: F192, b: F192, d: F192) -> F192 {
-        a * b + d
+        Native.mul_add(a, b, d)
     }
 
     fn add(&mut self, a: F192, d: F192) -> F192 {
-        a + d
+        Native.add(a, d)
     }
 
     fn mul_const_add(&mut self, a: F192, c: F192, d: F192) -> F192 {
-        a * c + d
+        Native.mul_const_add(a, c, d)
     }
 
     fn inv(&mut self, a: F192) -> F192 {
-        if a.is_zero() { F192::ZERO } else { a.inv() }
+        Native.inv(a)
     }
 
     fn frobenius2(&mut self, a: F192) -> F192 {
-        a.frobenius().frobenius()
+        Native.frobenius2(a)
     }
 
     fn public_mle(&mut self, values: &[F64], point: &[F192]) -> F192 {
-        mle_eval_par(values, point)
+        Native.public_mle(values, point)
     }
 }
 

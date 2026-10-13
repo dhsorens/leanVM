@@ -3,16 +3,16 @@
 // Modifications copyright 2026 Succinct Labs, Benedikt Bunz, William Wang.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! `φ₈: GF(2⁸) → F64`, embedded in F192.
+//! The embedding `phi_8: GF(2^8) -> K`, read in `E`.
 //!
-//! `im(φ₈) ⊂ F64`, hence all extension limbs above `c0` are zero. The
-//! homomorphism is checked exhaustively below.
+//! Its image lies in `K`, so every image's `c1` and `c2` are zero.
+//!
+//! A test checks the homomorphism on every pair.
 
 use super::{F8, F192};
 
-/// φ₈(2ᵏ) for k ∈ [0,8): the images of the GF(2⁸) polynomial basis. All in
-/// `F64` (`c1 == c2 == 0`).
-const PHI_8_BASIS: [u64; 8] = [
+/// `phi_8(2^k)` for `k < 8`: the images of the polynomial basis of `GF(2^8)`, as `K` words.
+const PHI8_BASIS: [u64; 8] = [
     0x0000000000000001,
     0x033ce8beddc8a656,
     0x512620375ed2a108,
@@ -23,15 +23,15 @@ const PHI_8_BASIS: [u64; 8] = [
     0x4418ae808b28bdd0,
 ];
 
-const fn build_phi8_table_192() -> [F192; 256] {
+const fn build_phi8_table() -> [F192; 256] {
     let mut table = [F192::ZERO; 256];
     let mut value = 1;
     while value < table.len() {
         let mut c0 = 0u64;
         let mut bit = 0;
-        while bit < PHI_8_BASIS.len() {
+        while bit < PHI8_BASIS.len() {
             if value & (1 << bit) != 0 {
-                c0 ^= PHI_8_BASIS[bit];
+                c0 ^= PHI8_BASIS[bit];
             }
             bit += 1;
         }
@@ -41,13 +41,15 @@ const fn build_phi8_table_192() -> [F192; 256] {
     table
 }
 
-/// The unique GF(2^8) subfield embedded in F192. It lies in the F64 base, so
-/// both higher extension coordinates are zero.
-pub static PHI_8_TABLE_192: [F192; 256] = build_phi8_table_192();
+/// `phi_8(a)` for every `a`, indexed by `a`'s byte.
+///
+/// Its image is the unique subfield of `E` with 256 elements.
+pub static PHI8_TABLE: [F192; 256] = build_phi8_table();
 
+/// `phi_8(a)`.
 #[inline]
-pub fn phi8_192(a: F8) -> F192 {
-    PHI_8_TABLE_192[a.0 as usize]
+pub fn phi8(a: F8) -> F192 {
+    PHI8_TABLE[a.0 as usize]
 }
 
 #[cfg(test)]
@@ -61,8 +63,8 @@ mod tests {
             for b in 0u16..256 {
                 let fa = F8(a as u8);
                 let fb = F8(b as u8);
-                assert_eq!(phi8_192(fa * fb), phi8_192(fa) * phi8_192(fb), "mul at a={a}, b={b}");
-                assert_eq!(phi8_192(fa + fb), phi8_192(fa) + phi8_192(fb), "add at a={a}, b={b}");
+                assert_eq!(phi8(fa * fb), phi8(fa) * phi8(fb), "mul at a={a}, b={b}");
+                assert_eq!(phi8(fa + fb), phi8(fa) + phi8(fb), "add at a={a}, b={b}");
             }
         }
     }

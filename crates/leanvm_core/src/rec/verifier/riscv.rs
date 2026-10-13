@@ -1,8 +1,8 @@
 //! The verifier's core of one RISC-V proof, in rows: every check that depends on the proof.
 
 use super::{Rows, infallible};
+use crate::commitment::Rate;
 use crate::cpu::{Announcement, CpuError, DeferredClaims, Layout, Program, ProofKind};
-use crate::pcs::Rate;
 use crate::rec::circuit::{Builder, Dw, Ew, Kw};
 use crate::rec::transcript::{ProofSource, Transcript};
 use crate::tables::{Clock, PerTable};
@@ -138,5 +138,325 @@ impl<'p> ProofShape<'p> {
             }
         }
         clock
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bus::BusError;
+    use crate::commitment::Rate;
+    use crate::cpu::{
+        CpuError, DeferredClaims, Output, Program, Proof, ProofKind, ProvenRun, Prover, UNGROUND_LOG_BYTECODE,
+    };
+    use crate::rec::circuit::{Builder, Ew, Finished, Unsatisfied};
+    use crate::rec::verifier::tests::{scalar, set_scalar};
+    use crate::tables::{N_TABLES, PerTable, TableId};
+
+    use crate::rec::transcript::ProofSource;
+    use crate::rv::Region;
+    use crate::rv::asm::*;
+    use fiat_shamir::{ProofTranscript, TranscriptError};
+
+    use pcs::merkle::Openings;
+
+    use primitives::field::F192;
+
+    use std::sync::OnceLock;
+    use zk::Randomness;
+
+    // A program with a loop, so that every framework block is read.
+    fn small_program() -> Program {
+        let text = Asm::new()
+            .li(Reg::T0, 0x0123_4567_89ab_cdef)
+            .li(Reg::T1, 9)
+            .r(Xor, Reg::A0, Reg::T0, Reg::T1)
+            .label("loop")
+            .i(Addi, Reg::T1, Reg::T1, -1)
+            .branch(Bne, Reg::T1, Reg::ZERO, "loop")
+            .exit()
+            .finish();
+        Program::new(&text, Region::TEXT.base(), vec![3, 5], 2, 0).expect("a valid program")
+    }
+
+    // One honest proof of the small program.
+    struct Fixture {
+        program: Program,
+        proof: ProofTranscript,
+        openings: Vec<Openings>,
+        output: Output,
+        taus: PerTable<usize>,
+        native: DeferredClaims,
+    }
+
+    // Proven once, shared by every test.
+    fn fixture() -> &'static Fixture {
+        static FIXTURE: OnceLock<Fixture> = OnceLock::new();
+        FIXTURE.get_or_init(|| {
+            let program = small_program();
+            let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN).prove(&program, &[]).expect("the run halts");
+            let native = program.verify_core(output, &proof).expect("an honest proof");
+            let openings = program.verify_recording(output, &proof).expect("an honest proof");
+            let taus = heights(&proof.0);
+            Fixture {
+                program,
+                proof: proof.0,
+                openings,
+                output,
+                taus,
+                native,
+            }
+        })
+    }
+
+    // The table heights a proof announces, its first messages.
+    fn heights(proof: &ProofTranscript) -> PerTable<usize> {
+        PerTable::from_fn(|t: TableId| usize::try_from(scalar(proof, t.index()).c0).expect("a height"))
+    }
+
+    // The byte where the flock reductions' first message starts: past the announcement, then the commitment's root.
+    const FLOCK_START: usize = 24 * (N_TABLES + 2) + 32;
+
+    impl Fixture {
+        // The core's rows over `source`: the builder, holding the wires' values, and the claims the core leaves.
+        fn build(&self, source: ProofSource<'_>) -> (Builder, DeferredClaims<Ew>) {
+            let shape =
+                ProofShape::new(&self.program, self.taus, Rate::MIN, ProofKind::Plain).expect("an honest shape");
+            let mut b = Builder::new();
+            let output = self.output.words().map(|o| b.free_k(o));
+            let core = shape.verify_core(&mut b, output, source);
+            (b, core.claims)
+        }
+
+        // The byte where the bus's first message starts: the shortest prefix of the proof the flock reductions read whole.
+        fn bus_start(&self) -> usize {
+            let messages: Vec<usize> = (0..(self.proof.narg.len() - FLOCK_START) / 24).collect();
+            FLOCK_START
+                + 24 * messages.partition_point(|&m| {
+                    let mut prefix = Proof(self.proof.clone(), ProofKind::Plain);
+                    prefix.0.narg.truncate(FLOCK_START + 24 * m);
+                    matches!(
+                        self.program.verify_core(self.output, &prefix),
+                        Err(CpuError::Reductions(_))
+                    )
+                })
+        }
+
+        // The checks a forged proof or forged openings fail, in the order the rows meet them.
+        fn failures(&self, proof: &ProofTranscript, openings: &[Openings]) -> Vec<String> {
+            let failures = self.build(ProofSource::Proof(proof, openings)).0.finish().failures;
+            failures.iter().map(Unsatisfied::to_string).collect()
+        }
+    }
+
+    fn values(b: &Builder, claims: &DeferredClaims<Ew>) -> DeferredClaims {
+        claims.map(|w| b.e(w))
+    }
+
+    #[test]
+    fn the_core_leaves_the_native_deferred_claims() {
+        let f = fixture();
+        let (b, claims) = f.build(ProofSource::Proof(&f.proof, &f.openings));
+        let got = values(&b, &claims);
+        assert_eq!(got.program, f.native.program, "the program claim");
+        for (i, (got, native)) in got.circuits.iter().zip(&f.native.circuits).enumerate() {
+            assert_eq!(got, native, "circuit {i}'s matrix claim");
+        }
+        assert_eq!(got, f.native);
+        f.program.check_deferred(&got).expect("the rows' claims settle");
+        let Finished { circuit, failures, .. } = b.finish();
+        assert!(failures.is_empty(), "{failures:?}");
+        assert!(
+            circuit == f.build(ProofSource::Shape).0.finish().circuit,
+            "the shape builds another circuit"
+        );
+    }
+
+    #[test]
+    fn a_tampered_proof_fails_where_the_native_verifier_does() {
+        let f = fixture();
+        let first = |proof: &ProofTranscript, openings: &[Openings]| {
+            f.failures(proof, openings).into_iter().next().unwrap_or_default()
+        };
+
+        // The GKR's root, the bus's first message: one bit of its second limb.
+        let mut forged = f.proof.clone();
+        forged.narg[f.bus_start() + 8] ^= 1;
+        let failure = first(&forged, &f.openings);
+        assert!(failure.starts_with("bus and tables"), "{failure}");
+
+        // The openings are the rows' witness: a sibling or the last leaf word of the first and the last phase.
+        for phase in [0, f.openings.len() - 1] {
+            let mut forged = f.openings.clone();
+            forged[phase].paths[1][0] ^= 1;
+            let failure = first(&f.proof, &forged);
+            assert!(failure.starts_with("opening / whir / rows"), "{failure}");
+
+            let mut forged = f.openings.clone();
+            let last = forged[phase].leaf_words - 1;
+            forged[phase].images[last].0 ^= 1;
+            let failure = first(&f.proof, &forged);
+            assert!(failure.starts_with("opening / whir / rows"), "{failure}");
+        }
+    }
+
+    #[test]
+    fn a_forged_announcement_is_refused_first() {
+        let f = fixture();
+        let clock = N_TABLES + 1;
+        let ts = scalar(&f.proof, clock);
+        let forge = |edit: &dyn Fn(&mut ProofTranscript)| {
+            let mut forged = f.proof.clone();
+            edit(&mut forged);
+            f.failures(&forged, &f.openings).into_iter().next().unwrap_or_default()
+        };
+        for t in 0..N_TABLES {
+            let failure = forge(&|p| set_scalar(p, t, F192::new(scalar(p, t).c0 + 1, 0, 0)));
+            assert!(failure.starts_with("announcement"), "height {t}: {failure}");
+        }
+        let edits: [(&str, F192); 7] = [
+            ("the rate", F192::new(2, 0, 0)),
+            ("a slot bit", F192::new(ts.c0 | 1, 0, 0)),
+            ("no live bit", F192::new(ts.c0 & !(1 << 40), 0, 0)),
+            ("a failure bit", F192::new(ts.c0 | 1 << 41, 0, 0)),
+            ("the top bit", F192::new(ts.c0 | 1 << 63, 0, 0)),
+            ("the second limb", F192::new(ts.c0, 1, 0)),
+            ("the third limb", F192::new(ts.c0, 0, 1)),
+        ];
+        for (i, (what, value)) in edits.into_iter().enumerate() {
+            let at = if i == 0 { N_TABLES } else { clock };
+            let failure = forge(&|p| set_scalar(p, at, value));
+            assert!(failure.starts_with("announcement"), "{what}: {failure}");
+        }
+        // A live clock at slot zero passes the announcement; the transcript then differs, and the first stage, flock, refuses it.
+        let failure = forge(&|p| set_scalar(p, clock, F192::new(ts.c0 + 32, 0, 0)));
+        assert!(failure.starts_with("flock"), "a later clock: {failure}");
+    }
+
+    // A program past the unground bytecode: its rows check the bus's proof of work, which a smaller program's never meet.
+    #[test]
+    fn a_large_programs_rows_check_its_grinding() {
+        // The exit, then nops nothing runs, enough for one bit of grinding.
+        let mut a = Asm::new();
+        a.li(Reg::A0, 7).exit();
+        for _ in 0..1 << UNGROUND_LOG_BYTECODE {
+            a.i(Addi, Reg::ZERO, Reg::ZERO, 0);
+        }
+        let program = Program::new(&a.finish(), Region::TEXT.base(), vec![], 0, 0).expect("a valid program");
+        let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN).prove(&program, &[]).expect("the run halts");
+        let f = Fixture {
+            native: program.verify_core(output, &proof).expect("an honest proof"),
+            openings: program.verify_recording(output, &proof).expect("an honest proof"),
+            taus: heights(&proof.0),
+            proof: proof.0.clone(),
+            program,
+            output,
+        };
+
+        // The rows leave the native claims, and the shape builds the same circuit.
+        let (b, claims) = f.build(ProofSource::Proof(&f.proof, &f.openings));
+        assert_eq!(values(&b, &claims), f.native);
+        let Finished { circuit, failures, .. } = b.finish();
+        assert!(failures.is_empty(), "{failures:?}");
+        assert!(circuit == f.build(ProofSource::Shape).0.finish().circuit);
+
+        // The nonce is the bus's first message: one the native verifier refuses for missing the work fails at the bus.
+        let missed = CpuError::Bus(BusError::Transcript(TranscriptError::PowFailed { bits: 1 }));
+        let nonce = f.bus_start();
+        let forged = (1..64)
+            .map(|step| {
+                let mut forged = proof.clone();
+                forged.0.narg[nonce] ^= step;
+                forged
+            })
+            .find(|forged| f.program.verify_core(f.output, forged).err() == Some(missed.clone()))
+            .expect("half the nonces miss one bit of work");
+        let failure = f
+            .failures(&forged.0, &f.openings)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        assert!(failure.starts_with("bus and tables"), "{failure}");
+    }
+
+    // One honest zero-knowledge proof of the small program.
+    struct ZkFixture {
+        program: Program,
+        proof: ProofTranscript,
+        openings: Vec<Openings>,
+        output: Output,
+        taus: PerTable<usize>,
+        native: DeferredClaims,
+    }
+
+    // Proven once, shared by the zero-knowledge tests.
+    fn zk_fixture() -> &'static ZkFixture {
+        static FIXTURE: OnceLock<ZkFixture> = OnceLock::new();
+        FIXTURE.get_or_init(|| {
+            let program = small_program();
+            let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN)
+                .zero_knowledge(Randomness::Fixed([11; 32]))
+                .prove(&program, &[])
+                .expect("the run halts");
+            let native = program.verify_core(output, &proof).expect("an honest proof");
+            let openings = program.verify_recording(output, &proof).expect("an honest proof");
+            // A zero-knowledge proof announces its heights first too.
+            let taus = heights(&proof.0);
+            ZkFixture {
+                program,
+                proof: proof.0,
+                openings,
+                output,
+                taus,
+                native,
+            }
+        })
+    }
+
+    impl ZkFixture {
+        // The zero-knowledge core's rows over `source`, and the claims it leaves.
+        fn build(&self, source: ProofSource<'_>) -> (Builder, DeferredClaims<Ew>) {
+            let shape = ProofShape::new(&self.program, self.taus, Rate::MIN, ProofKind::ZeroKnowledge)
+                .expect("an honest shape");
+            let mut b = Builder::new();
+            let output = self.output.words().map(|o| b.free_k(o));
+            let core = shape.verify_core(&mut b, output, source);
+            (b, core.claims)
+        }
+    }
+
+    #[test]
+    fn a_zero_knowledge_core_leaves_the_native_deferred_claims() {
+        // Invariant: the recorder over rows makes the record the native recorder makes, so the rows leave its claims.
+        //
+        // Those claims are already batched into the plain shape, and settle as a plain proof's.
+        let f = zk_fixture();
+        let (b, claims) = f.build(ProofSource::Proof(&f.proof, &f.openings));
+        let got = values(&b, &claims);
+        assert_eq!(got, f.native);
+        f.program.check_deferred(&got).expect("the rows' claims settle");
+        let Finished { circuit, failures, .. } = b.finish();
+        assert!(failures.is_empty(), "{failures:?}");
+
+        // The record depends on the shape alone: zeros in place of the proof build the same circuit.
+        assert!(
+            circuit == f.build(ProofSource::Shape).0.finish().circuit,
+            "the shape builds another circuit"
+        );
+    }
+
+    #[test]
+    fn a_tampered_zero_knowledge_proof_fails_in_rows() {
+        // Mutation: one bit of a hidden scalar, the first past the shape and the two roots; then one of the key opening's.
+        //
+        //     narg = [N_TABLES + 1 sizes | stack root | key root | hidden scalars ... | outer proof, key opening]
+        let f = zk_fixture();
+        let first_hidden = 24 * (N_TABLES + 1) + 2 * 32;
+        for at in [first_hidden + 8, f.proof.narg.len() - 24] {
+            let mut forged = f.proof.clone();
+            forged.narg[at] ^= 1;
+            let failures = f.build(ProofSource::Proof(&forged, &f.openings)).0.finish().failures;
+            assert!(!failures.is_empty(), "byte {at} tampered and the rows hold");
+        }
     }
 }

@@ -4,9 +4,8 @@
 //! The public table commits nothing: its blocks are the framework's.
 
 use super::circuit::{Assignment, WireKind};
-use crate::class_flock::{self, FlockId};
-use crate::leaf::{BusForm, Coord};
-use crate::tables::{PerTable, TableId, TableKey};
+use crate::bus::{BusForm, Coord};
+use crate::tables::{self, CircuitId, PerTable, TableId, TableKey};
 use Coord::{Col, Prod, Sum};
 use WireKind::{D, E, K};
 use flock::circuit::Circuit;
@@ -46,7 +45,7 @@ struct LimbOf {
 /// The packed BLAKE2s witness behind the hash table, which flock proves.
 ///
 /// The table's first columns are ports of it: the inputs `t`, `f`, `h0..h3`, `m0..m7`, then the outputs `o0..o3`.
-pub(crate) struct HashFlock;
+pub(crate) struct HashCircuit;
 
 /// A hash row's slots, in order:
 ///
@@ -117,7 +116,7 @@ impl Table {
         match self {
             Self::Emul => 9,
             Self::Exk => 7,
-            Self::Hash => HashFlock::N_PORTS + 1,
+            Self::Hash => HashCircuit::N_PORTS + 1,
             Self::Split => 65,
             Self::Cast => 4,
             Self::Pub => 0,
@@ -127,7 +126,7 @@ impl Table {
     /// How many of its columns are ports of its packed witness: its first.
     pub(crate) const fn n_ports(self) -> usize {
         if matches!(self, Self::Hash) {
-            HashFlock::N_PORTS
+            HashCircuit::N_PORTS
         } else {
             0
         }
@@ -136,7 +135,7 @@ impl Table {
     /// `log2` of its height for `rows` rows: a power of two, at flock's floor for the hash table.
     pub(crate) fn height_log(self, rows: usize) -> usize {
         match self {
-            Self::Hash => HashFlock::height_log(rows),
+            Self::Hash => HashCircuit::height_log(rows),
             _ => crate::log2_ceil_usize(rows.max(1)),
         }
     }
@@ -172,7 +171,7 @@ impl Table {
         let boolean = |c: usize| form(&[(c, F192::ONE)], vec![(c, c, F192::ONE)]);
         match self {
             // A Boolean mux bit; what a hash row hashes is its wiring's.
-            Self::Hash => vec![boolean(HashFlock::SEL)],
+            Self::Hash => vec![boolean(HashCircuit::SEL)],
             // A word is its bits, each Boolean.
             Self::Split => {
                 let word: Vec<(usize, F192)> = std::iter::once((0, F192::ONE))
@@ -279,12 +278,12 @@ impl SlotForm {
     /// `HASH`'s slots, over its ports and its mux bit.
     fn hash(s: usize) -> Option<Self> {
         let (t, f, h, m, o, sel) = (
-            HashFlock::T,
-            HashFlock::F,
-            HashFlock::H,
-            HashFlock::M,
-            HashFlock::O,
-            HashFlock::SEL,
+            HashCircuit::T,
+            HashCircuit::F,
+            HashCircuit::H,
+            HashCircuit::M,
+            HashCircuit::O,
+            HashCircuit::SEL,
         );
         match s {
             0 => Self::d(h),
@@ -334,7 +333,7 @@ impl TableKey<{ Self::COUNT }> for Table {
     }
 }
 
-impl HashFlock {
+impl HashCircuit {
     /// How many ports the hash table reads, at the witness's words `0..18`.
     pub(crate) const N_PORTS: usize = 18;
     const T: usize = 0;
@@ -346,21 +345,21 @@ impl HashFlock {
     const SEL: usize = Self::N_PORTS;
 
     /// The packed witness of the BLAKE2s class circuit, which proves every hash row.
-    pub(crate) const FLOCK: FlockId = FlockId::class(TableId::HASH).expect("the HASH class has a circuit");
+    pub(crate) const ID: CircuitId = CircuitId::class(TableId::HASH).expect("the HASH class has a circuit");
 
     /// The BLAKE2s compression circuit.
     pub(crate) fn circuit() -> &'static Circuit {
-        Self::FLOCK.circuit()
+        Self::ID.circuit()
     }
 
     /// `log2` of a hash row's packed words: the stride between consecutive rows' same-port words.
     pub(crate) const fn stride_log() -> usize {
-        Self::FLOCK.stride_log()
+        Self::ID.stride_log()
     }
 
     /// `log2` of the hash table's height for `rows` rows, at least flock's floor.
     const fn height_log(rows: usize) -> usize {
-        class_flock::batch_log(Self::FLOCK.k_log(), rows)
+        tables::batch_log(Self::ID.k_log(), rows)
     }
 }
 
@@ -414,10 +413,10 @@ mod tests {
     #[test]
     fn the_hash_ports_are_the_precompile_ports() {
         let ports: Vec<Word> = ClassSpec::HASH.ports().collect();
-        assert_eq!(ports.len(), HashFlock::N_PORTS);
-        assert_eq!((ports[HashFlock::T], ports[HashFlock::F]), (Word::V2, Word::Flags));
-        assert!((0..4).all(|i| ports[HashFlock::H + i] == Word::Cell(i as u8)));
-        assert!((0..8).all(|i| ports[HashFlock::M + i] == Word::Cell(8 + i as u8)));
-        assert!((0..4).all(|i| ports[HashFlock::O + i] == Word::CellNew(4 + i as u8)));
+        assert_eq!(ports.len(), HashCircuit::N_PORTS);
+        assert_eq!((ports[HashCircuit::T], ports[HashCircuit::F]), (Word::V2, Word::Flags));
+        assert!((0..4).all(|i| ports[HashCircuit::H + i] == Word::Cell(i as u8)));
+        assert!((0..8).all(|i| ports[HashCircuit::M + i] == Word::Cell(8 + i as u8)));
+        assert!((0..4).all(|i| ports[HashCircuit::O + i] == Word::CellNew(4 + i as u8)));
     }
 }

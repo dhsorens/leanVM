@@ -921,9 +921,10 @@ mod tests {
     use crate::ring_switch::SliceClaim;
     use crate::ring_switch::tests::s_hat_v_reference;
     use crate::whir::config::tests::{default_config, test_config_for};
-    use crate::whir::{MIN_LOG_N_HIDING, config_for_rate_hiding, hiding_lanes, inner_product_base_ext};
+    use crate::whir::{MIN_LOG_N_HIDING, config_for_rate_hiding, hiding_lanes};
     use fiat_shamir::{ProofTranscript, ProverState, SessionId, VerifierState};
     use primitives::bit_fold::BLOCK;
+    use primitives::multilinear::inner_product_base;
     use primitives::test_util::Rng;
     use rand_chacha::ChaCha20Rng;
     use rand_core::SeedableRng;
@@ -1197,7 +1198,7 @@ mod tests {
                 let offset = c * col_len;
                 let low_point = rng.ext_vec(col_vars);
                 let eq = eq_table(&low_point);
-                let value = inner_product_base_ext(&stack[offset..offset + col_len], &eq);
+                let value = inner_product_base(&stack[offset..offset + col_len], &eq);
                 StackClaim::Point {
                     offset,
                     low_point,
@@ -1388,7 +1389,7 @@ mod tests {
         // One point claim on the low column.
         let low_point = rng.ext_vec(12);
         let eq = eq_table(&low_point);
-        let value = inner_product_base_ext(&stack[..1 << 12], &eq);
+        let value = inner_product_base(&stack[..1 << 12], &eq);
         let point_claims = vec![StackClaim::Point {
             offset: 0,
             low_point,
@@ -1472,7 +1473,7 @@ mod tests {
             }];
             let offset = 2 << lane_vars;
             let low_point = rng.ext_vec(lane_vars);
-            let value = inner_product_base_ext(&stack[offset..offset + (1 << lane_vars)], &eq_table(&low_point));
+            let value = inner_product_base(&stack[offset..offset + (1 << lane_vars)], &eq_table(&low_point));
             let points = vec![StackClaim::Point {
                 offset,
                 low_point,
@@ -1611,7 +1612,7 @@ mod tests {
 
         // A weight on the data lane alone, word by word, and its sum.
         let weight = rng.ext_vec(lane);
-        let value = inner_product_base_ext(&stack[..lane], &weight);
+        let value = inner_product_base(&stack[..lane], &weight);
         let mut ps = ProverState::new(&SessionId::new(DOMAIN), &0u64);
         committed.open_weighted(&mut ps, &stack, Weighted { weight: &weight, value });
         let fs = ps.into_proof();

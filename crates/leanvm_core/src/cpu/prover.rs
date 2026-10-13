@@ -2,7 +2,7 @@
 
 use super::proof::ProofKind;
 use super::{Output, Program, Proof, ProveError, Stats};
-use crate::pcs::Rate;
+use crate::commitment::Rate;
 use tracing::info_span;
 use zk::Randomness;
 

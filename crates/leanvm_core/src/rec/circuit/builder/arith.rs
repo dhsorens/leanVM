@@ -98,7 +98,7 @@ impl Builder {
     /// `1 / a`, zero for zero: a hint the prover supplies, held to `a·(1/a) = 1`.
     pub fn inv(&mut self, a: Ew) -> Ew {
         let v = self.e(a);
-        let i = self.free_e(if v.is_zero() { F192::ZERO } else { v.inv() });
+        let i = self.free_e(v.inv());
         let p = self.mul(a, i);
         self.eq_e_const(p, F192::ONE);
         i

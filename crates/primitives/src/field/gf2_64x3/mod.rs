@@ -56,6 +56,44 @@ impl F192 {
         self.c0 == 0 && self.c1 == 0 && self.c2 == 0
     }
 
+    /// The element's 24 bytes: `c0, c1, c2`, each in little-endian order.
+    #[inline]
+    pub fn to_le_bytes(self) -> [u8; 24] {
+        let mut bytes = [0; 24];
+        for (chunk, c) in bytes.as_chunks_mut::<8>().0.iter_mut().zip([self.c0, self.c1, self.c2]) {
+            *chunk = c.to_le_bytes();
+        }
+        bytes
+    }
+
+    /// The element whose bytes [`Self::to_le_bytes`] gives.
+    ///
+    /// Every 24-byte string is an element.
+    #[inline]
+    pub const fn from_le_bytes(bytes: [u8; 24]) -> Self {
+        let chunks = bytes.as_chunks::<8>().0;
+        Self::new(
+            u64::from_le_bytes(chunks[0]),
+            u64::from_le_bytes(chunks[1]),
+            u64::from_le_bytes(chunks[2]),
+        )
+    }
+
+    /// The elements' coefficients as base-field words: `c0, c1, c2` of each, in order.
+    #[inline]
+    pub const fn coefficients(elements: &[Self]) -> &[F64] {
+        // SAFETY: `F192` is three `u64`s under `repr(C)`, and `F64` one under `repr(transparent)`.
+        // So the view covers exactly the slice's memory, and every word is a valid `F64`.
+        unsafe { core::slice::from_raw_parts(elements.as_ptr().cast::<F64>(), 3 * elements.len()) }
+    }
+
+    /// The elements' coefficients as mutable base-field words.
+    #[inline]
+    pub const fn coefficients_mut(elements: &mut [Self]) -> &mut [F64] {
+        // SAFETY: as for `coefficients`; the view borrows the slice mutably for its lifetime.
+        unsafe { core::slice::from_raw_parts_mut(elements.as_mut_ptr().cast::<F64>(), 3 * elements.len()) }
+    }
+
     /// Product without the base-field reduction, for XOR accumulation.
     #[inline]
     pub fn mul_unreduced(self, rhs: Self) -> F192Unreduced {
@@ -639,7 +677,29 @@ pub mod aarch64;
 pub mod x86_64;
 
 /// Portable fallback, and the reference every accelerated path is tested against.
-pub mod software;
+pub mod software {
+    use super::{F192, F192Unreduced};
+    use crate::field::gf2_64::software::clmul;
+
+    /// Schoolbook: nine base products into the five coefficients of y^0..y^4, then the y-fold.
+    pub fn mul_unreduced(a: F192, b: F192) -> F192Unreduced {
+        let (a, b) = ([a.c0, a.c1, a.c2], [b.c0, b.c1, b.c2]);
+        let mut e = [0u128; 5];
+        // a_i * b_j lands on y^(i + j).
+        for i in 0..3 {
+            for j in 0..3 {
+                e[i + j] ^= clmul(a[i], b[j]);
+            }
+        }
+        // y^3 = y + 1 and y^4 = y^2 + y.
+        F192Unreduced::from_wide([e[0] ^ e[3], e[1] ^ e[3] ^ e[4], e[2] ^ e[4]])
+    }
+
+    /// The reduced product.
+    pub fn mul(a: F192, b: F192) -> F192 {
+        mul_unreduced(a, b).reduce()
+    }
+}
 
 // Tests: every backend against the software reference, independent Python vectors, field axioms,
 // and computational irreducibility proofs for both moduli.

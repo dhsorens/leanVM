@@ -4,7 +4,7 @@
 //! `q̂(ζ, sel_i) = c` on the stack, where `sel_i` is the high-bit selector of
 //! the column's offset.
 
-use crate::pcs::{RingSwitch, SliceClaim, StackClaim};
+use crate::commitment::{RingSwitch, SliceClaim, StackClaim};
 use primitives::field::F64;
 
 /// What a column is, before it is placed.
@@ -123,8 +123,11 @@ impl StackShape {
     pub fn committed_len(&self) -> usize {
         // Both fields are `pub`, and in release the shift below would mask an
         // underflowed amount into a plausible wrong length rather than panic.
-        assert!(self.mu >= crate::pcs::LOG_BATCH, "a stack is at least one lane block");
-        self.committed_lanes() << (self.mu - crate::pcs::LOG_BATCH)
+        assert!(
+            self.mu >= crate::commitment::LOG_BATCH,
+            "a stack is at least one lane block"
+        );
+        self.committed_lanes() << (self.mu - crate::commitment::LOG_BATCH)
     }
 
     /// The hiding stack of `placed` words.
@@ -132,12 +135,12 @@ impl StackShape {
     /// - It is at least the hiding opening's smallest size.
     /// - It grows until its data lanes, the zero lanes and the random group fit the lanes a commitment holds.
     pub fn hiding(placed: usize) -> Self {
-        let lanes = 1usize << crate::pcs::LOG_BATCH;
-        let mut mu = primitives::log2_ceil_usize(placed.max(1))
-            .max(crate::pcs::MIN_MU)
+        let lanes = 1usize << crate::commitment::LOG_BATCH;
+        let mut mu = crate::log2_ceil_usize(placed.max(1))
+            .max(crate::commitment::MIN_MU)
             .max(pcs::whir::MIN_LOG_N_HIDING);
         loop {
-            let n_lanes = placed.div_ceil(1 << (mu - crate::pcs::LOG_BATCH)).max(1);
+            let n_lanes = placed.div_ceil(1 << (mu - crate::commitment::LOG_BATCH)).max(1);
             if pcs::whir::hiding_lanes(n_lanes) <= lanes {
                 return Self {
                     mu,
@@ -216,10 +219,10 @@ pub fn placements_of(sources: &[Source]) -> (Vec<Placement>, StackShape) {
         .collect();
     // Floor at the PCS minimum (WHIR's level ladder needs room); tiny
     // witnesses zero-pad up. Both sides derive this identically from the kappas.
-    let mu = crate::log2_ceil_usize(placed.max(1)).max(crate::pcs::MIN_MU);
+    let mu = crate::log2_ceil_usize(placed.max(1)).max(crate::commitment::MIN_MU);
     // The columns tile from 0, so the padding is the tail: round it up to a whole
     // lane and the lanes past that are never committed at all.
-    let n_lanes = placed.div_ceil(1 << (mu - crate::pcs::LOG_BATCH)).max(1);
+    let n_lanes = placed.div_ceil(1 << (mu - crate::commitment::LOG_BATCH)).max(1);
     (
         placements,
         StackShape {
@@ -278,7 +281,7 @@ mod tests {
     /// derive their layout from.
     #[test]
     fn placements_cover_the_columns_in_the_fewest_lanes() {
-        let lanes = 1usize << crate::pcs::LOG_BATCH;
+        let lanes = 1usize << crate::commitment::LOG_BATCH;
         // A power-of-two total, one word over one, one just under, a port
         // in the middle, and a stack far below the MIN_MU floor.
         let port = Source::Port {
@@ -297,9 +300,9 @@ mod tests {
             let placed: usize = kappas.iter().flatten().map(|k| 1usize << k).sum();
             let sources: Vec<Source> = kappas.iter().map(|k| k.map_or(port, Source::Committed)).collect();
             let (placements, shape) = placements_of(&sources);
-            let lane_block = 1usize << (shape.mu - crate::pcs::LOG_BATCH);
+            let lane_block = 1usize << (shape.mu - crate::commitment::LOG_BATCH);
 
-            assert_eq!(shape.mu, crate::log2_ceil_usize(placed).max(crate::pcs::MIN_MU));
+            assert_eq!(shape.mu, crate::log2_ceil_usize(placed).max(crate::commitment::MIN_MU));
             assert!((1..=lanes).contains(&shape.n_lanes), "lane count out of range");
             assert!(shape.committed_len() >= placed, "columns must fit the commitment");
             assert!(

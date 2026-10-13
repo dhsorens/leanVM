@@ -33,17 +33,14 @@
 //! are no rounds in which no table has joined.
 
 use crate::PAR_THRESHOLD;
-use crate::colval::{ColVal, padded_width};
 use fiat_shamir::arith::RoundPolynomial;
 use fiat_shamir::arith::{Arith, Verifier};
 use fiat_shamir::{ProverState, TranscriptError, VerifierState};
 use parallel::Chunks;
-use primitives::field::{F64, F192, F192Unreduced};
+use primitives::field::{F64, F192, F192Unreduced, Subfield, padded_width};
 use primitives::multilinear::{SplitEq, eq_table, poly_eval, shrink_eq_high};
 use std::ops::Deref;
 use thiserror::Error;
-
-mod rows;
 
 /// One table's columns' evaluations at its table-sumcheck point.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,10 +70,10 @@ pub enum ConstraintError {
 /// their `η`-powers, over the table's columns.
 ///
 /// Written once, generic over the column type: `K` in the round a table joins the
-/// batch, `E` after it (see [`ColVal`]).
+/// batch, `E` after it (see [`Subfield`]).
 pub trait Summand: Sync {
     /// The summand at `cols`; `quadratic` selects only its degree-two terms.
-    fn eval<T: ColVal>(&self, cols: &[T], quadratic: bool) -> F192;
+    fn eval<T: Subfield>(&self, cols: &[T], quadratic: bool) -> F192;
 
     /// The table's public columns at its point `chi`, which the verifier computes rather
     /// than reads: as many as the air's `n_public`. A caller may leave a part of them
@@ -279,14 +276,14 @@ pub fn xi_offsets(n_constraints: impl Iterator<Item = usize>) -> Vec<usize> {
 /// Generic in the column element: `K` before a table's columns are folded, `E` after.
 ///
 /// `#[inline(always)]` matters here, on this and on
-/// every `ColVal` method: this is the body of the constraint sumcheck's innermost
+/// every `Subfield` method: this is the body of the constraint sumcheck's innermost
 /// loop, and without it the generic stops inlining and costs measurable prover
 /// time. Nothing is lifted into `E`, so a `K` round evaluates the identity and the
 /// bus forms in 64-bit arithmetic, and its scratch is a third the size.
 ///
 /// With `rows`, a row at a time ([`rows`]), else in tiles of [`BLOCK`] rows.
 #[inline(always)]
-fn table_message<T: ColVal, C: Deref<Target = [T]> + Sync>(
+fn table_message<T: Subfield, C: Deref<Target = [T]> + Sync>(
     cols: &[C],
     summand: &impl Summand,
     half: usize,
@@ -333,7 +330,7 @@ const ROWS: bool = !cfg!(all(
 
 /// The message over `rows` rows, `block(scratch, acc, b)` adding rows `b * BLOCK..`
 /// with a zeroed `scratch` of `scratch_len` per worker.
-fn message_over_blocks<T: ColVal>(
+fn message_over_blocks<T: Subfield>(
     rows: usize,
     scratch_len: usize,
     block: impl Fn(&mut Vec<T>, &mut [F192Unreduced; 2], usize) + Sync,
@@ -363,7 +360,7 @@ fn message_over_blocks<T: ColVal>(
 /// Add one block's summands: `lo` and `hi` hold its rows at stride `width`, padded
 /// with zero columns, and `slope` is one row of scratch.
 #[inline(always)]
-fn block_summand<T: ColVal>(
+fn block_summand<T: Subfield>(
     summand: &impl Summand,
     eqr: &[F192],
     lo: &[T],
@@ -532,7 +529,7 @@ fn folded_message(
 }
 
 /// Convert the joining table's column layout into folded rows and its next message.
-fn fold_columns_and_message<T: ColVal + Into<F192>, C: Deref<Target = [T]> + Sync>(
+fn fold_columns_and_message<T: Subfield + Into<F192>, C: Deref<Target = [T]> + Sync>(
     cols: &[C],
     rk: F192,
     summand: &impl Summand,
@@ -634,7 +631,7 @@ fn fold_rows_and_message(
 
 /// `out[r * stride] = lo[r] + (lo[r] + hi[r])·rk` down one column, eight rows per batched product.
 #[inline(always)]
-fn interp_column<T: ColVal + Into<F192>>(out: &mut [F192], stride: usize, rk: F192, lo: &[T], hi: &[T]) {
+fn interp_column<T: Subfield + Into<F192>>(out: &mut [F192], stride: usize, rk: F192, lo: &[T], hi: &[T]) {
     let (lo8, lo_tail) = lo.as_chunks::<8>();
     let (hi8, hi_tail) = hi.as_chunks::<8>();
     for (g, (l, h)) in lo8.iter().zip(hi8).enumerate() {
@@ -746,6 +743,162 @@ pub fn verify<V: Verifier, S: Residual<V>>(
         residual,
         target_weight,
     })
+}
+
+mod rows {
+    //! The constraint message passes a row at a time, for targets where the tiles of
+    //! [`super::table_message`] and its folds do not pay.
+
+    use super::Summand;
+    use crate::PAR_THRESHOLD;
+    use parallel::Chunks;
+    use primitives::field::{F192, F192Unreduced, Subfield};
+    use std::mem::MaybeUninit;
+    use std::ops::Deref;
+
+    /// [`super::table_message`], one row at a time.
+    #[inline(always)]
+    pub(super) fn table_message<T: Subfield, C: Deref<Target = [T]> + Sync>(
+        cols: &[C],
+        summand: &impl Summand,
+        half: usize,
+        eqr: &[F192],
+        at_one: bool,
+    ) -> [F192; 2] {
+        let ncols = cols.len();
+        // The X² coefficient is Q(hi + lo); linear and constant terms cannot contribute.
+        let summand = |i: usize, scratch: &mut [T]| -> [F192Unreduced; 2] {
+            let e = eqr[i];
+            let (endpoint, slope) = scratch.split_at_mut(ncols);
+            for (ci, c) in cols.iter().enumerate() {
+                let (lo, hi) = (c[i], c[i + half]);
+                endpoint[ci] = if at_one { hi } else { lo };
+                slope[ci] = lo + hi;
+            }
+            [
+                e.mul_unreduced(summand.eval(endpoint, false)),
+                e.mul_unreduced(summand.eval(slope, true)),
+            ]
+        };
+        let xor = |a: [F192Unreduced; 2], b: [F192Unreduced; 2]| [a[0] ^ b[0], a[1] ^ b[1]];
+        let acc = if half >= PAR_THRESHOLD {
+            // The `2 * ncols` scratch is per-worker, not per-row: `map_reduce_with_state`
+            // creates it once and threads it through every row that worker claims.
+            parallel::map_reduce_with_state(
+                half,
+                || vec![T::ZERO; 2 * ncols],
+                || [F192Unreduced::ZERO; 2],
+                |scratch, acc, i| *acc = xor(*acc, summand(i, scratch)),
+                xor,
+            )
+        } else {
+            let mut scratch = vec![T::ZERO; 2 * ncols];
+            (0..half).fold([F192Unreduced::ZERO; 2], |acc, i| xor(acc, summand(i, &mut scratch)))
+        };
+        acc.map(F192Unreduced::reduce)
+    }
+
+    /// Fold two row pairs and accumulate their next-round summand before publishing the rows.
+    fn folded_message(
+        ncols: usize,
+        eqr: &[F192],
+        summand: &impl Summand,
+        at_one: bool,
+        fold: impl Fn(usize, &mut [F192], &mut [F192]) + Sync,
+    ) -> [F192; 2] {
+        let accumulate = |scratch: &mut Vec<F192>, acc: &mut [F192Unreduced; 2], i: usize| {
+            // Layout: [next low row | next high row | their difference].
+            let (lo, rest) = scratch.split_at_mut(ncols);
+            let (hi, slope) = rest.split_at_mut(ncols);
+            fold(i, lo, hi);
+            for c in 0..ncols {
+                slope[c] = lo[c] + hi[c];
+            }
+            let endpoint = if at_one { &*hi } else { &*lo };
+            // The quadratic coefficient depends only on the difference of the endpoint rows.
+            acc[0] ^= eqr[i].mul_unreduced(summand.eval(endpoint, false));
+            acc[1] ^= eqr[i].mul_unreduced(summand.eval(slope, true));
+        };
+        let acc = if eqr.len() >= PAR_THRESHOLD {
+            parallel::map_reduce_with_state(
+                eqr.len(),
+                || vec![F192::ZERO; 3 * ncols],
+                || [F192Unreduced::ZERO; 2],
+                accumulate,
+                |a, b| [a[0] ^ b[0], a[1] ^ b[1]],
+            )
+        } else {
+            // Reuse scratch across the small final rounds without dispatching workers.
+            let mut scratch = vec![F192::ZERO; 3 * ncols];
+            let mut acc = [F192Unreduced::ZERO; 2];
+            for i in 0..eqr.len() {
+                accumulate(&mut scratch, &mut acc, i);
+            }
+            acc
+        };
+        acc.map(F192Unreduced::reduce)
+    }
+
+    /// [`super::fold_columns_and_message`]'s row pairs, `half / 2` of them, written into every slot of `out`.
+    pub(super) fn fold_columns_and_message<T: Subfield + Into<F192>, C: Deref<Target = [T]> + Sync>(
+        cols: &[C],
+        out: &mut [MaybeUninit<F192>],
+        rk: F192,
+        summand: &impl Summand,
+        eqr: &[F192],
+        at_one: bool,
+    ) -> [F192; 2] {
+        let ncols = cols.len();
+        let half = cols[0].len() / 2;
+        let pairs = half / 2;
+        let interp = |a: T, b: T| a.into() + (a + b).mul_e(rk);
+        let (lo, hi) = out.split_at_mut(pairs * ncols);
+        let lo = Chunks::new(lo, ncols);
+        let hi = Chunks::new(hi, ncols);
+        folded_message(ncols, eqr, summand, at_one, |i, a, b| {
+            for (c, col) in cols.iter().enumerate() {
+                a[c] = interp(col[i], col[i + half]);
+                b[c] = interp(col[i + pairs], col[i + pairs + half]);
+            }
+            // SAFETY: task i owns row i in each disjoint output half for the whole dispatch.
+            unsafe {
+                lo.get(i).write_copy_of_slice(a);
+                hi.get(i).write_copy_of_slice(b);
+            }
+        })
+    }
+
+    /// [`super::fold_rows_and_message`]'s row pairs, in the four quarters of `table`'s rows.
+    pub(super) fn fold_rows_and_message(
+        table: &mut [F192],
+        ncols: usize,
+        rk: F192,
+        summand: &impl Summand,
+        eqr: &[F192],
+        at_one: bool,
+    ) -> [F192; 2] {
+        let half = table.len() / (2 * ncols);
+        let pairs = half / 2;
+        // Each task owns one row in all four quarters, including its two output rows.
+        let (left, right) = table.split_at_mut(half * ncols);
+        let (q0, q1) = left.split_at_mut(pairs * ncols);
+        let (q2, q3) = right.split_at_mut(pairs * ncols);
+        let q0 = Chunks::new(q0, ncols);
+        let q1 = Chunks::new(q1, ncols);
+        let q2 = Chunks::new(q2, ncols);
+        let q3 = Chunks::new(q3, ncols);
+        folded_message(ncols, eqr, summand, at_one, |i, a, b| {
+            // SAFETY: task i exclusively borrows row i in each disjoint quarter exactly once.
+            let (lo, hi, upper_lo, upper_hi) = unsafe { (q0.get(i), q1.get(i), q2.get(i), q3.get(i)) };
+            for c in 0..ncols {
+                a[c] = lo[c] + (lo[c] + upper_lo[c]) * rk;
+                b[c] = hi[c] + (hi[c] + upper_hi[c]) * rk;
+            }
+            // Read all four input rows before overwriting either output row.
+            lo.copy_from_slice(a);
+            hi.copy_from_slice(b);
+        })
+    }
 }
 
 #[cfg(test)]
@@ -873,7 +1026,7 @@ mod tests {
     }
 
     impl Summand for Synth {
-        fn eval<T: ColVal>(&self, v: &[T], quadratic: bool) -> F192 {
+        fn eval<T: Subfield>(&self, v: &[T], quadratic: bool) -> F192 {
             let p = &self.pows;
             if quadratic {
                 return (v[0] * v[1]).mul_e(p[0]);
@@ -885,7 +1038,7 @@ mod tests {
 
     #[test]
     fn round_coefficients_match_full_evaluations() {
-        fn check<T: ColVal + Into<F192>>(cols: &[Vec<T>]) {
+        fn check<T: Subfield + Into<F192>>(cols: &[Vec<T>]) {
             let synth = Synth {
                 pows: powers(F192::new(3, 5, 7), 3),
                 attached: true,
@@ -1069,7 +1222,7 @@ mod tests {
     fn constant_tables_need_no_columns() {
         struct Constant;
         impl Summand for Constant {
-            fn eval<T: ColVal>(&self, _: &[T], quadratic: bool) -> F192 {
+            fn eval<T: Subfield>(&self, _: &[T], quadratic: bool) -> F192 {
                 // A constant has no quadratic coefficient.
                 if quadratic { F192::ZERO } else { F192::ONE }
             }

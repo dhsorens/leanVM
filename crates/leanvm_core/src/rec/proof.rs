@@ -10,12 +10,12 @@ use super::bus::{BusBlocks, TableResidual, TableSummand};
 use super::circuit::{Assignment, Circuit, Compression, Limbs};
 use super::fixed::FixedColumns;
 use super::layout::RecLayout;
-use super::table::{HashFlock, Table};
+use super::table::{HashCircuit, Table};
+use crate::bus::PublicColumns;
+use crate::commitment::{Commitment, Committed, Rate, RingSwitch, StackClaim};
 use crate::constraints::{Columns, ConstraintError};
-use crate::leaf::PublicColumns;
-use crate::pcs::{Commitment, Committed, Rate, RingSwitch, StackClaim};
 use crate::rv::circuits::blake2s_witness;
-use crate::{constraints, witness};
+use crate::{constraints, stacking};
 use fiat_shamir::arith::Verifier;
 use fiat_shamir::{LengthPrefixed, ProofTranscript, ProverState, SessionId, VerifierState};
 use flock::FlockError;
@@ -57,12 +57,11 @@ pub(crate) struct TableArgument<'a> {
     blocks: BusBlocks,
 }
 
-impl HashFlock {
+impl HashCircuit {
     /// Every hash row's packed witness, at the hash table's height `2^tau`, written into `z`, and each row's ports
     /// into `ports`, every slot of which it writes.
     fn batch(hash: &[Compression], tau: usize, z: &mut [F64], ports: &mut [Box<[MaybeUninit<F64>]>]) -> HashBatch {
-        // SAFETY: `F64` is `repr(transparent)` over `u64`, and the packing is bit `i` at position `i` on both sides.
-        let z = unsafe { std::slice::from_raw_parts_mut(z.as_mut_ptr().cast::<u64>(), z.len()) };
+        let z = F64::as_bits_mut(z);
         let port_ptrs: Vec<SendPtr<F64>> = ports.iter_mut().map(|p| SendPtr(p.as_mut_ptr().cast())).collect();
         // A live row's ports are copied while its words are in cache; the padding rows' after.
         let ports_of = |row: &Compression, z: &[u64]| {
@@ -102,10 +101,9 @@ impl HashBatch {
     fn prove(self, layout: &RecLayout, q: &[F64], ps: &mut ProverState) -> RingSwitch {
         let window = layout.hash_window();
         let z = &q[window.offset..window.offset + (1 << window.n_vars)];
-        // SAFETY: `F64` is `repr(transparent)` over `u64`.
-        let z = unsafe { std::slice::from_raw_parts(z.as_ptr().cast::<u64>(), z.len()) };
+        let z = F64::as_bits(z);
         let instance = Instance {
-            block: HashFlock::circuit().block(),
+            block: HashCircuit::circuit().block(),
             n_blocks_log: self.tau,
             live: self.live,
             z,
@@ -123,17 +121,17 @@ impl RecWitness {
         let mut q = Box::new_uninit_slice(layout.shape.committed_len());
         // SAFETY: the owned tables and hash batch fill every committed window before it is read.
         // The pad tail is zeroed.
-        let mut windows = witness::split_stack(unsafe { primitives::write_only(&mut q) }, &layout.placements);
+        let mut windows = stacking::split_stack(unsafe { primitives::write_only(&mut q) }, &layout.placements);
         for table in Table::OWNED {
             table.fill(a, &mut windows[RecLayout::columns(table)]);
         }
 
         let tau = layout.tau(Table::Hash);
         // A port is not in the stack: its values are a buffer of their own, written by the batch.
-        let mut ports: Vec<Box<[MaybeUninit<F64>]>> = (0..HashFlock::N_PORTS)
+        let mut ports: Vec<Box<[MaybeUninit<F64>]>> = (0..HashCircuit::N_PORTS)
             .map(|_| Box::new_uninit_slice(1 << tau))
             .collect();
-        let batch = HashFlock::batch(&a.hash, tau, windows[RecLayout::HASH_WITNESS], &mut ports);
+        let batch = HashCircuit::batch(&a.hash, tau, windows[RecLayout::HASH_WITNESS], &mut ports);
         drop(windows);
         // SAFETY: the windows tile the stack up to its zeroed tail, and each was filled above.
         let q = unsafe { q.assume_init() }.into_vec();
@@ -222,7 +220,7 @@ impl<'a> TableArgument<'a> {
         rate: Rate,
     ) -> Result<MatrixClaim<V::E>, RecError> {
         let commitment = Commitment::read(v, self.layout.shape, rate)?;
-        let batch = (HashFlock::FLOCK.shape(), self.layout.tau(Table::Hash));
+        let batch = (HashCircuit::ID.shape(), self.layout.tau(Table::Hash));
         let [replay] = <[_; 1]>::try_from(v.scope("flock", |v| reduction::verify(&[batch], v))?)
             .unwrap_or_else(|_| unreachable!("a batch of one circuit"));
         let slots = v.scope("bus and tables", |v| self.verify(v))?;
@@ -240,7 +238,7 @@ impl Circuit {
     ///
     /// Returns an error if a table has more rows than its keys name, or the witness exceeds one commitment.
     pub fn committed_words(&self) -> Result<usize, RecError> {
-        Ok(witness::committed_len(&RecLayout::new(self)?.placements))
+        Ok(stacking::committed_len(&RecLayout::new(self)?.placements))
     }
 
     /// [`Self::prove_with`], building the circuit's fixed columns itself.
@@ -347,7 +345,7 @@ impl Circuit {
         let mut v = Recording::new(VerifierState::new(session, &instance(absorbed), proof));
         let fixed = fixed.map_or_else(|| Cow::Owned(FixedColumns::of(self, &layout.taus)), Cow::Borrowed);
         let matrices = TableArgument::of(&fixed, statement, &layout).verify_core(&mut v, rate)?;
-        matrices.check(HashFlock::circuit()).map_err(FlockError::Lincheck)?;
+        matrices.check(HashCircuit::circuit()).map_err(FlockError::Lincheck)?;
         Ok(v.into_openings())
     }
 }
@@ -355,8 +353,8 @@ impl Circuit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commitment::{self, Rate};
     use crate::constraints::ConstraintError;
-    use crate::pcs::{self, Rate};
     use crate::rec::circuit::{Builder, Dw, Ew, Finished, Kw, PARAM_IV};
     use fiat_shamir::arith::Arith;
     use std::panic::AssertUnwindSafe;
@@ -504,7 +502,7 @@ mod tests {
         let layout = RecLayout::new(&circuit).unwrap();
         let mut vs = VerifierState::new(&session(), &instance(&a.statement), &proof);
         Commitment::read(&mut vs, layout.shape, Rate::MIN).unwrap();
-        reduction::verify(&[(HashFlock::FLOCK.shape(), layout.tau(Table::Hash))], &mut vs).unwrap();
+        reduction::verify(&[(HashCircuit::ID.shape(), layout.tau(Table::Hash))], &mut vs).unwrap();
         let fixed = FixedColumns::of(&circuit, &layout.taus);
         let blocks = BusBlocks::new(&fixed, fixed.public_values(&a.statement), &layout);
         let bus = blocks.verify(&mut vs).unwrap();
@@ -643,8 +641,8 @@ mod tests {
     fn a_circuit_past_one_commitment_is_an_error() {
         let (mut circuit, a, _) = every_kind();
         let proof = prove_run(&circuit, &a);
-        circuit.floor[Table::Emul] = pcs::MAX_MU;
-        let too_long = |e: &RecError| matches!(e, RecError::TooLong { mu } if *mu > pcs::MAX_MU);
+        circuit.floor[Table::Emul] = commitment::MAX_MU;
+        let too_long = |e: &RecError| matches!(e, RecError::TooLong { mu } if *mu > commitment::MAX_MU);
         assert!(circuit.prove(&a, &session(), Rate::MIN).is_err_and(|e| too_long(&e)));
         assert!(verify_run(&circuit, &a.statement, &proof).is_err_and(|e| too_long(&e)));
 

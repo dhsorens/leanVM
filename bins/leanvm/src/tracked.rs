@@ -18,10 +18,10 @@
 
 use crate::refuse;
 use crate::workload::{Items, Workload};
+use bench::pretty_integer;
 use bench::{Heap, Metric, Plan, Timing, bencher_json};
 use leanvm::aggregate::{CircuitStats, Kind, Leaf, LeafShape, Tree, TreeError, TreeProof, TreeShape};
 use leanvm::{Output, ProvenRun, Prover, Rate, Stats};
-use primitives::pretty_integer;
 use serde_json::{Map, Value};
 use std::fmt::Write as _;
 use std::fs::OpenOptions;

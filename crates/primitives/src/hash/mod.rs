@@ -309,13 +309,31 @@ mod tests {
     use super::*;
     #[cfg(target_arch = "x86_64")]
     use crate::test_util::Rng;
-    use crate::test_util::test_vectors;
     #[cfg(target_arch = "aarch64")]
     use arm::Neon;
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     use x86::Avx2;
     #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
     use x86::Avx512;
+
+    /// The official unkeyed BLAKE2s-256 test vectors, as `(input, digest)` pairs.
+    ///
+    /// Input `n` is the `n` bytes `00 01 .. n-1`, for `n` in `0..256`: every length through four blocks.
+    ///
+    /// `test_vectors.txt` is extracted from `testvectors/blake2-kat.json` of <https://github.com/BLAKE2/BLAKE2>:
+    ///
+    /// ```text
+    /// jq -r '.[] | select(.hash == "blake2s" and .key == "") | .out' blake2-kat.json
+    /// ```
+    fn test_vectors() -> impl Iterator<Item = (Vec<u8>, [u8; OUT_LEN])> {
+        let lines: Vec<&str> = include_str!("test_vectors.txt").lines().collect();
+        assert_eq!(lines.len(), 256, "the vector file is truncated");
+        lines.into_iter().enumerate().map(|(n, line)| {
+            let input = (0..n).map(|i| i as u8).collect();
+            let digest = std::array::from_fn(|i| u8::from_str_radix(&line[2 * i..2 * i + 2], 16).unwrap());
+            (input, digest)
+        })
+    }
 
     #[test]
     fn continued_from_zero_prefix_matches_whole_image() {

@@ -14,21 +14,20 @@
 //! once wrapped. A claim-set node's places past its children are absent, their sets read as the empty set.
 
 use super::claims::{Bits, DenseClaim, DensePoly, DenseTerm, MatrixClaim, NodeClaims};
-use super::fixed::FixedLayout;
 use super::multiset::Capacity;
 use super::reduce::{DenseTables, DenseVars, Reduced};
 use super::statement::{Kind, Section, StatementLayout, TreeStatement, digest_halves_rows};
 use super::union::{UnionFill, UnionShape, union_rows};
 use super::{ClaimShape, TreeError, reduce};
-use crate::class_flock::FlockId;
+use crate::bus::N_TUPLE_BITS;
+use crate::commitment::Rate;
 use crate::cpu::{Claim, ProgramPoint};
-use crate::leaf::N_TUPLE_BITS;
-use crate::pcs::Rate;
 use crate::rec::circuit::{Builder, Dw, Ew, Finished, Kw};
-use crate::rec::fixed::FixedColumns;
-use crate::rec::table::{HashFlock, PerRecTable};
+use crate::rec::fixed::{FixedColumns, FixedLayout};
+use crate::rec::table::{HashCircuit, PerRecTable};
 use crate::rec::transcript::{ProofSource, Transcript};
 use crate::rec::verifier::{FixedHint, ProofShape, RecShape, Rows, infallible};
+use crate::tables::CircuitId;
 use fiat_shamir::arith::Arith;
 use fiat_shamir::{ProofTranscript, SessionId};
 use pcs::merkle::Openings;
@@ -367,7 +366,7 @@ impl<'p> Design<'p> {
             b.scope(format!("leaf {i} program"), |b| {
                 self.program_claims(b, &core.claims.program, inputs, &mut claims);
             });
-            let fresh = FlockId::ALL.into_iter().zip(&core.claims.circuits);
+            let fresh = CircuitId::ALL.into_iter().zip(&core.claims.circuits);
             claims.matrices.extend(fresh.map(|(f, c)| MatrixClaim::fresh(f, c)));
             outputs.push(output);
         }
@@ -421,7 +420,7 @@ impl<'p> Design<'p> {
             claims.bind_state(&mut b, rows.state);
             claims.bound.extend(rows.hints.iter().map(|h| h.value));
             claims.dense.push(self.fixed_claim(&rows.hints, &top, child_tier));
-            claims.matrices.push(MatrixClaim::fresh(HashFlock::FLOCK, &rows.matrix));
+            claims.matrices.push(MatrixClaim::fresh(HashCircuit::ID, &rows.matrix));
             self.carried(&statement, is_node, &mut claims);
             let digest = statement.digest_wire(&mut b);
             if self.claims.is_some() {
@@ -580,7 +579,7 @@ impl<'p> Design<'p> {
                 statement.dense_value(poly),
             ));
         }
-        for f in FlockId::ALL {
+        for f in CircuitId::ALL {
             claims.matrices.extend(MatrixClaim::carried(
                 f,
                 f.k_log(),

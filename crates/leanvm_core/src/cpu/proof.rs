@@ -80,8 +80,8 @@ impl Debug for Proof {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commitment::Rate;
     use crate::cpu::{Program, Prover};
-    use crate::pcs::Rate;
     use crate::rv::Region;
     use crate::rv::asm::{Addi, Asm, Reg};
 

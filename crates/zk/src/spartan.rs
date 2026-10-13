@@ -22,7 +22,7 @@ use fiat_shamir::ProverState;
 use fiat_shamir::TranscriptError;
 use fiat_shamir::arith::{Arith, Native, RoundPolynomial, Verifier};
 use primitives::field::F192;
-use primitives::multilinear::{eq_table, interp};
+use primitives::multilinear::{eq_table, fold_low_inplace};
 
 /// The claim the rows' sides take at the sumcheck's point, three sides batched by `gamma`.
 ///
@@ -118,7 +118,7 @@ pub(crate) fn prove(ps: &mut ProverState, sides: [Vec<F192>; 3], mask: &[F192]) 
         let ri: F192 = ps.verifier_message();
         prefix += (g0 + g1 * ri) * ri;
         for table in [&mut az, &mut bz, &mut cz] {
-            fold_low(table, ri);
+            fold_low_inplace(table, ri);
         }
         r.push(ri);
     }
@@ -185,20 +185,10 @@ fn mask_weight<A: Arith>(ar: &mut A, r: &[A::E]) -> Vec<A::E> {
     weight
 }
 
-/// Bind a table's lowest variable to `r`.
-fn fold_low(table: &mut Vec<F192>, r: F192) {
-    let half = table.len() / 2;
-    for k in 0..half {
-        table[k] = interp(table[2 * k], table[2 * k + 1], r);
-    }
-    table.truncate(half);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use fiat_shamir::{ProofTranscript, SessionId, VerifierState};
-    use primitives::multilinear::eq_table as eq;
     use primitives::test_util::Rng;
 
     /// A random satisfied system of `n` rows, as its three sides.
@@ -224,7 +214,7 @@ mod tests {
 
     /// Whether both claims hold against the sides and the mask.
     fn holds(claims: &Claims, sides: &[Vec<F192>; 3], mask: &[F192]) -> bool {
-        let e = eq(&claims.rows.point);
+        let e = eq_table(&claims.rows.point);
         let g = claims.rows.gamma;
         let rows = (0..sides[0].len()).fold(F192::ZERO, |acc, x| {
             acc + e[x] * (sides[0][x] + g * (sides[1][x] + g * sides[2][x]))

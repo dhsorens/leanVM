@@ -8,8 +8,8 @@
 //! A circuit of fewer variables waits on the rest in each phase, as the dense reduction's smaller polynomials do.
 
 use super::{FoldTable, Msg, ReduceError, ZERO, xor};
-use crate::class_flock::{FlockId, N_FLOCKS};
 use crate::rec::tree::claims::{Coefficient, ColWeight, MatrixClaim, RowWeight};
+use crate::tables::{CircuitId, N_CIRCUITS};
 use fiat_shamir::ProverState;
 use fiat_shamir::arith::RoundPolynomial;
 use fiat_shamir::arith::{Arith, Verifier};
@@ -85,7 +85,7 @@ impl<E: Copy + PartialEq> MatrixReduced<E> {
         let zero = v.zero();
         let mut claim = (claims.iter().zip(&powers)).fold(zero, |acc, (c, &p)| v.mul_add(p, c.value, acc));
         let phase = |v: &mut V, claim: &mut E| -> Result<Vec<E>, ReduceError> {
-            (0..FlockId::MAX_K_LOG)
+            (0..CircuitId::MAX_K_LOG)
                 .map(|_| {
                     let h = RoundPolynomial::read(v, 3, *claim, None)?.coeffs;
                     let x = v.verifier_message();
@@ -96,7 +96,7 @@ impl<E: Copy + PartialEq> MatrixReduced<E> {
         };
         let rows = phase(v, &mut claim)?;
         let cols = phase(v, &mut claim)?;
-        let values = (0..N_FLOCKS)
+        let values = (0..N_CIRCUITS)
             .map(|_| Ok([v.prover_message()?, v.prover_message()?]))
             .collect::<Result<Vec<_>, ReduceError>>()?;
         let weights = Self::final_weights(v, claims, &powers, &rows, &cols);
@@ -121,7 +121,7 @@ impl<E: Copy + PartialEq> MatrixReduced<E> {
         let skip_r = a.eq_table(&rows[..K_SKIP]);
         let skip_s = a.eq_table(&cols[..K_SKIP]);
         let zero = a.zero();
-        let mut weights = vec![[zero; 2]; N_FLOCKS];
+        let mut weights = vec![[zero; 2]; N_CIRCUITS];
         let (mut row_values, mut skips, mut col_eqs) = (Vec::new(), Vec::new(), Vec::new());
         for (c, &power) in claims.iter().zip(powers) {
             let k = c.circuit.k_log();
@@ -134,7 +134,7 @@ impl<E: Copy + PartialEq> MatrixReduced<E> {
             *wb = c.coefficients[1].times(a, g, *wb);
         }
         let mut lifts = Vec::new();
-        for (f, pair) in FlockId::ALL.into_iter().zip(&mut weights) {
+        for (f, pair) in CircuitId::ALL.into_iter().zip(&mut weights) {
             let k = f.k_log();
             let lift = shared(&mut lifts, k, || {
                 let lift_r = waiting(a, rows, k);
@@ -228,7 +228,7 @@ impl MatrixProver {
     pub(crate) fn prove(ps: &mut ProverState, claims: &[MatrixClaim<F192>]) {
         let theta = ps.verifier_message();
         let mut rows = Self::new(claims, theta);
-        let r: Vec<F192> = (0..FlockId::MAX_K_LOG)
+        let r: Vec<F192> = (0..CircuitId::MAX_K_LOG)
             .map(|i| {
                 ps.prover_messages(&rows.message());
                 let x = ps.verifier_message();
@@ -237,7 +237,7 @@ impl MatrixProver {
             })
             .collect();
         let mut cols = rows.columns(claims, &r);
-        for i in 0..FlockId::MAX_K_LOG {
+        for i in 0..CircuitId::MAX_K_LOG {
             ps.prover_messages(&cols.message());
             let x = ps.verifier_message();
             cols.bind(i, x);
@@ -287,8 +287,8 @@ impl MatrixProver {
 
     /// The column phase at the row point `r`: per circuit, two backward walks for `A(r, .)` and `B(r, .)`, and the claims' column weights.
     pub(crate) fn columns(&self, claims: &[MatrixClaim<F192>], r: &[F192]) -> ColumnPhase {
-        let mut circuits = parallel::map_collect(N_FLOCKS, |f| {
-            let f = FlockId::ALL[f];
+        let mut circuits = parallel::map_collect(N_CIRCUITS, |f| {
+            let f = CircuitId::ALL[f];
             let k = f.k_log();
             let circuit = f.circuit();
             let eq = eq_table(&r[..k]);
@@ -309,7 +309,7 @@ impl MatrixProver {
             [at, wa, bt, wb].map(FoldTable::new)
         });
         let message = each_mut(&mut circuits, |f, [at, wa, bt, wb]| {
-            if FlockId::ALL[f].k_log() > 0 {
+            if CircuitId::ALL[f].k_log() > 0 {
                 xor(FoldTable::message(wa, at), FoldTable::message(wb, bt))
             } else {
                 ZERO
@@ -338,7 +338,7 @@ impl ColumnPhase {
     /// Bind column round `i`'s variable to `x`, and build the next round's message from the folded pairs.
     pub(crate) fn bind(&mut self, i: usize, x: F192) {
         self.message = each_mut(&mut self.circuits, |f, [at, wa, bt, wb]| {
-            if FlockId::ALL[f].k_log() > i {
+            if CircuitId::ALL[f].k_log() > i {
                 xor(FoldTable::fold_pair(wa, at, x), FoldTable::fold_pair(wb, bt, x))
             } else {
                 ZERO
@@ -351,5 +351,88 @@ impl ColumnPhase {
         (self.circuits.iter())
             .flat_map(|[at, _, bt, _]| [at.values[0], bt.values[0]])
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cpu::Claim;
+    use crate::rec::table::HashCircuit;
+    use crate::rec::tree::reduce;
+
+    use fiat_shamir::{ProverState, SessionId, VerifierState};
+    use flock::lincheck::MatrixForm;
+    use primitives::test_util::Rng;
+
+    // Each circuit's matrices at random points: lincheck claims and both carried claims, on three circuits.
+    //
+    // The lincheck claims share their points as one batch leaves them: one alpha and one skip point, the other coordinates
+    // prefixes of shared ones; circuit 0 has a second claim at its first's point with other slices.
+    fn matrix_claims(rng: &mut Rng) -> Vec<MatrixClaim<F192>> {
+        let k_skip = flock::zerocheck::K_SKIP;
+        let (alpha, z_skip) = (rng.ext(), rng.ext());
+        let (x, r) = (rng.ext_vec(16), rng.ext_vec(16));
+        let mut claims = Vec::new();
+        let first = CircuitId::ALL[0];
+        for (i, f) in [first, first, CircuitId::ALL[3], HashCircuit::ID]
+            .into_iter()
+            .enumerate()
+        {
+            let circuit = f.circuit();
+            let k = circuit.k_log();
+            let form = MatrixForm {
+                alpha,
+                z_skip,
+                x_inner_rest: x[..k - k_skip].to_vec(),
+                r_inner_rest: r[..k - k_skip].to_vec(),
+                s_hat_v: rng.ext_vec(1 << k_skip),
+            };
+            let value = form.evaluate(circuit);
+            claims.push(MatrixClaim::fresh(f, &Claim { point: form, value }));
+            if i == 0 {
+                continue;
+            }
+            let (rows, cols) = (rng.ext_vec(k), rng.ext_vec(k));
+            let (ra, rb) = circuit.row_values(&eq_table(&cols));
+            let u = eq_table(&rows);
+            let dot = |r: &[F192]| u.iter().zip(r).fold(F192::ZERO, |acc, (&x, &y)| acc + x * y);
+            claims.extend(MatrixClaim::carried(f, k, &rows, &cols, [dot(&ra), dot(&rb)]));
+        }
+        claims
+    }
+
+    #[test]
+    fn the_matrix_reduction_reduces_to_the_matrices() {
+        let mut rng = Rng::new(9);
+        let claims = matrix_claims(&mut rng);
+        let prove = |claims: &[MatrixClaim<F192>]| {
+            let mut ps = ProverState::new(&reduce::session(&SessionId::new(b"tree-test")), &0u64);
+            MatrixProver::prove(&mut ps, claims);
+            ps.into_proof()
+        };
+        let verify = |claims: &[MatrixClaim<F192>], proof| {
+            let mut vs = VerifierState::new(&reduce::session(&SessionId::new(b"tree-test")), &0u64, proof);
+            MatrixReduced::verify(&mut vs, claims)
+        };
+        let proof = prove(&claims);
+        let reduced = verify(&claims, &proof).expect("an honest reduction");
+        for (f, values) in CircuitId::ALL.into_iter().zip(&reduced.values) {
+            let circuit = f.circuit();
+            let k = circuit.k_log();
+            let (ra, rb) = circuit.row_values(&eq_table(&reduced.cols[..k]));
+            let u = eq_table(&reduced.rows[..k]);
+            let dot = |r: &[F192]| u.iter().zip(r).fold(F192::ZERO, |acc, (&x, &y)| acc + x * y);
+            assert_eq!(*values, [dot(&ra), dot(&rb)], "{f:?}");
+        }
+        for c in [0, 2] {
+            let mut false_claims = claims.clone();
+            false_claims[c].value += F192::ONE;
+            assert_eq!(
+                verify(&false_claims, &proof).err(),
+                Some(ReduceError::Matrix),
+                "claim {c}"
+            );
+        }
     }
 }

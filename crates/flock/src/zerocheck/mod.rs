@@ -22,12 +22,12 @@ use fiat_shamir::arith::{Native, RoundPolynomial, Verifier};
 use fiat_shamir::{ProverState, TranscriptError};
 use primitives::bit_fold::BitFold;
 use primitives::field::{F8, F192, powers};
-use primitives::multilinear::skip_lagrange_weights;
+use primitives::multilinear::fold_low_inplace;
 use thiserror::Error;
 
 use crate::lincheck::QuirkyPoint;
-use multilinear::{PackedWitness, RoundPair, bind_low, bit_pass, bit_pass_storing, single_round, table_pass};
-use ntt::{AdditiveNttGf8, InvNttTableByteSingleGf8};
+use multilinear::{PackedWitness, RoundPair, bit_pass, bit_pass_storing, single_round, table_pass};
+use ntt::{AdditiveNttF8, LdeTable};
 use round1::{Round1, c_s, medium_challenges, small_challenges};
 
 pub(crate) mod multilinear;
@@ -210,7 +210,7 @@ struct CircuitProver<'a> {
 
 impl<'a> CircuitProver<'a> {
     /// The prover and its round-1 message: `P` on the coset, its `a b` and `c` halves summed.
-    fn new(input: &ZerocheckInput<'a>, r: &'a [F192], lde: &InvNttTableByteSingleGf8) -> (Self, Vec<F192>) {
+    fn new(input: &ZerocheckInput<'a>, r: &'a [F192], lde: &LdeTable) -> (Self, Vec<F192>) {
         let ZerocheckInput { bits, m, padding } = *input;
         assert!(m >= MIN_LOG_N, "a zerocheck needs at least {MIN_LOG_N} variables");
         let cube_bytes = (1usize << m) / 8;
@@ -247,7 +247,7 @@ impl<'a> CircuitProver<'a> {
 
     /// Take the skip challenge: the running claim becomes this circuit's `P(z)`.
     fn start(&mut self, z: F192, round1: &[F192]) {
-        self.lagrange = skip_lagrange_weights(K_SKIP, z);
+        self.lagrange = SkipDomain::FLOCK.lagrange_weights(z);
         let vanishing = SkipDomain::FLOCK.vanishing(&mut Native, z);
         self.claim = SkipDomain::FLOCK.first_round_at(&mut Native, z, vanishing, round1);
     }
@@ -331,7 +331,7 @@ impl<'a> CircuitProver<'a> {
         // One round at a time: fold each pending challenge, then sum the round.
         for &rho in &folded.pending {
             for t in &mut folded.t {
-                bind_low(t, rho);
+                fold_low_inplace(t, rho);
             }
         }
         folded.pending.clear();
@@ -358,8 +358,8 @@ impl<'a> CircuitProver<'a> {
         // Fold the last pending challenges into `a` and `b`, down to one value each.
         let [a, b, _] = &mut folded.t;
         for &rho in &folded.pending {
-            bind_low(a, rho);
-            bind_low(b, rho);
+            fold_low_inplace(a, rho);
+            fold_low_inplace(b, rho);
         }
         debug_assert_eq!(a.len(), 1);
         debug_assert_eq!(b.len(), 1);
@@ -390,9 +390,9 @@ pub(crate) fn prove(inputs: &[ZerocheckInput<'_>], ps: &mut ProverState) -> Vec<
     // Phase 2: round 1, each circuit's message on the coset Lambda, combined by the batching powers.
     let span = tracing::info_span!("Round 1").entered();
     // The extension of a 64-bit row from the skip domain to its coset, as one byte table.
-    let lde = InvNttTableByteSingleGf8::new(
-        &AdditiveNttGf8::new(K_SKIP, F8::ZERO),
-        &AdditiveNttGf8::new(K_SKIP, F8(1 << K_SKIP)),
+    let lde = LdeTable::new(
+        &AdditiveNttF8::new(K_SKIP, F8::ZERO),
+        &AdditiveNttF8::new(K_SKIP, F8(1 << K_SKIP)),
     );
     let mut round1 = vec![F192::ZERO; 1 << K_SKIP];
     let provers: Vec<_> = (inputs.iter().zip(&lambdas))
@@ -585,7 +585,7 @@ mod tests {
 
     /// A Boolean witness's extension at `(z, chi)`: the skip's Lagrange combination of its bit slices' extensions.
     fn quirky_eval(bits: &[bool], z: F192, chi: &[F192]) -> F192 {
-        let weights = skip_lagrange_weights(K_SKIP, z);
+        let weights = SkipDomain::FLOCK.lagrange_weights(z);
         let eq = primitives::multilinear::eq_table(chi);
         let mut acc = F192::ZERO;
         for (row, &e) in bits.chunks(1 << K_SKIP).zip(&eq) {
@@ -749,7 +749,7 @@ mod tests {
 
     /// The bits of a cube folded at `z` over the skip: one value per position past it.
     fn at_z(bits: &[bool], z: F192) -> Vec<F192> {
-        let weights = skip_lagrange_weights(K_SKIP, z);
+        let weights = SkipDomain::FLOCK.lagrange_weights(z);
         (bits.chunks(1 << K_SKIP))
             .map(|row| (row.iter().zip(&weights)).fold(F192::ZERO, |acc, (&bit, &w)| if bit { acc + w } else { acc }))
             .collect()

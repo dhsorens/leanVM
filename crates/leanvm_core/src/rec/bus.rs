@@ -11,13 +11,12 @@
 use super::fixed::{FixedColumn, FixedColumns};
 use super::layout::RecLayout;
 use super::table::Table;
-use crate::colval::ColVal;
+use crate::bus::{Block, BusError, BusForm, BusProof, BusVerify, Coord, PackedForm, PublicColumn, PublicColumns};
 use crate::constraints::{Residual, Summand};
-use crate::leaf::{Block, BusError, BusForm, BusProof, BusVerify, Coord, PackedForm, PublicColumn, PublicColumns};
-use crate::{constraints, leaf};
+use crate::{bus, constraints};
 use fiat_shamir::ProverState;
 use fiat_shamir::arith::{Arith, Verifier};
-use primitives::field::{F64, F192};
+use primitives::field::{F64, F192, Subfield};
 
 /// A slot's key on the bus: its index among all tables' slots in the high 32 bits, its row in the low 32.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,7 +108,7 @@ impl BusBlocks {
 
     /// Prove the bus balances over the global columns.
     pub(crate) fn prove(&self, cols: &[&[F64]], ps: &mut ProverState) -> BusProof {
-        leaf::prove_balance(&self.push, &self.pull, &[], 0, cols, &RecLayout::TABLE_COLUMNS, ps)
+        bus::prove_balance(&self.push, &self.pull, &[], 0, cols, &RecLayout::TABLE_COLUMNS, ps)
     }
 
     /// Verify the bus balances.
@@ -118,7 +117,7 @@ impl BusBlocks {
     ///
     /// Returns the first check of the balance that refuses.
     pub(crate) fn verify<V: Verifier + PublicColumns>(&self, v: &mut V) -> Result<BusVerify<V::E>, BusError> {
-        let bus = leaf::verify_balance(v, &self.push, &self.pull, &[], 0, &RecLayout::TABLE_COLUMNS)?;
+        let bus = bus::verify_balance(v, &self.push, &self.pull, &[], 0, &RecLayout::TABLE_COLUMNS)?;
         debug_assert!(
             bus.sparse.iter().all(Vec::is_empty) && bus.producers.is_empty(),
             "the machine's target has no share for sparse columns or producers"
@@ -180,7 +179,7 @@ impl<A: Arith> Residual<A> for TableResidual<'_, A::E> {
 
 impl Summand for TableSummand {
     #[inline(always)]
-    fn eval<V: ColVal>(&self, cols: &[V], quadratic: bool) -> F192 {
+    fn eval<V: Subfield>(&self, cols: &[V], quadratic: bool) -> F192 {
         V::reduce(self.0.eval_unreduced(cols, quadratic))
     }
 }

@@ -2,11 +2,11 @@
 
 use crate::{chain, refuse};
 use bench::Plan;
+use bench::{pretty_f64, pretty_integer};
 use leanvm::asm::{Add, Addi, Asm, Bne, Reg};
 use leanvm::{Output, Program, ProvenRun, Prover, Region, Stats};
 use leanvm_guest::{PublicValues, Run};
 use primitives::hash::{digest_words, hash};
-use primitives::{pretty_f64, pretty_integer};
 use std::path::Path;
 
 /// One run of a program: what it is given and what it must output.

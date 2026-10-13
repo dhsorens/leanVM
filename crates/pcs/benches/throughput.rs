@@ -30,15 +30,15 @@
 //! cargo bench -p pcs --bench throughput -- --json
 //! ```
 
+use bench::pretty_integer;
 use bench::{Metric, Plan, Timing, bencher_json, env_usize};
 use fiat_shamir::{ProverState, SessionId};
 use pcs::ntt::AdditiveNttF64;
 use pcs::ring_switch::{RingSwitch, SliceClaim};
 use pcs::stack::{CommittedStack, StackClaim, Statement};
-use pcs::whir::{LOG_INV_RATE_0, config_for_rate, inner_product_base_ext};
+use pcs::whir::{LOG_INV_RATE_0, config_for_rate};
 use primitives::field::{F64, F192};
-use primitives::multilinear::eq_table;
-use primitives::pretty_integer;
+use primitives::multilinear::{eq_table, inner_product_base};
 use primitives::test_util::Rng;
 use std::hint::black_box;
 use std::num::NonZeroUsize;
@@ -63,7 +63,7 @@ fn main() {
     let n = 1usize << log_n;
     let witness: Vec<F64> = (0..n).map(|_| F64(rng.next_u64())).collect();
     let point = rng.ext_vec(log_n);
-    let value = inner_product_base_ext(&witness, &eq_table(&point));
+    let value = inner_product_base(&witness, &eq_table(&point));
     let point_claims = [StackClaim::Point {
         offset: 0,
         low_point: point,

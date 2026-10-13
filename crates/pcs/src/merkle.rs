@@ -30,7 +30,8 @@ use std::mem::MaybeUninit;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-pub type Hash = [u8; 32];
+/// A node of the tree: one BLAKE2s-256 digest.
+pub type Hash = [u8; OUT_LEN];
 
 /// Hash one leaf with standard BLAKE2s-256.
 #[inline]
