@@ -7,6 +7,7 @@ import QuotientSecurity.Distance
 import QuotientSecurity.Instance
 import QuotientSecurity.Circuit
 import QuotientSecurity.Witness
+import QuotientSecurity.Cantor
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -123,3 +124,23 @@ import QuotientSecurity.Witness
 /-- info: 'QuotientSecurity.Params.rowPoly_injOn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.Params.rowPoly_injOn
+
+/-- info: 'QuotientSecurity.CantorBasis.digit_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.CantorBasis.digit_eq
+
+/-- info: 'QuotientSecurity.CantorBasis.sum_cells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.CantorBasis.sum_cells
+
+/-- info: 'QuotientSecurity.mle_eq_tablePoly_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.mle_eq_tablePoly_eval
+
+/-- info: 'QuotientSecurity.sum_tablePoly' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.sum_tablePoly
+
+/-- info: 'QuotientSecurity.mle_snoc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.mle_snoc
