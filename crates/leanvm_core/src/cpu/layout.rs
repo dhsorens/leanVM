@@ -17,7 +17,7 @@ pub const MFCNT: usize = 3; // per-cell memory access count, g^{A[i]}
 pub const BFCNT: usize = 4; // per-pc bytecode execution count, g^{A[pc]}
 // flock's packed Keccak witness `q_flock`, committed in the SAME stack as every
 // other column (single PCS). Size `2^(SLOT_STRIDE_LOG + tau_5)` F64 words, at
-// least eight blocks (a no-SHA3 program commits eight of padding steps). It is the
+// least eight blocks (a no-SHA3 program commits eight blocks of padding steps). It is the
 // SOLE copy of the input/output words: the VM's SHA3 value columns are
 // virtual and their memory-bus claims route to `q_flock` slots (§hash_flock), so
 // nothing duplicates them. flock's R1CS validity is discharged by the single

@@ -164,7 +164,7 @@ fn main() {
     let ms = |t: &Timing| format!("{:>8.1} ms{:<9}{}", t.mean() * 1e3, t.spread(), share(t.mean()));
     let named = witness.mean() + commit_stage.mean() + zerocheck.mean() + lincheck.mean() + open.mean();
     println!(
-        "\nFlock Keccak batch proving, {} permutations (2^{n_log} slots)",
+        "\nFlock Keccak batch proving, {} permutations (2^{n_log})",
         pretty_integer(n)
     );
     println!("  setup (preprocessing, excluded) : {setup_ms:>8.1} ms");

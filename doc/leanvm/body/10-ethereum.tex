@@ -51,7 +51,7 @@ The prover supplies the extra claims and assigns each supporting occurrence to a
 
 \subsubsection{Deferred evaluation claims}\label{sec:deferred-claims}
 
-Verifying a child requires evaluations of three fixed polynomials: the bytecode multilinear, in $\kbc+4$ variables (\S\ref{sec:e2e-bc}), and flock's R1CS matrix multilinears $\widetilde A_0,\widetilde B_0$, each in $32$ variables (Annex~\ref{annex:flock}). Computing them inside the guest would be very expensive. Instead, the guest carries evaluation claims in its statement. These expensive computations are moved 'outside of the snark'.
+Verifying a child requires evaluations of three fixed polynomials: the bytecode multilinear, in $\kbc+4$ variables (\S\ref{sec:e2e-bc}), and flock's R1CS matrix multilinears $\widetilde A_0,\widetilde B_0$, each in $34$ variables (Annex~\ref{annex:flock}). Computing them inside the guest would be very expensive. Instead, the guest carries evaluation claims in its statement. These expensive computations are moved 'outside of the snark'.
 
 A node combines the claims carried by its children with the new claims produced while verifying them. Two sumchecks reduce these to three evaluations: one of the bytecode polynomial and one of each matrix polynomial, batched. The Fiat-Shamir for batching and sumchecks is seeded by all child and running claims.
 

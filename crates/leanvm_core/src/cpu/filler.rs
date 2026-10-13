@@ -21,7 +21,7 @@
 //!
 //! The sizes are powers of two so any fill is reachable exactly, while the bulk rides the
 //! largest block at one `JUMP` per 128 rows. A table already sitting on a power of two is
-//! never entered at all.
+//! never entered at all, `SHA3` aside, whose fill has to be a quarter of it (`target`).
 
 use crate::tables::N_TABLES;
 
