@@ -2,6 +2,7 @@ import QuotientSecurity.Bits
 import QuotientSecurity.RandomOracle
 import QuotientSecurity.ZeroKnowledge
 import QuotientSecurity.Encoding
+import QuotientSecurity.NonInteractive
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -26,3 +27,23 @@ import QuotientSecurity.Encoding
 /-- info: 'QuotientSecurity.baseValues_uniform' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.baseValues_uniform
+
+/-- info: 'QuotientSecurity.Params.honest_consistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Params.honest_consistent
+
+/-- info: 'QuotientSecurity.Params.accepts_of_consistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Params.accepts_of_consistent
+
+/-- info: 'QuotientSecurity.realView_eq_simView' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.realView_eq_simView
+
+/-- info: 'QuotientSecurity.realNI_eq_simNI' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.realNI_eq_simNI
+
+/-- info: 'QuotientSecurity.card_not_good_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.card_not_good_le

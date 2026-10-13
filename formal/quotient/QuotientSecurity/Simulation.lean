@@ -7,7 +7,7 @@ import QuotientSecurity.ZeroKnowledge
 The witness's row polynomials are over the small field `K`, each committed with a mask: the rows'
 vanishing polynomial times three uniform coefficients. Beyond its own challenges the verifier
 sees the five values sent and whether its four claims are true. This file proves that this view
-has exactly the distribution a simulator without the witness produces: four uniform values, the
+has exactly the distribution a simulator without the witness produces: four values uniform in the field the challenge's row lies in, the
 wiring's public value, and the verdict the verifier's own nonzero check gives.
 -/
 
@@ -71,7 +71,8 @@ theorem accepts_iff_notRejected (hE : P.Exact) (stmt : Fin P.words → E) (g : P
 
 section View
 
-variable [Fintype K] [FiniteDimensional K E] [SampleableType K] [SampleableType E]
+variable [Fintype K] [DecidableEq K] [FiniteDimensional K E] [SampleableType K]
+  [SampleableType E]
 
 open Classical in
 /-- What the verifier sees beyond its challenges: the four values, the wiring's value, and
@@ -88,11 +89,11 @@ open Classical in
 /-- The simulator, which has neither the witness nor the masks. -/
 noncomputable def simView (α β t : E) : ProbComp ((Fin 4 → E) × E × Bool) :=
   (fun a : Fin 4 → E => (a, P.sigmaPoly.eval t, decide (NotRejected P α β t a))) <$>
-    ($ᵗ (Fin 4 → E))
+    simValues (K := K) (rowPoly.eval t)
 
 /-- **Honest-verifier zero knowledge.** For challenges at which no denominator vanishes on a
-cell, and whose row is outside `K` and not a root of the vanishing polynomial, the view of the
-verifier has exactly the simulator's distribution. -/
+cell, and whose row is not a root of the vanishing polynomial, the view of the verifier has
+exactly the simulator's distribution. -/
 theorem realView_eq_simView (h3 : finrank K E = 3) (hE : P.Exact) (stmt : Fin P.words → E)
     (gK : Fin 4 → K[X]) (van : K[X])
     (hvan : ∀ x : P.T, aeval (rowPoly.eval (x : E)) van = 0)
@@ -101,9 +102,8 @@ theorem realView_eq_simView (h3 : finrank K E = 3) (hE : P.Exact) (stmt : Fin P.
     (hd : ∀ i, α + P.cells (committed gK van 0) i + β * P.pt i ≠ 0)
     (hd' : ∀ i, α + P.cells (committed gK van 0) i + β * P.pt (P.σ i) ≠ 0)
     (hu : aeval (rowPoly.eval t) van ≠ 0)
-    (hr : rowPoly.eval t ∉ Set.range (algebraMap K E))
     (v : (Fin 4 → E) × E × Bool) :
-    Pr[= v | realView P stmt gK van α β γ t ρ] = Pr[= v | simView P α β t] := by
+    Pr[= v | realView P stmt gK van α β γ t ρ] = Pr[= v | simView (K := K) P α β t] := by
   classical
   have hview : realView P stmt gK van α β γ t ρ
       = (fun a : Fin 4 → E => (a, P.sigmaPoly.eval t, decide (NotRejected P α β t a))) <$>
@@ -126,7 +126,7 @@ theorem realView_eq_simView (h3 : finrank K E = 3) (hE : P.Exact) (stmt : Fin P.
     exact Prod.ext rfl (Prod.ext rfl (decide_eq_decide.mpr hiff))
   rw [hview, simView]
   exact probOutput_map_eq_of_evalSPMF_eq
-    (evalSPMF_ext (realValues_uniform h3 _ hu hr)) _ v
+    (evalSPMF_ext (realValues_eq_simValues h3 gK van _ hu)) _ v
 
 end View
 

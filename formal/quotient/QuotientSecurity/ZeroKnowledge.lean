@@ -186,4 +186,52 @@ theorem baseValues_uniform (e : Fin 4 → K) {u : K} (hu : u ≠ 0) (ρ : K) (a 
 
 end Base
 
+/-! ## The simulator of the four values -/
+
+section Simulator
+
+variable [Fintype K] [DecidableEq K] [SampleableType K] [Fintype E] [SampleableType E]
+  [FiniteDimensional K E]
+
+open Classical in
+/-- The simulator of the four values: uniform in `E`, or in `K` when the row is in `K`. It reads
+the row, which the challenge determines, and nothing of the witness. -/
+noncomputable def simValues (r : E) : ProbComp (Fin 4 → E) :=
+  if r ∈ Set.range (algebraMap K E) then
+    (fun (a : Fin 4 → K) (j : Fin 4) => algebraMap K E (a j)) <$> ($ᵗ (Fin 4 → K))
+  else $ᵗ (Fin 4 → E)
+
+/-- **The four values are simulated**, at every row where the vanishing polynomial is not zero:
+committed polynomials `g_j + van * mask_j` over `K` with uniform masks, opened at `r`. -/
+theorem realValues_eq_simValues (h3 : finrank K E = 3) (gK : Fin 4 → K[X]) (van : K[X]) (r : E)
+    (hu : aeval r van ≠ 0) (a : Fin 4 → E) :
+    Pr[= a | realValues (K := K) (fun j => aeval r (gK j)) (aeval r van) r]
+      = Pr[= a | simValues (K := K) r] := by
+  classical
+  unfold simValues
+  split_ifs with hr
+  · obtain ⟨ρ, rfl⟩ := hr
+    have hu0 : van.eval ρ ≠ 0 := by
+      intro h0
+      apply hu
+      rw [aeval_algebraMap_apply_eq_algebraMap_eval, h0, map_zero]
+    have hreal : realValues (K := K) (fun j => aeval (algebraMap K E ρ) (gK j))
+          (aeval (algebraMap K E ρ) van) (algebraMap K E ρ)
+        = (fun (b : Fin 4 → K) (j : Fin 4) => algebraMap K E (b j)) <$>
+          ((fun (m : Fin 4 → Fin 3 → K) (j : Fin 4) =>
+            (gK j).eval ρ + van.eval ρ * ∑ i, m j i * ρ ^ (i : ℕ)) <$>
+              ($ᵗ (Fin 4 → Fin 3 → K))) := by
+      unfold realValues
+      rw [Functor.map_map]
+      congr 1
+      funext m j
+      simp only [aeval_algebraMap_apply_eq_algebraMap_eval, maskedValue_algebraMap,
+        Function.comp_apply]
+    rw [hreal]
+    exact probOutput_map_eq_of_evalSPMF_eq
+      (evalSPMF_ext (baseValues_uniform (fun j => (gK j).eval ρ) hu0 ρ)) _ a
+  · exact realValues_uniform h3 _ hu hr a
+
+end Simulator
+
 end QuotientSecurity
