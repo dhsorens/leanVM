@@ -1,103 +1,175 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
-\usepackage{amsmath,amssymb,booktabs}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype}
+\usepackage{amsmath,amssymb,booktabs,array}
+\usepackage[colorlinks,linkcolor=black]{hyperref}
 \newcommand{\K}{\mathbb{K}}
 \newcommand{\E}{\mathbb{E}}
-\title{The quotient PIOP}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\cX}{\mathsf{X}}
+\newcommand{\cY}{\mathsf{Y}}
+\newcommand{\cC}{\mathsf{C}}
+\newcommand{\cV}{\mathsf{V}}
+\newcommand{\bit}{\mathrm{bit}}
+\newcommand{\car}{\mathrm{carry}}
+\setlength{\parskip}{0.4em}
+\newcommand{\head}[1]{\par\vspace{0.35em}\textbf{#1}\enspace}
+\raggedbottom
+\setlength{\parindent}{0pt}
+\title{\vspace{-2.5em}The quotient PIOP}
 \author{}
-\date{}
+\date{\vspace{-3.5em}}
 \begin{document}
 \maketitle
 
-This note describes one polynomial IOP and nothing else: no commitment scheme, no circuit for a particular statement, no cost. The prover sends polynomials, the verifier sends random field elements and, at the end, asks for evaluations.
+A polynomial IOP for circuits made of one gate, a full adder, over a field of characteristic 2. The prover sends two batches of polynomials and five field elements. The verifier sends three random messages, then asks for four evaluations. Nothing here depends on how polynomials are committed.
 
 \section{Setting}
 
-\paragraph{Fields.} $\K = \mathrm{GF}(2^{64})$ holds the witness. $\E = \mathrm{GF}(2^{192}) \supset \K$ holds the challenges and the values the prover sends.
+\head{Two fields.} $\K = \mathrm{GF}(2^{64})$ holds the witness. $\E = \mathrm{GF}(2^{192})$, of degree 3 over $\K$, holds the verifier's challenges.
 
-\paragraph{Domain.} Let $S(X) = X^2 + X$ and $w_k = S \circ \dots \circ S$ ($k$ times), so $w_0(X) = X$ and $w_{k+1} = w_k^2 + w_k$. Fix $\beta_0 = 1, \beta_1, \dots, \beta_{m-1} \in \K$ with $S(\beta_{k+1}) = \beta_k$ (a Cantor basis). The domain is $H = \mathrm{span}_{\mathrm{GF}(2)}(\beta_0, \dots, \beta_{m-1})$, of size $N = 2^m$, and $w_m$ is its vanishing polynomial. Here $m = 22$.
-
-\paragraph{Rows.} Write $\theta = \beta_1$, so $\{0, 1, \theta, \theta + 1\} = \mathrm{GF}(4)$. Let $T = \mathrm{span}(\beta_2, \dots, \beta_{m-1})$, of size $n = N/4 = 2^{\nu}$ with $\nu = m - 2$, and with vanishing polynomial $v_T$ (of degree $n$). Every point of $H$ is $x + c$ for one $x \in T$ and one $c \in \mathrm{GF}(4)$. The four points $x, x + 1, x + \theta, x + \theta + 1$ are a \emph{row}, and its four \emph{cells} are called $\mathsf X, \mathsf Y, \mathsf C, \mathsf V$. The polynomial $r(X) = X^4 + X = w_2(X)$ is constant on a row.
-
-\section{Relation}
-
-A witness is an assignment $w$ of a value to every cell, that is to every point of $H$. The honest prover's values are in $\K$; soundness holds for values in $\E$. Fixed in advance: a permutation $\sigma$ of $H$, and eight weight functions $\lambda_0, \dots, \lambda_7 : H \to \E$. The statement is eight values $p_0, \dots, p_7 \in \E$. The witness satisfies the relation when three things hold.
-\begin{enumerate}
-  \item \textbf{Gate, on every row.} For every $x \in T$, $G\bigl(w(x), w(x+1), w(x+\theta), w(x+\theta+1)\bigr) = 0$, where
-  \begin{gather*}
-    G(\mathsf x, \mathsf y, \mathsf c, \mathsf v) = \mathsf v + b(\mathsf x) + b(\mathsf y) + k(\mathsf c) + \theta \bigl( b(\mathsf x) b(\mathsf y) + k(\mathsf c) (b(\mathsf x) + b(\mathsf y)) \bigr), \\
-    b(u) = \theta u^2 + \theta^2 u, \qquad k(u) = u^2 + u .
-  \end{gather*}
-  In a circuit a cell holds an element of $\mathrm{GF}(4)$, read as a bit $b$ and a carry $k$, and the gate says the row is a full adder. The gate alone does not force cells into $\mathrm{GF}(4)$: the copies and the public words do, for a wiring with no loop. There is one gate and no selector.
-  \item \textbf{Copies.} $w(\sigma(x)) = w(x)$ for every $x \in H$: cells in one cycle of $\sigma$ are equal.
-  \item \textbf{Public words.} $\sum_{x \in H} \lambda_J(x) \, w(x) = p_J$ for $J = 0, \dots, 7$.
-\end{enumerate}
-
-\section{Polynomials}
-
-\paragraph{Fixed.} $\sigma(X)$, of degree below $N$, takes each point of $H$ to its image under the permutation. For $\gamma \in \E$, $\Lambda_\gamma(X)$ is a polynomial with $\Lambda_\gamma(x) = \sum_J \gamma^J \lambda_J(x)$ on $H$. The verifier evaluates $w_k$, $v_T$ and $\Lambda_\gamma$ itself, and queries $\sigma$.
-
-\paragraph{The witness, as four polynomials in the row.} Let $X_0 = 1$, $X_1 = X$, $X_2 = X^2 + X$, $X_3 = X^3 + X^2$. The polynomial $W$ of degree below $N$ that interpolates $w$ on $H$ is written in exactly one way as
+\head{The domain.} Let $S(X) = X^2 + X$ and let $w_k$ be $S$ composed $k$ times:
 \[
-  W(X) = \sum_{j=0}^{3} X_j(X) \, g_j\bigl(r(X)\bigr), \qquad \deg g_j < n .
+  w_0(X) = X, \qquad w_{k+1} = w_k^2 + w_k .
 \]
-Because $r(t + c) = r(t)$ for $c \in \mathrm{GF}(4)$, the four values $a_j = g_j(r(t))$ give $W$ on the whole row of any $t \in \E$:
-\begin{equation}\label{eq:row}
-  W(t + c) = \sum_{j} X_j(t + c) \, a_j \qquad \text{for } c \in \{0, 1, \theta, \theta + 1\} .
-\end{equation}
+Fix $\beta_0 = 1, \beta_1, \dots, \beta_{m-1}$ in $\K$ with $S(\beta_{k+1}) = \beta_k$, and let $H$ be their span over $\F_2$. So $H$ has $N = 2^m$ points, and $w_m$ is the polynomial of degree $N$ that vanishes exactly on $H$. In our instance $m = 22$.
 
-\section{Protocol}
-
-\begin{enumerate}
-  \item \textbf{Prover} sends $g_0, g_1, g_2, g_3$, of degree below $2n$ (the honest ones are in $\K[X]$, of degree below $n$ before masking). This defines $W = \sum_j X_j \, g_j(r)$.
-  \item \textbf{Verifier} sends $\alpha, \beta, \gamma \in \E$. Let
-  \[
-    D = \alpha + W + \beta X, \qquad D' = \alpha + W + \beta \, \sigma, \qquad \tau = \sum_{J} \gamma^J p_J .
-  \]
-  \item \textbf{Prover} sends $h$ of degree below $N$, and $q$, $q_G$ of degree below $4N$, with
-  \begin{align}
-    h \, D D' + q \, w_m &= D + D' + \Lambda_\gamma \, W \, D D', \label{eq:copy} \\
-    q_G \, v_T &= G\bigl(W(X), W(X+1), W(X+\theta), W(X+\theta+1)\bigr), \label{eq:gate} \\
-    \sum_{x \in H} h(x) &= \tau . \label{eq:sum}
-  \end{align}
-  \item \textbf{Verifier} sends $t \in \E$.
-  \item \textbf{Prover} sends five elements of $\E$: $a_j = g_j(r(t))$ for $j < 4$, and $s = \sigma(t)$.
-  \item \textbf{Verifier} sends $\rho \in \E$.
-\end{enumerate}
-
-\paragraph{Decision.} From $t, a, s$ the verifier computes the four cells of the row of $t$ by \eqref{eq:row}, then $D(t) = \alpha + W(t) + \beta t$, $D'(t) = \alpha + W(t) + \beta s$, the gate value $G(t)$ on the four cells, $\Lambda_\gamma(t)$, $v_T(t)$, $w_m(t)$ and $\tau$. It rejects if $\bigl(D(t) D'(t) + w_m(t)\bigr) \, v_T(t) = 0$. Otherwise it accepts when four evaluation claims hold:
+\head{Rows and cells.} Put $\theta = \beta_1$. Then $\theta^2 = \theta + 1$ and $\{0, 1, \theta, \theta^2\}$ is the field $\F_4$. Let $T$ be the span of $\beta_2, \dots, \beta_{m-1}$, with $n = N/4$ points and vanishing polynomial $v_T$. Every point of $H$ is $x + c$ for exactly one $x \in T$ and one $c \in \F_4$, so $H$ splits into $n$ \emph{rows} of four \emph{cells}:
 \begin{center}
-\begin{tabular}{@{}lll@{}}
+\begin{tabular}{@{}l@{\qquad}cccc@{}}
 \toprule
- & on & claim \\
+cell of the row of $x \in T$ & $\cX$ & $\cY$ & $\cC$ & $\cV$ \\
 \midrule
-1 & $g_0, \dots, g_3$ & $\sum_j c_j \, g_j(r(t)) = \sum_j c_j \, a_j$ \\[2pt]
-2 & $\sigma$ & $\sigma(t) = s$ \\[2pt]
-3 & $h, q, q_G$ & equation \eqref{eq:three} below \\[2pt]
-4 & $h$ & $\sum_{x \in H} h(x) = \tau$ \\
+its point & $x$ & $x + 1$ & $x + \theta$ & $x + \theta^2$ \\
 \bottomrule
 \end{tabular}
 \end{center}
-In claim 1 the weights are $c = \bigl((1+\rho)(1+\rho^2),\ \rho(1+\rho^2),\ (1+\rho)\rho^2,\ \rho^3\bigr)$. Claim 3 is, with $\Delta = D(t) D'(t) + w_m(t)$ and $C = D + D' + \Lambda_\gamma W D D'$ the right side of \eqref{eq:copy},
-\begin{equation}\label{eq:three}
-  (1 + \rho) \, \frac{D(t) D'(t) \, h(t) + w_m(t) \, q(t)}{\Delta} + \rho \, \frac{D(t) D'(t) \, q_G(t)}{\Delta}
-  = \frac{(1 + \rho) \, C(t) \, v_T(t) + \rho \, D(t) D'(t) \, G(t)}{\Delta \, v_T(t)} .
-\end{equation}
-The left side is one linear combination of $h(t)$, $q(t)$, $q_G(t)$ with coefficients the verifier computed, and the right side is a value it computed. Multiplied by $\Delta \, v_T(t)$, which is why that product must not be zero, it reads $(1 + \rho) \, v_T(t) \cdot [\text{\eqref{eq:copy} at } t] + \rho \, D(t) D'(t) \cdot [\text{\eqref{eq:gate} at } t] = 0$. (The implementation's table has a fourth polynomial in this combination, which the honest prover leaves zero.) Claim 4 is one linear functional of $h$: for $\deg h < N$, the sum over $H$ is the coefficient of $h$ on $\prod_{k < m} w_k$. The quotients' values are never sent. A proof is two rounds of polynomials and five field elements, and the verifier's only test of its own is the nonzero product.
+The polynomial $r(X) = X^4 + X$ names the row: $r(x + c) = r(x)$ for every $c \in \F_4$.
 
-\section{Why it works}
+\section{What is proved}
 
-\paragraph{Copies and public words in one sum.} On $H$, \eqref{eq:copy} says $h = 1/D + 1/D' + \Lambda_\gamma W$. If $w$ is constant on the cycles of $\sigma$, then $\sum_H (1/D + 1/D') = 0$: in characteristic 2 each cell's second term is the next cell's first. So $\sum_H h = \sum_x \Lambda_\gamma(x) w(x)$, and \eqref{eq:sum} is the public words, all eight at once through the powers of $\gamma$. If $w$ is not constant on some cycle, then for all but $2N^2$ values of $\beta$ the sum of fractions is a nonzero rational function of $\alpha$, which hits any given value at most $2N$ times.
+A \emph{witness} gives a value $w(x)$ to each of the $N$ cells. The circuit is a permutation $\sigma$ of $H$ and eight weight functions $\lambda_0, \dots, \lambda_7$ on $H$. The statement is eight field elements $p_0, \dots, p_7$. The prover shows it knows a witness with three properties.
 
-\paragraph{Gate.} \eqref{eq:gate} says the gate polynomial vanishes on $T$, that is on every row.
-
-\paragraph{Soundness.} Claim 1 holds for a random $\rho$ only if every $a_j$ is $g_j(r(t))$; then \eqref{eq:row} gives $W$ on the row of $t$ and claim 2 gives $\sigma(t)$, so claim 3 is identities \eqref{eq:copy} and \eqref{eq:gate} at a random $t$, again separated by $\rho$. The three challenges fail with probability at most
+\head{1. Every row is a full adder.} An element $u = u_0 + \theta u_1$ of $\F_4$ stores two bits, $\bit(u) = u_0$ and $\car(u) = u_1$, and both are polynomials in $u$:
 \[
-  \frac{2N^2 + 4N + 8}{|\E|}, \qquad \frac{d}{|\E|}, \qquad \frac{3}{|\E|},
+  \bit(u) = \theta u^2 + \theta^2 u, \qquad \car(u) = u^2 + u .
 \]
-with $d \le 2^{27}$ the degree in $t$ of the identities under the degree bounds above: each below $2^{-128}$.
+A row adds the bits of its $\cX$ and $\cY$ cells and the carry of its $\cC$ cell, and writes the sum bit and the carry out in its $\cV$ cell. With $\xi = \bit(w_\cX)$, $\eta = \bit(w_\cY)$, $\zeta = \car(w_\cC)$:
+\begin{equation}\label{eq:G}
+  G(w_\cX, w_\cY, w_\cC, w_\cV) \;=\; w_\cV + (\xi + \eta + \zeta) + \theta \, (\xi \eta + \zeta \, (\xi + \eta)) \;=\; 0 .
+\end{equation}
+This is the only gate, and there are no selectors: an XOR or an AND is a row that ignores half of its output, and a 32-bit addition is 32 rows, the carry riding from one $\cV$ cell to the next $\cC$ cell. The equation is imposed on arbitrary field elements: that every cell is in $\F_4$ is not assumed, it follows from the three properties together when the circuit has no loop.
 
-\paragraph{Zero knowledge.} Each $g_j$ is sent as $g_j(X) + w_\nu(X) \cdot (m_0 + m_1 X + m_2 (X^2 + X))$ with $m_i \in \K$ uniform, so of degree $n + 2$. The mask vanishes on every row, so $W$ is unchanged on $H$, and whenever $r(t) \notin \K$ and $w_\nu(r(t)) \ne 0$ the four values $a_j$ are uniform in $\E$: $\E$ has degree 3 over $\K$, so three uniform coefficients of $\K$ on $1, r, r^2$ are a uniform element of $\E$.
- The five elements are all the verifier sees of the polynomials besides the truth of the four claims, so what remains is for the commitment to reveal nothing more than that truth, which is outside this note.
+\head{2. Copies.} $w(\sigma(x)) = w(x)$ for every cell $x$. The cycles of $\sigma$ are the groups of cells that must be equal: an output and the cells that read it.
+
+\head{3. Public words.} $\sum_{x \in H} \lambda_J(x) \, w(x) = p_J$ for each $J$. This ties chosen cells to the statement.
+
+\section{Two ideas}
+
+\head{Four values open a whole row.} Let $W$ be the polynomial that takes the value $w(x)$ at each cell. Write it on the basis $X_0 = 1$, $X_1 = X$, $X_2 = X^2 + X$, $X_3 = X^3 + X^2$ with coefficients that are polynomials in the row:
+\[
+  W(X) = \sum_{j=0}^{3} X_j(X) \; g_j\bigl(r(X)\bigr) .
+\]
+The witness is these four polynomials $g_0, \dots, g_3$. Since $r$ does not move inside a row, the four numbers $a_j = g_j(r(t))$ give $W$ at all four cells of the row of any point $t$, even outside $H$:
+\begin{equation}\label{eq:row}
+  W(t + c) = \sum_{j=0}^{3} X_j(t + c) \; a_j , \qquad c \in \F_4 .
+\end{equation}
+So the gate, which reads four cells, costs four field elements and one opening.
+
+\head{Copies are a sum of fractions.} For random $\alpha, \beta$ let
+\[
+  D(X) = \alpha + W(X) + \beta X, \qquad D'(X) = \alpha + W(X) + \beta \, \sigma(X),
+\]
+where $\sigma(X)$ is the polynomial that carries the permutation on $H$. If $w(\sigma(x)) = w(x)$ then $D'(x) = D(\sigma(x))$, so the terms $1/D'$ are the terms $1/D$ in another order, and in characteristic 2
+\[
+  \sum_{x \in H} \Bigl( \frac{1}{D(x)} + \frac{1}{D'(x)} \Bigr) = 0 .
+\]
+If some copy fails, this sum is nonzero for almost all $\alpha, \beta$. Adding the public words to the same sum costs nothing: with a third challenge $\gamma$ and $\Lambda_\gamma(x) = \sum_J \gamma^J \lambda_J(x)$,
+\begin{equation}\label{eq:target}
+  \sum_{x \in H} \Bigl( \frac{1}{D(x)} + \frac{1}{D'(x)} + \Lambda_\gamma(x) \, w(x) \Bigr) = \tau, \qquad \tau = \sum_{J} \gamma^J p_J ,
+\end{equation}
+holds exactly when the copies and the eight public words do, up to a negligible error.
+
+\section{The protocol}
+
+\begin{center}
+\fbox{\begin{minipage}{0.94\textwidth}
+\vspace{0.3em}
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{@{\ }l@{\quad}p{0.86\textwidth}@{}}
+\textbf{P} & sends $g_0, g_1, g_2, g_3$. \\
+\textbf{V} & sends $\alpha, \beta, \gamma \in \E$. \\
+\textbf{P} & sends $h$, $q$ and $q_G$. \\
+\textbf{V} & sends $t \in \E$. \\
+\textbf{P} & sends $a_0, a_1, a_2, a_3$ and $s$. \\
+\textbf{V} & sends $\rho \in \E$, then checks four evaluation claims.
+\end{tabular}
+\vspace{0.3em}
+\end{minipage}}
+\end{center}
+
+\head{The second message.} $h$ is the summand of \eqref{eq:target} as a polynomial of degree below $N$, and $q$, $q_G$ are two quotients. The honest prover's satisfy
+\begin{align}
+  h \cdot D D' + q \cdot w_m &= D + D' + \Lambda_\gamma \, W \, D D' , \label{eq:copy} \\[2pt]
+  q_G \cdot v_T &= G\bigl(W(X), \, W(X + 1), \, W(X + \theta), \, W(X + \theta^2)\bigr) , \label{eq:gate} \\[2pt]
+  \textstyle\sum_{x \in H} h(x) &= \tau . \label{eq:sum}
+\end{align}
+The first says $h = 1/D + 1/D' + \Lambda_\gamma W$ on $H$. The second says the gate holds on every row. The third is \eqref{eq:target}.
+
+\head{The third message.} $a_j = g_j(r(t))$ and $s = \sigma(t)$.
+
+\head{What the verifier computes.} From $t$, the $a_j$ and $s$ alone: the four cells of the row of $t$ by \eqref{eq:row}, hence $W(t)$ and the gate value $G(t)$; then $d = \alpha + W(t) + \beta t$ and $d' = \alpha + W(t) + \beta s$; and the public quantities $\Lambda_\gamma(t)$, $v_T(t)$, $w_m(t)$, $\tau$. Let
+\[
+  \Delta = d \, d' + w_m(t), \qquad e = d + d' + \Lambda_\gamma(t) \, W(t) \, d \, d' .
+\]
+It rejects if $\Delta \cdot v_T(t) = 0$.
+
+\head{The four claims.}
+\begin{center}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{@{}cll@{}}
+\toprule
+ & about & claim \\
+\midrule
+1 & $g_0, \dots, g_3$ & $\displaystyle \sum_j \kappa_j \, g_j(r(t)) = \sum_j \kappa_j \, a_j$, \quad $\kappa = \bigl((1 + \rho)(1 + \rho^2), \; \rho (1 + \rho^2), \; (1 + \rho) \rho^2, \; \rho^3\bigr)$ \\
+2 & $\sigma$ & $\sigma(t) = s$ \\
+3 & $h, q, q_G$ & $\displaystyle (1 + \rho) \, \frac{d \, d' \, h(t) + w_m(t) \, q(t)}{\Delta} + \rho \, \frac{d \, d' \, q_G(t)}{\Delta} = \frac{(1 + \rho) \, e \, v_T(t) + \rho \, d \, d' \, G(t)}{\Delta \, v_T(t)}$ \\
+4 & $h$ & $\displaystyle \sum_{x \in H} h(x) = \tau$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Each claim is one linear combination of the committed polynomials at one point, equal to a number the verifier has computed. Claim 3 is \eqref{eq:copy} and \eqref{eq:gate} at $t$, added with weights $1 + \rho$ and $\rho$ and divided by $\Delta \, v_T(t)$: the values $h(t)$, $q(t)$, $q_G(t)$ are never sent. Claim 4 is also a single coefficient of $h$ (Section~\ref{sec:pcs}).
+
+\section{Why it is sound}
+
+Suppose the four claims hold of the polynomials the prover committed to.
+
+\begin{itemize}
+  \item Claim 1 is an equality of two polynomials of degree 3 in $\rho$, chosen after the $a_j$. So $a_j = g_j(r(t))$, and by \eqref{eq:row} the verifier's cells are $W$ on the row of $t$. Claim 2 gives $s = \sigma(t)$.
+  \item Claim 3 is then \eqref{eq:copy} and \eqref{eq:gate} at $t$, separated by $\rho$. Both are polynomial identities of degree $d_{\max} \le 2^{27}$ checked at a random point, so they hold as polynomials.
+  \item \eqref{eq:gate} makes every row a full adder. \eqref{eq:copy} with claim 4 gives \eqref{eq:target}, hence the copies and the public words.
+\end{itemize}
+The three challenges fail with probabilities at most
+\[
+  \frac{2N^2 + 4N + 8}{|\E|} \ \ (\alpha, \beta, \gamma), \qquad \frac{d_{\max}}{|\E|} \ \ (t), \qquad \frac{3}{|\E|} \ \ (\rho),
+\]
+each below $2^{-128}$. The polynomials are bounded in degree by the size of what is committed: $g_j$ below $2n$, $h$ below $N$, $q$ and $q_G$ below $4N$.
+
+\section{Zero knowledge}
+
+The prover adds to each $g_j$ a random multiple of the polynomial vanishing on the rows:
+\[
+  g_j(X) + w_{m-2}(X) \cdot \bigl(\mu_0 + \mu_1 X + \mu_2 (X^2 + X)\bigr), \qquad \mu_0, \mu_1, \mu_2 \in \K \text{ uniform} .
+\]
+This changes no cell. At a challenge $t$ whose row $r(t)$ is outside $\K$ and off the rows, the mask's value is a uniform element of $\E$, because $1, r, r^2$ is a basis of $\E$ over $\K$. So the four $a_j$ are uniform, and $s$ is public. The verifier sees nothing else of the polynomials except that the four claims are true, which is for the commitment to hide.
+
+\section{With a multilinear commitment}\label{sec:pcs}
+
+Call the \emph{table} of a polynomial $p$ of degree below $2^k$ its coefficients $(c_i)$ on the products of the $w$'s, $p = \sum_i c_i \prod_j w_j^{\,i_j}$ where $i_j$ are the bits of $i$. Then for any $t$,
+\[
+  \widetilde{c}\,(u_0, \dots, u_{k-1}) = \frac{p(t)}{\prod_{j < k} (1 + w_j(t))} \qquad \text{at } u_j = \frac{w_j(t)}{1 + w_j(t)} ,
+\]
+where $\widetilde{c}$ is the multilinear extension of the table. So an evaluation of $p$ is one multilinear claim on its table, and the sum $\sum_{x \in H} p(x)$ is the last entry $c_{2^k - 1}$, the claim at the point $(1, \dots, 1)$. Extra coordinates stack several polynomials in one table and combine them linearly, which is how each of the four claims above is a single opening. Any multilinear commitment over these fields can be used.
 
 \end{document}
