@@ -2860,6 +2860,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "zk"
+version = "0.1.0"
+dependencies = [
+ "fiat_shamir",
+ "pcs",
+ "primitives",
+ "rand_chacha 0.9.0",
+ "rand_core 0.9.5",
+ "thiserror",
+]
+
+[[package]]
 name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"

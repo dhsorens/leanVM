@@ -36,6 +36,7 @@ fiat_shamir = { path = "crates/fiat_shamir" }
 pcs = { path = "crates/pcs" }
 flock = { path = "crates/flock" }
 parallel = { path = "crates/parallel" }
+zk = { path = "crates/zk" }
 leanvm_guest = { path = "sdk" }
 leanxmss-host = { path = "programs/leanxmss/host" }
 leansphincs-host = { path = "programs/leansphincs/host" }
