@@ -10,141 +10,63 @@
 //! and the code is binary-preserving, so every `suffix` is 158 BITS: `P` is 158 sums of selected
 //! equality weights, with no field product per witness bit.
 //!
-//! The kernel is bit-sliced. A group is 64 consecutive blocks, and the protocol fixes the six
-//! equality coordinates inside a group so that block `K` weighs `g^K` ([`friendly_challenges`]).
-//! One coordinate of one group is then 64 bits that ARE a base-field element, and a group costs
-//! one mixed product per coordinate:
+//! A group is 64 consecutive blocks, and the protocol fixes the six equality coordinates inside a
+//! group so that block `K` weighs `g^K` ([`friendly_challenges`]). One coordinate of one group is
+//! then 64 bits that ARE a base-field element, a plane, and a group costs one mixed product per
+//! coordinate. A kernel turns groups into planes, eight groups at a time: `bytes` where the target
+//! has GFNI and the AVX-512 byte and bit shuffles, `planes` elsewhere.
 //!
-//! ```text
-//!     transpose    64 blocks x 64 bits  ->  64 planes, bit K of plane i = bit i of block K
-//!     extend       R a, R b              on planes, by tables of 4-plane XORs
-//!     multiply     the jet products      on planes, ANDs and XORs
-//!     accumulate   P_j += w * plane_j    the plane read as an element of K
-//! ```
-//!
-//! Eight groups ride the eight words of a vector. `R c` is linear, so `c` skips the extension:
-//! its 64 planes accumulate as they are, and `R` is applied once to the 64 sums.
+//! `R c` is linear, so `c` skips the extension: its 64 planes accumulate as they are, and `R` is
+//! applied once to the 64 sums.
 
-use std::mem::MaybeUninit;
-
-use primitives::field::{F192, G, LaneSums, Weights8};
+use primitives::field::{F192, G, LaneSums};
 
 use super::eq::SplitEq;
 use super::{K_SKIP, N_INNER, PaddingSpec};
 use crate::ag_code::tables::R_ROWS;
 use crate::ag_code::{K, SUFFIX, to_pairs};
 
+#[cfg(all(
+    target_arch = "x86_64",
+    target_feature = "avx512bw",
+    target_feature = "avx512vbmi",
+    target_feature = "avx512bitalg",
+    target_feature = "gfni"
+))]
+mod bytes;
+#[cfg(all(
+    target_arch = "x86_64",
+    target_feature = "avx512bw",
+    target_feature = "avx512vbmi",
+    target_feature = "avx512bitalg",
+    target_feature = "gfni"
+))]
+use bytes::Kernel;
+
+#[cfg(any(
+    test,
+    not(all(
+        target_arch = "x86_64",
+        target_feature = "avx512bw",
+        target_feature = "avx512vbmi",
+        target_feature = "avx512bitalg",
+        target_feature = "gfni"
+    ))
+))]
+mod planes;
+#[cfg(not(all(
+    target_arch = "x86_64",
+    target_feature = "avx512bw",
+    target_feature = "avx512vbmi",
+    target_feature = "avx512bitalg",
+    target_feature = "gfni"
+)))]
+use planes::Kernel;
+
 /// Blocks per group, the bits of a base-field element.
 const GROUP: usize = 64;
 /// Groups per kernel call.
 const LANES: usize = 8;
-
-/// One word per group: a vector register where the target has one this wide.
-///
-/// The operations are spelled out for AVX-512 rather than left to the loop vectorizer, which
-/// otherwise vectorizes the kernel's loops over planes ACROSS the planes, through scatters.
-#[derive(Clone, Copy)]
-#[repr(C, align(64))]
-struct Lanes([u64; LANES]);
-
-impl Lanes {
-    const ZERO: Self = Self([0; LANES]);
-}
-
-#[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-mod lanes {
-    use core::arch::x86_64::{
-        __m512i, _mm_cvtsi32_si128, _mm512_and_si512, _mm512_sll_epi64, _mm512_srl_epi64, _mm512_xor_si512,
-    };
-    use core::mem::transmute;
-    use core::ops::{BitAnd, BitXor};
-
-    use super::Lanes;
-
-    // SAFETY (all): `avx512f` is enabled at compile time, and `Lanes` is 64 aligned bytes of plain words.
-    impl BitXor for Lanes {
-        type Output = Self;
-        #[inline(always)]
-        fn bitxor(self, rhs: Self) -> Self {
-            unsafe {
-                transmute(_mm512_xor_si512(
-                    transmute::<Self, __m512i>(self),
-                    transmute::<Self, __m512i>(rhs),
-                ))
-            }
-        }
-    }
-
-    impl BitAnd for Lanes {
-        type Output = Self;
-        #[inline(always)]
-        fn bitand(self, rhs: Self) -> Self {
-            unsafe {
-                transmute(_mm512_and_si512(
-                    transmute::<Self, __m512i>(self),
-                    transmute::<Self, __m512i>(rhs),
-                ))
-            }
-        }
-    }
-
-    impl Lanes {
-        #[inline(always)]
-        pub fn shl(self, n: u32) -> Self {
-            unsafe {
-                transmute(_mm512_sll_epi64(
-                    transmute::<Self, __m512i>(self),
-                    _mm_cvtsi32_si128(n as i32),
-                ))
-            }
-        }
-
-        #[inline(always)]
-        pub fn shr(self, n: u32) -> Self {
-            unsafe {
-                transmute(_mm512_srl_epi64(
-                    transmute::<Self, __m512i>(self),
-                    _mm_cvtsi32_si128(n as i32),
-                ))
-            }
-        }
-    }
-}
-
-#[cfg(not(all(target_arch = "x86_64", target_feature = "avx512f")))]
-mod lanes {
-    use core::ops::{BitAnd, BitXor};
-
-    use super::Lanes;
-
-    impl BitXor for Lanes {
-        type Output = Self;
-        #[inline(always)]
-        fn bitxor(self, rhs: Self) -> Self {
-            Self(std::array::from_fn(|q| self.0[q] ^ rhs.0[q]))
-        }
-    }
-
-    impl BitAnd for Lanes {
-        type Output = Self;
-        #[inline(always)]
-        fn bitand(self, rhs: Self) -> Self {
-            Self(std::array::from_fn(|q| self.0[q] & rhs.0[q]))
-        }
-    }
-
-    impl Lanes {
-        #[inline(always)]
-        pub fn shl(self, n: u32) -> Self {
-            Self(self.0.map(|w| w << n))
-        }
-
-        #[inline(always)]
-        pub fn shr(self, n: u32) -> Self {
-            Self(self.0.map(|w| w >> n))
-        }
-    }
-}
 
 /// The seven fixed equality coordinates that follow the skip.
 ///
@@ -174,62 +96,6 @@ fn friendly_scale() -> F192 {
     d.inv()
 }
 
-/// Transpose 64 words of 64 bits, in every lane at once.
-fn transpose(v: &mut [Lanes; 64]) {
-    let mut j = 32u32;
-    let mut mask = 0x0000_0000_ffff_ffffu64;
-    while j != 0 {
-        let lane_mask = Lanes([mask; LANES]);
-        let mut k = 0;
-        while k < 64 {
-            let t = (v[k].shr(j) ^ v[k + j as usize]) & lane_mask;
-            v[k] = v[k] ^ t.shl(j);
-            v[k + j as usize] = v[k + j as usize] ^ t;
-            k = (k + j as usize + 1) & !(j as usize);
-        }
-        j >>= 1;
-        mask ^= mask << j;
-    }
-}
-
-/// Planes XORed per table of [`extend`].
-const TABLE_BITS: usize = 4;
-/// Tables: the last one holds the planes left over.
-const TABLES: usize = K.div_ceil(TABLE_BITS);
-
-/// `R m` past the prefix, for the 64 messages of each lane's group: `out[j]` is the XOR of the
-/// planes row `64 + j` of `R` selects.
-///
-/// By tables: entry `v` of a table is the XOR of the planes `v` selects among its `TABLE_BITS`,
-/// and a row takes one entry per table. A table is filled in Gray-code order, each entry the last
-/// one with a single plane added, so filling it reads nothing back.
-#[inline]
-fn extend(planes: &[Lanes; K], out: &mut [Lanes; SUFFIX]) {
-    let mut tables = MaybeUninit::<[[Lanes; 1 << TABLE_BITS]; TABLES]>::uninit();
-    let entries = tables.as_mut_ptr().cast::<Lanes>();
-    for t in 0..TABLES {
-        let bits = TABLE_BITS.min(K - t * TABLE_BITS);
-        let mut entry = Lanes::ZERO;
-        // SAFETY (both writes): table `t` is entries `t << TABLE_BITS ..`, and a Gray code of
-        // `bits <= TABLE_BITS` bits stays below `1 << TABLE_BITS`.
-        unsafe { entries.add(t << TABLE_BITS).write(entry) };
-        for step in 1..1usize << bits {
-            entry = entry ^ planes[t * TABLE_BITS + step.trailing_zeros() as usize];
-            unsafe { entries.add((t << TABLE_BITS) + (step ^ (step >> 1))).write(entry) };
-        }
-    }
-    for (out, &row) in out.iter_mut().zip(&R_ROWS[K..]) {
-        // The digits come off the row by shifts: a table of them would be a load per digit, on
-        // the ports the table entries need.
-        *out = (0..TABLES).fold(Lanes::ZERO, |acc, t| {
-            let digit = (row >> (TABLE_BITS * t)) as usize & ((1 << TABLE_BITS) - 1);
-            // SAFETY: the Gray code wrote every entry below `1 << bits` of table `t`, and a digit
-            // of `R` has no bit past the planes a short last table holds.
-            acc ^ unsafe { *entries.add((t << TABLE_BITS) + digit) }
-        });
-    }
-}
-
 /// One worker's sums, unreduced: the 158 jet coordinates of the `a x b` part, and `c`'s 64 planes.
 struct Sums {
     jets: [LaneSums; SUFFIX],
@@ -252,34 +118,6 @@ impl Sums {
             a.merge(b);
         }
         self
-    }
-
-    /// Add the groups whose 64 blocks each lane of `a`, `b`, `c` holds, lane `q` weighing `w[q]`.
-    #[inline]
-    fn add(&mut self, a: &mut [Lanes; K], b: &mut [Lanes; K], c: &mut [Lanes; K], w: &[F192; LANES]) {
-        transpose(a);
-        transpose(b);
-        transpose(c);
-        let (mut l, mut r) = ([Lanes::ZERO; SUFFIX], [Lanes::ZERO; SUFFIX]);
-        extend(a, &mut l);
-        extend(b, &mut r);
-
-        let w = Weights8::new(w);
-        let add = |acc: &mut LaneSums, plane: Lanes| acc.add(&w, &plane.0);
-        // Jets multiply as power series: order `n` of the product is the sum over `s + t = n`.
-        // Order 0 of a message is the message, and order 3 lives at the first 30 points only.
-        for i in 0..K {
-            add(&mut self.jets[i], (a[i] & r[i]) ^ (l[i] & b[i]));
-            add(
-                &mut self.jets[K + i],
-                (a[i] & r[K + i]) ^ (l[i] & r[i]) ^ (l[K + i] & b[i]),
-            );
-            add(&mut self.c[i], c[i]);
-        }
-        for i in 0..SUFFIX - 2 * K {
-            let order3 = (a[i] & r[2 * K + i]) ^ (l[i] & r[K + i]) ^ (l[K + i] & r[i]) ^ (l[2 * K + i] & b[i]);
-            add(&mut self.jets[2 * K + i], order3);
-        }
     }
 
     /// The message over the pairs.
@@ -317,28 +155,20 @@ pub fn round1(a: &[u8], b: &[u8], c: &[u8], m: usize, r_rest: &[F192], padding: 
     let live = |group: usize| period < group_bits || (group * group_bits) % period < padding.useful_bits_per_block;
 
     let lanes = LANES.min(n_groups);
-    parallel::fold_reduce(
+    parallel::map_reduce_with_state(
         n_groups / lanes,
+        Kernel::new,
         Sums::new,
-        |sums, chunk| {
+        |kernel, sums, chunk| {
             let mut w = [F192::ZERO; LANES];
-            let mut rows = [[Lanes::ZERO; K]; 3];
-            let mut any = false;
             for q in (0..lanes).filter(|&q| live(chunk * lanes + q)) {
                 let group = chunk * lanes + q;
                 let pair = weight(group / 2);
                 w[q] = if group.is_multiple_of(2) { pair } else { pair * F192::Y };
-                for (rows, table) in rows.iter_mut().zip([a, b, c]) {
-                    let words = table[group * GROUP * 8..][..GROUP * 8].as_chunks::<8>().0;
-                    for (row, word) in rows.iter_mut().zip(words) {
-                        row.0[q] = u64::from_le_bytes(*word);
-                    }
-                }
-                any = true;
+                kernel.load(q, [a, b, c].map(|table| &table[group * GROUP * 8..][..GROUP * 8]));
             }
-            if any {
-                let [a, b, c] = &mut rows;
-                sums.add(a, b, c, &w);
+            if w != [F192::ZERO; LANES] {
+                kernel.flush(&w, sums);
             }
         },
         Sums::merge,
@@ -389,6 +219,32 @@ mod tests {
                 "m = {m}"
             );
         }
+    }
+
+    /// The two kernels agree, lane by lane, with some lanes left out.
+    #[cfg(all(
+        target_arch = "x86_64",
+        target_feature = "avx512bw",
+        target_feature = "avx512vbmi",
+        target_feature = "avx512bitalg",
+        target_feature = "gfni"
+    ))]
+    #[test]
+    fn kernels_agree() {
+        let mut rng = Rng::new(13);
+        let [a, b, c]: [Vec<u8>; 3] = std::array::from_fn(|_| (0..LANES * GROUP * 8).map(|_| rng.next_u8()).collect());
+        let mut w = [F192::ZERO; LANES];
+        let (mut fast, mut portable) = (bytes::Kernel::new(), planes::Kernel::new());
+        for q in [0, 1, 3, 6, 7] {
+            w[q] = rng.ext();
+            let group = [&a, &b, &c].map(|table| &table[q * GROUP * 8..][..GROUP * 8]);
+            fast.load(q, group);
+            portable.load(q, group);
+        }
+        let (mut got, mut want) = (Sums::new(), Sums::new());
+        fast.flush(&w, &mut got);
+        portable.flush(&w, &mut want);
+        assert_eq!(got.finish(), want.finish());
     }
 
     /// Skipping the declared padding changes nothing when it is zero.
