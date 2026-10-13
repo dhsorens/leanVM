@@ -273,7 +273,9 @@ mod tests {
                 assert_eq!(x, F64(((i >> k) & 1) as u64));
             }
         }
-        assert_eq!(beta()[1].square() + beta()[1], F64::ONE);
+        // The basis is a Cantor basis, as `formal/quotient`'s `CantorBasis` asks.
+        assert_eq!(beta()[0], F64::ONE);
+        assert!((0..BASIS - 1).all(|k| s(beta()[k + 1]) == beta()[k]));
     }
 
     /// Digit `k` of a cell is its bit `k` plus a function of its higher bits, at the protocol's size: what

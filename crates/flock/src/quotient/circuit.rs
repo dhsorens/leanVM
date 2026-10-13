@@ -347,7 +347,7 @@ mod tests {
                 cycle[at] = start as u32;
                 at = circuit.sigma[at] as usize;
             }
-            assert_eq!(cycle[at], start as u32, "the wiring is not a permutation");
+            assert_eq!(at, start, "the wiring is not a permutation");
         }
         let (zero_anchor, one_anchor) = (4 * (5 * 64), 4 * (4 * 64));
         assert_eq!(circuit.rows[5 * 64].x, Src::Zero);
