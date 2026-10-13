@@ -183,4 +183,65 @@ theorem word_pins {ι : Type*} [Fintype ι] (μ : ι → F) (z target : F)
   rw [eq_div_iff hμ, mul_comm]
   exact h
 
+/-! ## On the protocol's cells -/
+
+section OnCells
+
+variable {F : Type*} [Field F] [DecidableEq F] [CharP F 2] (P : Params F)
+
+/-- A cell is wired to what it reads: some power of the wiring takes it to the output cell of
+the row it reads, or to the cell that holds the constant. -/
+def Wired (C : AdderCircuit P.T) (zeroCell oneCell : P.T × Fin 4) (cell : P.T × Fin 4) :
+    Src P.T → Prop
+  | .zero => ∃ n : ℕ, (P.σ ^ n) cell = zeroCell
+  | .one => ∃ n : ℕ, (P.σ ^ n) cell = oneCell
+  | .row r => ∃ n : ℕ, (P.σ ^ n) cell = (r, 3)
+
+/-- Cells that satisfy the gates and the copies, with the zero and the one pinned, satisfy the
+circuit: the outputs of the rows are an assignment of the circuit. -/
+theorem satisfies_of_cells (C : AdderCircuit P.T) (zeroCell oneCell : P.T × Fin 4)
+    (hwire : ∀ x : P.T, Wired P C zeroCell oneCell (x, 0) (C.x x) ∧
+      Wired P C zeroCell oneCell (x, 1) (C.y x) ∧ Wired P C zeroCell oneCell (x, 2) (C.c x))
+    (w : P.T × Fin 4 → F)
+    (hgate : ∀ x : P.T, gate P.θ (w (x, 0)) (w (x, 1)) (w (x, 2)) (w (x, 3)) = 0)
+    (hcopy : ∀ i, w (P.σ i) = w i) (hzero : w zeroCell = 0) (hone : w oneCell = 1) :
+    C.Satisfies P.θ fun r => w (r, 3) := by
+  have hread : ∀ (cell : P.T × Fin 4) (s : Src P.T), Wired P C zeroCell oneCell cell s →
+      w cell = s.val fun r => w (r, 3) := by
+    intro cell s hs
+    cases s with
+    | zero =>
+      obtain ⟨n, hn⟩ := hs
+      rw [← copy_iterate P.σ w hcopy n cell, hn, hzero]; rfl
+    | one =>
+      obtain ⟨n, hn⟩ := hs
+      rw [← copy_iterate P.σ w hcopy n cell, hn, hone]; rfl
+    | row r =>
+      obtain ⟨n, hn⟩ := hs
+      rw [← copy_iterate P.σ w hcopy n cell, hn]; rfl
+  intro x
+  obtain ⟨hx, hy, hc⟩ := hwire x
+  rw [← hread _ _ hx, ← hread _ _ hy, ← hread _ _ hc]
+  exact hgate x
+
+/-- **The relation pins the computation.** Two assignments of the cells that satisfy the gates
+and the copies of a wired loop-free circuit, with the zero and the one pinned, and that agree on
+the input rows, have the same output at every row, an element of `GF(4)`. -/
+theorem cells_determined (C : AdderCircuit P.T) (zeroCell oneCell : P.T × Fin 4)
+    (hwire : ∀ x : P.T, Wired P C zeroCell oneCell (x, 0) (C.x x) ∧
+      Wired P C zeroCell oneCell (x, 1) (C.y x) ∧ Wired P C zeroCell oneCell (x, 2) (C.c x))
+    (w w' : P.T × Fin 4 → F)
+    (hgate : ∀ x : P.T, gate P.θ (w (x, 0)) (w (x, 1)) (w (x, 2)) (w (x, 3)) = 0)
+    (hgate' : ∀ x : P.T, gate P.θ (w' (x, 0)) (w' (x, 1)) (w' (x, 2)) (w' (x, 3)) = 0)
+    (hcopy : ∀ i, w (P.σ i) = w i) (hcopy' : ∀ i, w' (P.σ i) = w' i)
+    (hzero : w zeroCell = 0) (hone : w oneCell = 1)
+    (hzero' : w' zeroCell = 0) (hone' : w' oneCell = 1)
+    (hin : ∀ r, C.isInput r → w (r, 3) = w' (r, 3)) (x : P.T) :
+    w (x, 3) = w' (x, 3) ∧ InGF4 P.θ (w (x, 3)) :=
+  C.determined P.hθ _ _
+    (satisfies_of_cells P C zeroCell oneCell hwire w hgate hcopy hzero hone)
+    (satisfies_of_cells P C zeroCell oneCell hwire w' hgate' hcopy' hzero' hone') hin x
+
+end OnCells
+
 end QuotientSecurity

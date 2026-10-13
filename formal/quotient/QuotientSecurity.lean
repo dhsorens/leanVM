@@ -95,3 +95,7 @@ import QuotientSecurity.Witness
 /-- info: 'QuotientSecurity.Params.exists_witness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.Params.exists_witness
+
+/-- info: 'QuotientSecurity.cells_determined' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.cells_determined
