@@ -56,3 +56,7 @@ import QuotientSecurity.Distance
 /-- info: 'QuotientSecurity.zkError_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.zkError_le
+
+/-- info: 'QuotientSecurity.sum_digitsEval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.sum_digitsEval
