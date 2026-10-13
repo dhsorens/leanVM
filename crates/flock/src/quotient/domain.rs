@@ -275,4 +275,20 @@ mod tests {
         }
         assert_eq!(beta()[1].square() + beta()[1], F64::ONE);
     }
+
+    /// Digit `k` of a cell is its bit `k` plus a function of its higher bits, at the protocol's size: what
+    /// `formal/quotient`'s `sum_digitsEval` assumes of the cells.
+    #[test]
+    fn digits_are_triangular() {
+        let mut rng = Rng::new(0xD1);
+        let m = 22;
+        for _ in 0..2000 {
+            let i = rng.next_u64() as usize & ((1 << m) - 1);
+            let digits = chain(point(i), m);
+            for (k, &digit) in digits.iter().enumerate() {
+                let higher = i & !((2 << k) - 1);
+                assert_eq!(digit + chain(point(higher), m)[k], F64(((i >> k) & 1) as u64));
+            }
+        }
+    }
 }

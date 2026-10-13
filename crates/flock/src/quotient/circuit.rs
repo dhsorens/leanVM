@@ -302,3 +302,87 @@ pub fn membership_inputs(secret: &Secret) -> Vec<bool> {
     }
     inputs
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The membership circuit is what `formal/quotient`'s `AdderCircuit` and `Wired` assume: an input row reads
+    /// its own output and two zeros, every other row reads constants or rows of lower rank (the public rows
+    /// ranked last, nothing reading them), every reading cell is on the cycle of the output cell it reads, the
+    /// cells reading a constant are one cycle that holds its public anchor, and the statement's public cells
+    /// read rows that drop the carry.
+    #[test]
+    fn membership_is_a_wired_loop_free_circuit() {
+        let circuit = membership();
+        let n = circuit.rows.len();
+        let rank = |r: usize| if r < PUBLIC_ROWS { n + r } else { r };
+        let is_input: Vec<bool> = {
+            let mut flags = vec![false; n];
+            circuit.inputs.iter().for_each(|&r| flags[r as usize] = true);
+            flags
+        };
+        for (r, row) in circuit.rows.iter().enumerate() {
+            let sources = [row.x, row.y, row.c];
+            if is_input[r] {
+                assert_eq!(sources, [Src::Row(r as u32), Src::Zero, Src::Zero]);
+                continue;
+            }
+            for src in sources {
+                if let Src::Row(from) = src {
+                    assert!(from as usize >= PUBLIC_ROWS, "row {r} reads a public row");
+                    assert!(rank(from as usize) < rank(r), "row {r} reads row {from}");
+                }
+            }
+        }
+
+        // Cycles of the wiring, each named by its least cell.
+        let mut cycle = vec![u32::MAX; 4 * n];
+        for start in 0..4 * n {
+            if cycle[start] != u32::MAX {
+                continue;
+            }
+            let mut at = start;
+            while cycle[at] == u32::MAX {
+                cycle[at] = start as u32;
+                at = circuit.sigma[at] as usize;
+            }
+            assert_eq!(cycle[at], start as u32, "the wiring is not a permutation");
+        }
+        let (zero_anchor, one_anchor) = (4 * (5 * 64), 4 * (4 * 64));
+        assert_eq!(circuit.rows[5 * 64].x, Src::Zero);
+        assert_eq!(circuit.rows[4 * 64].x, Src::One);
+        for (r, row) in circuit.rows.iter().enumerate() {
+            for (role, src) in [row.x, row.y, row.c].into_iter().enumerate() {
+                let source = match src {
+                    Src::Zero => zero_anchor,
+                    Src::One => one_anchor,
+                    Src::Row(from) => 4 * from as usize + 3,
+                };
+                assert_eq!(cycle[4 * r + role], cycle[source], "cell {role} of row {r}");
+            }
+        }
+        // The zero's and the one's cycles hold no output cell, and are distinct.
+        assert_ne!(cycle[zero_anchor], cycle[one_anchor]);
+        assert!((0..n).all(|r| cycle[4 * r + 3] != cycle[zero_anchor] && cycle[4 * r + 3] != cycle[one_anchor]));
+
+        // Word 5 is all zeros, word 4 is a one then zeros, and words 0 to 3 read rows that drop the carry.
+        for r in 0..PUBLIC_ROWS {
+            let (word, row) = (r / (WORD_BITS / 2), circuit.rows[r]);
+            assert_eq!(row.c, Src::Zero);
+            match word {
+                0..4 => {
+                    for src in [row.x, row.y] {
+                        let Src::Row(from) = src else {
+                            panic!("a statement bit reads a constant")
+                        };
+                        let from = circuit.rows[from as usize];
+                        assert_eq!([from.y, from.c], [Src::Zero, Src::Zero]);
+                    }
+                }
+                4 if r == 4 * 64 => assert_eq!([row.x, row.y], [Src::One, Src::Zero]),
+                _ => assert_eq!([row.x, row.y], [Src::Zero, Src::Zero]),
+            }
+        }
+    }
+}
