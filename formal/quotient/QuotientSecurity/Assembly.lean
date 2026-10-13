@@ -1,4 +1,5 @@
 import QuotientSecurity.Tables
+import QuotientSecurity.Degrees
 
 /-!
 # The verifier's four claims are the model's acceptance
@@ -22,7 +23,7 @@ its other three slots. -/
 noncomputable def quotientsOfTable {m : ℕ} (Y : F)
     (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) : Params.Quotients F where
   h₀ := sumPolyLow Y c
-  hHigh := (slotPoly_low Y c).choose
+  hHigh := sumPolyHigh Y c
   q := slotPoly Y c true false
   qGate := slotPoly Y c false true
   junk := slotPoly Y c true true
@@ -32,7 +33,7 @@ theorem quotientsOfTable_h {m : ℕ} (Y : F) (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 
     (quotientsOfTable Y c).h P = slotPoly Y c false false := by
   unfold Params.Quotients.h
   rw [hv]
-  exact (slotPoly_low Y c).choose_spec.symm
+  exact (slotPoly_low Y c).symm
 
 namespace Params
 
@@ -108,5 +109,54 @@ theorem claims_iff_accepts {n N : ℕ} (B : CantorBasis F N) (hN : n + 2 ≤ N)
     exact ⟨h1, h2, hnz, h3, h4⟩
   · rintro ⟨h1, h2, -, h3, h4⟩
     exact ⟨h1, h2, h3, h4⟩
+
+/-! ## The tables' polynomials are within the bounds of the soundness theorems -/
+
+theorem natDegree_limbs_le {d : ℕ} (a b c : F) (p₀ p₁ p₂ p₃ : F[X])
+    (h₀ : p₀.natDegree ≤ d) (h₁ : p₁.natDegree ≤ d) (h₂ : p₂.natDegree ≤ d)
+    (h₃ : p₃.natDegree ≤ d) : (p₀ + C a * p₁ + C b * p₂ + C c * p₃).natDegree ≤ d :=
+  natDegree_add_le_of_degree_le (natDegree_add_le_of_degree_le (natDegree_add_le_of_degree_le h₀
+    ((natDegree_C_mul_le _ _).trans h₁)) ((natDegree_C_mul_le _ _).trans h₂))
+    ((natDegree_C_mul_le _ _).trans h₃)
+
+theorem natDegree_witnessOfTable_le {k : ℕ} (c : (Fin (k + 1 + 1) → Bool) → F) (j : Fin 4) :
+    (witnessOfTable c j).natDegree ≤ 2 ^ k := by
+  fin_cases j <;> exact natDegree_tablePoly_le _
+
+theorem natDegree_highPart_le {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) :
+    (highPart c).natDegree ≤ 2 ^ (m + 2) := by
+  have h1 := natDegree_tablePoly_le fun b : Fin m → Bool => c (Fin.snoc (Fin.snoc b true) false)
+  have h2 := natDegree_tablePoly_le fun b : Fin (m + 1) → Bool => c (Fin.snoc b true)
+  have hd : (digitPoly m + 1 : F[X]).natDegree ≤ 2 ^ m :=
+    natDegree_add_le_of_degree_le (natDegree_digitPoly_le m) (by simp)
+  have hpow : 2 ^ (m + 2) = 2 ^ m + 2 ^ m + 2 ^ (m + 1) := by ring
+  unfold highPart
+  refine natDegree_add_le_of_degree_le (h1.trans (by omega)) ?_
+  exact (natDegree_mul_le_of_le hd h2).trans (by omega)
+
+/-- **The polynomials the tables hold are within the degree bounds** the soundness theorems
+quantify over, when those bounds are at least the tables' sizes. -/
+theorem tables_within_bounds {n : ℕ} (Bd : P.Bounds) (hw : 2 ^ (n + 1) ≤ Bd.witness)
+    (hq : 2 ^ (n + 2 + 2) ≤ Bd.quotient) (Y : F)
+    (cW : (Fin (n + 1 + 1 + 1) → Bool) → F)
+    (cQ : (Fin (n + 2 + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) :
+    (∀ j, (witnessOfTable cW j).natDegree ≤ Bd.witness) ∧
+      (quotientsOfTable Y cQ).h₀.natDegree ≤ Bd.quotient ∧
+      (quotientsOfTable Y cQ).hHigh.natDegree ≤ Bd.quotient ∧
+      (quotientsOfTable Y cQ).q.natDegree ≤ Bd.quotient ∧
+      (quotientsOfTable Y cQ).qGate.natDegree ≤ Bd.quotient ∧
+      (quotientsOfTable Y cQ).junk.natDegree ≤ Bd.quotient := by
+  have hslot : ∀ κ τ, (slotPoly Y cQ κ τ).natDegree ≤ Bd.quotient := fun κ τ =>
+    (natDegree_limbs_le _ _ _ _ _ _ _ (natDegree_tablePoly_le _) (natDegree_tablePoly_le _)
+      (natDegree_tablePoly_le _) (natDegree_tablePoly_le _)).trans hq
+  have hlow : (sumPolyLow Y cQ).natDegree ≤ Bd.quotient :=
+    (natDegree_limbs_le (d := 2 ^ (n + 2)) _ _ _ _ _ _ _ (natDegree_tablePoly_le _)
+      (natDegree_tablePoly_le _) (natDegree_tablePoly_le _) (natDegree_tablePoly_le _)).trans
+      ((Nat.pow_le_pow_right (by norm_num) (by omega)).trans hq)
+  have hhigh : (sumPolyHigh Y cQ).natDegree ≤ Bd.quotient :=
+    (natDegree_limbs_le _ _ _ _ _ _ _ (natDegree_highPart_le _) (natDegree_highPart_le _)
+      (natDegree_highPart_le _) (natDegree_highPart_le _)).trans hq
+  exact ⟨fun j => (natDegree_witnessOfTable_le cW j).trans hw, hlow, hhigh, hslot true false,
+    hslot false true, hslot true true⟩
 
 end QuotientSecurity

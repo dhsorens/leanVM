@@ -165,3 +165,11 @@ import QuotientSecurity.Assembly
 /-- info: 'QuotientSecurity.sum_mle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.sum_mle
+
+/-- info: 'QuotientSecurity.tables_within_bounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.tables_within_bounds
+
+/-- info: 'QuotientSecurity.natDegree_tablePoly_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.natDegree_tablePoly_le

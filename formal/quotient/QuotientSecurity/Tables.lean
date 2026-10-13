@@ -204,17 +204,19 @@ def lowChunk {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) : (Fin m → Bool)
 
 /-- A table of two more digits holds its first chunk's polynomial, plus a multiple of the
 cells' vanishing polynomial. -/
+noncomputable def highPart {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) : F[X] :=
+  tablePoly (fun b => c (Fin.snoc (Fin.snoc b true) false))
+    + (digitPoly m + 1) * tablePoly (fun b => c (Fin.snoc b true))
+
 theorem tablePoly_low {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) :
-    ∃ hi : F[X], tablePoly c = tablePoly (lowChunk c) + digitPoly m * hi := by
-  refine ⟨tablePoly (fun b => c (Fin.snoc (Fin.snoc b true) false))
-    + (digitPoly m + 1) * tablePoly (fun b => c (Fin.snoc b true)), ?_⟩
+    tablePoly c = tablePoly (lowChunk c) + digitPoly m * highPart c := by
   rw [tablePoly_snoc c, tablePoly_snoc fun b => c (Fin.snoc b false)]
   have hd : (digitPoly (m + 1) : F[X]) = digitPoly m * (digitPoly m + 1) := by
     show (X ^ 2 + X : F[X]).comp (digitPoly m) = _
     simp only [add_comp, pow_comp, X_comp]
     ring
   rw [hd]
-  unfold lowChunk
+  unfold lowChunk highPart
   ring
 
 /-- The low part of the sum's polynomial: the first chunk of the first slot, over its limbs. -/
@@ -226,15 +228,20 @@ noncomputable def sumPolyLow {m : ℕ} (Y : F)
     + C (Y ^ 3) * tablePoly (lowChunk (subTable c false false true true))
 
 /-- The first slot is the low part plus a multiple of the cells' vanishing polynomial. -/
+noncomputable def sumPolyHigh {m : ℕ} (Y : F)
+    (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) : F[X] :=
+  highPart (subTable c false false false false)
+    + C Y * highPart (subTable c false false true false)
+    + C (Y ^ 2) * highPart (subTable c false false false true)
+    + C (Y ^ 3) * highPart (subTable c false false true true)
+
 theorem slotPoly_low {m : ℕ} (Y : F) (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) :
-    ∃ hi : F[X], slotPoly Y c false false = sumPolyLow Y c + digitPoly m * hi := by
-  obtain ⟨h0, e0⟩ := tablePoly_low (subTable c false false false false)
-  obtain ⟨h1, e1⟩ := tablePoly_low (subTable c false false true false)
-  obtain ⟨h2, e2⟩ := tablePoly_low (subTable c false false false true)
-  obtain ⟨h3, e3⟩ := tablePoly_low (subTable c false false true true)
-  refine ⟨h0 + C Y * h1 + C (Y ^ 2) * h2 + C (Y ^ 3) * h3, ?_⟩
-  unfold slotPoly sumPolyLow
-  rw [e0, e1, e2, e3]
+    slotPoly Y c false false = sumPolyLow Y c + digitPoly m * sumPolyHigh Y c := by
+  unfold slotPoly sumPolyLow sumPolyHigh
+  rw [tablePoly_low (subTable c false false false false),
+    tablePoly_low (subTable c false false true false),
+    tablePoly_low (subTable c false false false true),
+    tablePoly_low (subTable c false false true true)]
   ring
 
 /-- The fixed point of the second claim on the quotient table: ones on the cells' digits, zeros
@@ -260,5 +267,37 @@ theorem sum_mle {n m : ℕ} (B : CantorBasis F n) (hm : m ≤ n) (Y : F) (hY : 1
     ← sum_tablePoly B hm]
   unfold sumPolyLow
   simp only [eval_add, eval_mul, eval_C, Finset.sum_add_distrib, Finset.mul_sum]
+
+/-! ## Degrees -/
+
+theorem natDegree_digitPoly_le (k : ℕ) : (digitPoly k : F[X]).natDegree ≤ 2 ^ k := by
+  induction k with
+  | zero => simp [digitPoly]
+  | succ k ih =>
+    refine natDegree_comp_le.trans ?_
+    have h2 : (X ^ 2 + X : F[X]).natDegree ≤ 2 := by compute_degree
+    calc (X ^ 2 + X : F[X]).natDegree * (digitPoly k : F[X]).natDegree ≤ 2 * 2 ^ k :=
+          Nat.mul_le_mul h2 ih
+      _ = 2 ^ (k + 1) := by ring
+
+theorem sum_two_pow_fin (m : ℕ) : ∑ k : Fin m, 2 ^ (k : ℕ) < 2 ^ m := by
+  induction m with
+  | zero => simp
+  | succ m ih =>
+    rw [Fin.sum_univ_castSucc]
+    simp only [Fin.val_castSucc, Fin.val_last]
+    have : 2 ^ (m + 1) = 2 ^ m + 2 ^ m := by ring
+    omega
+
+/-- A table of `m` variables holds a polynomial of degree below `2^m`. -/
+theorem natDegree_tablePoly_le {m : ℕ} (c : (Fin m → Bool) → F) :
+    (tablePoly c).natDegree ≤ 2 ^ m := by
+  unfold tablePoly
+  refine natDegree_sum_le_of_forall_le _ _ fun b _ => ?_
+  refine (natDegree_C_mul_le _ _).trans ((natDegree_prod_le _ _).trans ?_)
+  refine le_trans (Finset.sum_le_sum fun k _ => ?_) (sum_two_pow_fin m).le
+  split_ifs
+  · exact natDegree_digitPoly_le _
+  · simp
 
 end QuotientSecurity
