@@ -11,6 +11,7 @@ import QuotientSecurity.Cantor
 import QuotientSecurity.Assembly
 import QuotientSecurity.CantorExists
 import QuotientSecurity.Concrete
+import QuotientSecurity.PublicWeight
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -211,3 +212,27 @@ import QuotientSecurity.Concrete
 /-- info: 'QuotientSecurity.exists_pub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.exists_pub
+
+/-- info: 'QuotientSecurity.knowledgeSoundness_membership' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.knowledgeSoundness_membership
+
+/-- info: 'QuotientSecurity.membershipPub_hPub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.membershipPub_hPub
+
+/-- info: 'QuotientSecurity.membership_target' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.membership_target
+
+/-- info: 'QuotientSecurity.rowsPoly_eq_vRows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.rowsPoly_eq_vRows
+
+/-- info: 'QuotientSecurity.CantorBasis.tablePoly_ext' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.CantorBasis.tablePoly_ext
+
+/-- info: 'QuotientSecurity.coordPoly_point' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.coordPoly_point

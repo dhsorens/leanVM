@@ -303,4 +303,45 @@ theorem natDegree_tablePoly_le {m : ℕ} (c : (Fin m → Bool) → F) :
   · exact natDegree_digitPoly_le _
   · simp
 
+/-- Strictly below `2^m`, in fact. -/
+theorem natDegree_tablePoly_lt {m : ℕ} (c : (Fin m → Bool) → F) :
+    (tablePoly c).natDegree < 2 ^ m := by
+  have hpos : 0 < 2 ^ m := by positivity
+  refine lt_of_le_of_lt (b := 2 ^ m - 1) ?_ (by omega)
+  unfold tablePoly
+  refine natDegree_sum_le_of_forall_le _ _ fun b _ => ?_
+  refine (natDegree_C_mul_le _ _).trans ((natDegree_prod_le _ _).trans ?_)
+  refine le_trans (Finset.sum_le_sum fun k _ => ?_) (Nat.le_sub_one_of_lt (sum_two_pow_fin m))
+  split_ifs
+  · exact natDegree_digitPoly_le _
+  · simp
+
+theorem tablePoly_sub {m : ℕ} (c c' : (Fin m → Bool) → F) :
+    tablePoly (c - c') = tablePoly c - tablePoly c' := by
+  unfold tablePoly
+  rw [← Finset.sum_sub_distrib]
+  exact Finset.sum_congr rfl fun b _ => by rw [Pi.sub_apply, C_sub, sub_mul]
+
+/-- A monic polynomial with as many distinct roots as its degree is the product over them. -/
+theorem eq_prod_of_monic_of_roots {ι : Type*} [Fintype ι] {p : F[X]} (hmon : p.Monic)
+    (hdeg : p.natDegree = Fintype.card ι) {f : ι → F} (hf : Function.Injective f)
+    (hroot : ∀ i, p.eval (f i) = 0) : p = ∏ i, (X - C (f i)) := by
+  have hqmon : (∏ i, (X - C (f i))).Monic := monic_prod_of_monic _ _ fun i _ => monic_X_sub_C _
+  have hqdeg : (∏ i, (X - C (f i))).natDegree = Fintype.card ι := by
+    rw [natDegree_prod_of_monic _ _ fun i _ => monic_X_sub_C _]
+    simp
+  rw [← sub_eq_zero]
+  by_contra hne
+  have hlt : (p - ∏ i, (X - C (f i))).natDegree < Fintype.card ι := by
+    have hdd : p.degree = (∏ i, (X - C (f i))).degree := by
+      rw [degree_eq_natDegree hmon.ne_zero, degree_eq_natDegree hqmon.ne_zero, hdeg, hqdeg]
+    have hlc : p.leadingCoeff = (∏ i, (X - C (f i))).leadingCoeff := by
+      rw [hmon.leadingCoeff, hqmon.leadingCoeff]
+    have := degree_sub_lt_left hdd hmon.ne_zero hlc
+    rw [degree_eq_natDegree hmon.ne_zero, hdeg] at this
+    exact (natDegree_lt_iff_degree_lt hne).mpr this
+  refine hne (eq_zero_of_natDegree_lt_card_of_eval_eq_zero _ hf (fun i => ?_) hlt)
+  rw [eval_sub, eval_prod, Finset.prod_eq_zero (Finset.mem_univ i) (by simp), sub_zero]
+  exact hroot i
+
 end QuotientSecurity

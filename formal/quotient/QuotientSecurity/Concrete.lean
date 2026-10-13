@@ -55,6 +55,16 @@ theorem CantorBasis.point_injective {m : ℕ} (hm : m ≤ N) :
   refine hmem.2 ?_
   cases hx : x k <;> cases hx' : x' k <;> simp [hx, hx'] at h3 ⊢
 
+/-- **A table's polynomial is determined by its values on the cells.** -/
+theorem CantorBasis.tablePoly_ext {m : ℕ} (hm : m ≤ N) (c c' : (Fin m → Bool) → F)
+    (h : ∀ x : Fin m → Bool,
+      (tablePoly c).eval (B.point x) = (tablePoly c').eval (B.point x)) :
+    tablePoly c = tablePoly c' := by
+  rw [← sub_eq_zero, ← tablePoly_sub]
+  refine eq_zero_of_natDegree_lt_card_of_eval_eq_zero _ (B.point_injective hm) (fun x => ?_) ?_
+  · rw [tablePoly_sub, eval_sub, h, sub_self]
+  · simpa using natDegree_tablePoly_lt (c - c')
+
 /-- The digit above the last vanishes on the points. -/
 theorem CantorBasis.iterate_point {m : ℕ} (hm : m ≤ N) (x : Fin m → Bool) :
     sq^[m] (B.point x) = 0 := by
@@ -342,8 +352,10 @@ noncomputable def Params.ofCantorBounds (d : ℕ) (hd : ∀ γ, (pub γ).natDegr
     exact (card_cantorT B hm).le
 
 /-- **The four claims are the model's acceptance, on the instance**: `claims_iff_accepts` with
-its hypotheses on the cells, the vanishing polynomial and the wiring polynomial met. -/
-theorem claims_iff_accepts_ofCantor
+its hypotheses on the cells and the vanishing polynomial met, for any wiring table whose
+polynomial carries the wiring. -/
+theorem claims_iff_accepts_ofCantor (cF : (Fin (n + 2) → Bool) → F)
+    (hcF : ∀ x, (tablePoly cF).eval (B.point x) = B.point (σ x))
     (cW : (Fin (n + 1 + 1 + 1) → Bool) → F)
     (cQ : (Fin (n + 2 + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F)
     (Y : F) (hY : 1 + Y ≠ 0) (hY2 : 1 + Y ^ 2 ≠ 0)
@@ -352,7 +364,7 @@ theorem claims_iff_accepts_ofCantor
     (hnz : (Params.ofCantor B hm σ words wordSum pub hPub).claimDen α β t a s * (Params.ofCantor B hm σ words wordSum pub hPub).vRows.eval t ≠ 0) :
     (mle cW (Fin.cons ρ (Fin.cons (ρ ^ 2) (claimPoint 2 (n + 1) t)))
           = (∑ j, Params.opening ρ j * a j) / claimScale 2 (n + 1) t ∧
-        mle (wiringTable B hm σ) (claimPoint 0 (n + 2) t) = s / claimScale 0 (n + 2) t ∧
+        mle cF (claimPoint 0 (n + 2) t) = s / claimScale 0 (n + 2) t ∧
         mle cQ (Fin.snoc (Fin.snoc (Fin.snoc (Fin.snoc (claimPoint 0 (n + 2 + 1 + 1) t)
             ((Params.ofCantor B hm σ words wordSum pub hPub).vCells.eval t / (Params.ofCantor B hm σ words wordSum pub hPub).claimDen α β t a s)) ρ) (Y / (1 + Y))) (Y ^ 2 / (1 + Y ^ 2)))
           = (Params.ofCantor B hm σ words wordSum pub hPub).claimValue α β γ t ρ a s / ((1 + Y) * (1 + Y ^ 2))
@@ -360,39 +372,76 @@ theorem claims_iff_accepts_ofCantor
         mle cQ (sumPoint (n + 2) Y) = (Params.ofCantor B hm σ words wordSum pub hPub).target stmt γ / ((1 + Y) * (1 + Y ^ 2)))
       ↔ (Params.ofCantor B hm σ words wordSum pub hPub).Accepts stmt (witnessOfTable cW) (quotientsOfTable Y cQ) α β γ t a s ρ :=
   claims_iff_accepts (Params.ofCantor B hm σ words wordSum pub hPub) B hm (cantorCells B hm)
-    (Params.ofCantor_pt B hm σ words wordSum pub hPub) rfl cW (wiringTable B hm σ) rfl cQ Y hY hY2 stmt
+    (Params.ofCantor_pt B hm σ words wordSum pub hPub) rfl cW cF
+    (B.tablePoly_ext hm _ _ fun x => by rw [wiringTable_eval, hcF]) cQ Y hY hY2 stmt
     α β γ t ρ s a ht hnz
 
 /-- **The instance's vanishing polynomials are the exact ones**, so the honest prover's quotients
 exist on it (`Params.honest_consistent`). -/
 theorem Params.ofCantor_exact : (Params.ofCantor B hm σ words wordSum pub hPub).Exact := by
   refine ⟨?_, rfl⟩
-  set P := Params.ofCantor B hm σ words wordSum pub hPub with hP
-  show (digitPoly (n + 2) : F[X]) = ∏ i : P.T × Fin 4, (X - C (P.pt i))
   obtain ⟨hmon, hdeg⟩ := digitPoly_monic_natDegree (F := F) (n + 2)
-  have hqmon : (∏ i : P.T × Fin 4, (X - C (P.pt i))).Monic :=
-    monic_prod_of_monic _ _ fun i _ => monic_X_sub_C _
-  have hcard : Fintype.card (P.T × Fin 4) = 2 ^ (n + 2) :=
-    Params.ofCantor_nCells B hm σ words wordSum pub hPub
-  have hqdeg : (∏ i : P.T × Fin 4, (X - C (P.pt i))).natDegree = 2 ^ (n + 2) := by
-    rw [natDegree_prod_of_monic _ _ fun i _ => monic_X_sub_C _]
-    simp [hcard]
-  rw [← sub_eq_zero]
-  by_contra hne
-  have hlt : (digitPoly (n + 2) - ∏ i : P.T × Fin 4, (X - C (P.pt i)) : F[X]).natDegree
-      < Fintype.card (P.T × Fin 4) := by
-    rw [hcard, natDegree_lt_iff_degree_lt hne]
-    have hdd : (digitPoly (n + 2) : F[X]).degree
-        = (∏ i : P.T × Fin 4, (X - C (P.pt i))).degree := by
-      rw [degree_eq_natDegree hmon.ne_zero, degree_eq_natDegree hqmon.ne_zero, hdeg, hqdeg]
-    have hlc : (digitPoly (n + 2) : F[X]).leadingCoeff
-        = (∏ i : P.T × Fin 4, (X - C (P.pt i))).leadingCoeff := by
-      rw [hmon.leadingCoeff, hqmon.leadingCoeff]
-    have := degree_sub_lt_left hdd hmon.ne_zero hlc
-    rwa [degree_eq_natDegree hmon.ne_zero, hdeg] at this
-  refine hne (eq_zero_of_natDegree_lt_card_of_eval_eq_zero _ P.pt_injective (fun i => ?_) hlt)
-  rw [eval_sub, eval_prod, Finset.prod_eq_zero (Finset.mem_univ i) (by simp), sub_zero]
-  exact P.hCells i.1.1 i.1.2 i.2
+  exact eq_prod_of_monic_of_roots hmon
+    (hdeg.trans (Params.ofCantor_nCells B hm σ words wordSum pub hPub).symm)
+    (Params.ofCantor B hm σ words wordSum pub hPub).pt_injective
+    fun i => (Params.ofCantor B hm σ words wordSum pub hPub).hCells i.1.1 i.1.2 i.2
+
+/-! ## The rows' vanishing polynomial, as the verifier evaluates it -/
+
+/-- A sum of digits with constant coefficients. -/
+noncomputable def rowsPoly (τ : Fin (n + 1) → F) : F[X] := ∑ k, C (τ k) * digitPoly (k : ℕ)
+
+theorem rowsPoly_eval (τ : Fin (n + 1) → F) (t : F) :
+    (rowsPoly τ).eval t = ∑ k, τ k * sq^[(k : ℕ)] t := by
+  simp [rowsPoly, eval_finsetSum, digitPoly_eval]
+
+theorem rowsPoly_monic (τ : Fin (n + 1) → F) (hτ : τ (Fin.last n) = 1) :
+    (rowsPoly τ).Monic ∧ (rowsPoly τ).natDegree = 2 ^ n := by
+  obtain ⟨hmon, hdeg⟩ := digitPoly_monic_natDegree (F := F) n
+  have hlow : (∑ k : Fin n, C (τ k.castSucc) * digitPoly (k : ℕ) : F[X]).natDegree
+      < (digitPoly n : F[X]).natDegree := by
+    rw [hdeg]
+    have hpos : 0 < 2 ^ n := by positivity
+    refine lt_of_le_of_lt (b := 2 ^ n - 1) (natDegree_sum_le_of_forall_le _ _ fun k _ => ?_)
+      (by omega)
+    refine (natDegree_C_mul_le _ _).trans ((natDegree_digitPoly_le _).trans ?_)
+    exact Nat.le_sub_one_of_lt (Nat.pow_lt_pow_right (by norm_num) k.2)
+  have e : rowsPoly τ = ∑ k : Fin n, C (τ k.castSucc) * digitPoly (k : ℕ) + digitPoly n := by
+    simp [rowsPoly, Fin.sum_univ_castSucc, hτ]
+  rw [e]
+  exact ⟨hmon.add_of_right (degree_lt_degree hlow),
+    by rw [natDegree_add_eq_right_of_natDegree_lt hlow, hdeg]⟩
+
+/-- **The verifier's rows' polynomial is the instance's.** A sum of digits with constant
+coefficients, the last one, that vanishes on the basis vectors of the rows (the linear system
+`quotient::domain::row_vanishing` solves) is the product over the rows. -/
+theorem rowsPoly_eq_vRows (τ : Fin (n + 1) → F) (hτ : τ (Fin.last n) = 1)
+    (hsys : ∀ j : Fin (n + 2), 2 ≤ (j : ℕ) → (rowsPoly τ).eval (B.β j) = 0) :
+    rowsPoly τ = (Params.ofCantor B hm σ words wordSum pub hPub).vRows := by
+  obtain ⟨hmon, hdeg⟩ := rowsPoly_monic τ hτ
+  refine eq_prod_of_monic_of_roots hmon (hdeg.trans (card_cantorT B hm).symm)
+    Subtype.val_injective fun x => ?_
+  obtain ⟨y, -, hy⟩ := Finset.mem_image.mp x.2
+  rw [← hy, rowsPoly_eval]
+  have hadd : ∀ z : Fin (n + 2) → Bool, (∀ j : Fin (n + 2), (j : ℕ) < 2 → z j = false) →
+      ∑ k, τ k * sq^[(k : ℕ)] (B.point z) = 0 := by
+    intro z hz
+    unfold CantorBasis.point
+    simp only [sq_iterate_sum, Finset.mul_sum]
+    rw [Finset.sum_comm]
+    refine Finset.sum_eq_zero fun j _ => ?_
+    by_cases hj : z j = true
+    · have h2 : 2 ≤ (j : ℕ) := by
+        by_contra h
+        rw [hz j (by omega)] at hj
+        exact Bool.false_ne_true hj
+      simp only [hj, ite_true]
+      rw [← rowsPoly_eval]
+      exact hsys j h2
+    · simp [hj, sq_iterate_zero]
+  refine hadd _ fun j hj => ?_
+  obtain ⟨j, hjlt⟩ := j
+  interval_cases j <;> rfl
 
 end Cells
 
