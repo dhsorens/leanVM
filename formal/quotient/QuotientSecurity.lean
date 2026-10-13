@@ -10,6 +10,7 @@ import QuotientSecurity.Witness
 import QuotientSecurity.Cantor
 import QuotientSecurity.Assembly
 import QuotientSecurity.CantorExists
+import QuotientSecurity.Concrete
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -182,3 +183,27 @@ import QuotientSecurity.CantorExists
 /-- info: 'QuotientSecurity.exists_cantorBasis_big' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.exists_cantorBasis_big
+
+/-- info: 'QuotientSecurity.knowledgeSoundness_ofCantor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.knowledgeSoundness_ofCantor
+
+/-- info: 'QuotientSecurity.exists_instance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.exists_instance
+
+/-- info: 'QuotientSecurity.claims_iff_accepts_ofCantor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.claims_iff_accepts_ofCantor
+
+/-- info: 'QuotientSecurity.Params.ofCantor_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Params.ofCantor_exact
+
+/-- info: 'QuotientSecurity.CantorBasis.exists_table' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.CantorBasis.exists_table
+
+/-- info: 'QuotientSecurity.CantorBasis.point_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.CantorBasis.point_injective
