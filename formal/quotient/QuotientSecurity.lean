@@ -14,6 +14,7 @@ import QuotientSecurity.Concrete
 import QuotientSecurity.PublicWeight
 import QuotientSecurity.ConcreteZK
 import QuotientSecurity.Sequence
+import QuotientSecurity.Joint
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -266,3 +267,19 @@ import QuotientSecurity.Sequence
 /-- info: 'QuotientSecurity.prob_not_good' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.prob_not_good
+
+/-- info: 'QuotientSecurity.knowledgeSoundness_handles' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.knowledgeSoundness_handles
+
+/-- info: 'QuotientSecurity.soundness_after' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.soundness_after
+
+/-- info: 'QuotientSecurity.simRun_eq_simNI' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.simRun_eq_simNI
+
+/-- info: 'QuotientSecurity.simulationSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.simulationSoundness
