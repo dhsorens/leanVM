@@ -9,6 +9,7 @@ import QuotientSecurity.Circuit
 import QuotientSecurity.Witness
 import QuotientSecurity.Cantor
 import QuotientSecurity.Assembly
+import QuotientSecurity.CantorExists
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -173,3 +174,7 @@ import QuotientSecurity.Assembly
 /-- info: 'QuotientSecurity.natDegree_tablePoly_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.natDegree_tablePoly_le
+
+/-- info: 'QuotientSecurity.exists_cantorBasis' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.exists_cantorBasis
