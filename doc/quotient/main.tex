@@ -36,7 +36,7 @@
 \begin{document}
 \maketitle
 
-\noindent\textbf{In one paragraph.} Same setting as the two-claim note (\code{doc/membership}): a precompile checks one multilinear evaluation claim (commitment, point, value) on a WHIR commitment~\cite{ACFY25}, and a proof is a reduction of its statement to a few such claims. Here the reduction has no sumcheck. A multilinear claim at a point built from one field element is a \emph{univariate} evaluation, so the proof is a PLONK-style argument~\cite{Plonk} on an additive subspace: one gate, copy constraints by logarithmic derivatives~\cite{LogUp}, quotients. The quotient values are never sent: every identity is linear in the polynomials of one commitment, so it \emph{is} a claim on that commitment. \textbf{The proof is two roots and five field elements (184 bytes), it leaves four claims, and the verifier makes no check of its own.} The code is \code{flock::quotient}; the verifier is also an EVM contract, measured in Section~\ref{sec:cost}.
+\noindent\textbf{In one paragraph.} Same setting as the two-claim note (\code{doc/membership}): a precompile checks one multilinear evaluation claim (commitment, point, value) on a WHIR commitment~\cite{ACFY25}, and a proof is a reduction of its statement to a few such claims. Here the reduction has no sumcheck. A multilinear claim at a point built from one field element is a \emph{univariate} evaluation, so the proof is a PLONK-style argument~\cite{Plonk} on an additive subspace: one gate, copy constraints by logarithmic derivatives~\cite{LogUp}, quotients. The quotient values are never sent: every identity is linear in the polynomials of one commitment, so it \emph{is} a claim on that commitment. \textbf{The proof is two roots and five field elements (184 bytes), it leaves four claims, and the verifier checks nothing itself but that one product is not zero.} The code is \code{flock::quotient}; the verifier is also an EVM contract, measured in Section~\ref{sec:cost}.
 
 \section{Statement}
 
@@ -85,7 +85,7 @@ So a 32-bit addition is 32 rows, the carry riding from one $\mathsf V$ cell to t
   \item \textbf{A free input bit} is a row whose $\mathsf X$ cell is wired to its own $\mathsf V$ cell, and whose $\mathsf Y$, $\mathsf C$ cells are wired to zero: \eqref{eq:gate} reads $v = \theta v^2 + \theta^2 v$, that is $v^2 = v$.
   \item \textbf{Public bits} are the $\mathsf X$ and $\mathsf Y$ cells of rows 0 to 511: eight words of 128 bits, bit $j$ of word $J$ at cell $(j \bmod 2) + 4 \lfloor j / 2 \rfloor + 256 J$. Words 0 to 3 are the halves of $y$ and $\rootnode$, each wired to the bit the circuit computed (through a row that drops its carry). Word 4 is the constant 1: its bit 0 is wired to every cell reading a one, and its other bits, with all of words 5 to 7 and the $\mathsf C$ cells of these rows, to every cell reading a zero.
 \end{itemize}
-The 34 compressions take 879{,}104 rows, the path's swaps 32{,}768, the inputs 8{,}480, the outputs and public rows 1{,}024.
+The 34 compressions take 879{,}104 rows, the path's swaps 32{,}768, the inputs 8{,}480, the outputs and public rows 1{,}024, and one row makes a carry of one: 921{,}377 of $2^{20}$.
 
 \paragraph{Binding the public bits.} Bit $j$ of a word has the weight $\mu_j \in \E$ that makes a word's weighted sum the field element it is read as ($\mu_j = 2^j$ in $\K$ for $j < 64$, then $Y \cdot 2^{j - 64}$). With a challenge $\gamma$, cell $x$ of the public region gets $\lambda(x) = \gamma^J \mu_j$, and the statement $p_0, \dots, p_3$ is bound by
 \begin{equation}\label{eq:pub}
@@ -95,7 +95,7 @@ where $\pub$ is $\lambda$ on the public cells and zero elsewhere. As a polynomia
 \[
   \pub(t) = \prod_{k=11}^{21} (1 + w_k) \cdot (1 + x_1) \cdot \prod_{k \in \{0, 2, \dots, 10\}} \bigl(1 + x_k (1 + m_k)\bigr), \qquad m_k = \mu_{2^{k'}} \text{ or } \gamma^{2^{k - 8}},
 \]
-$k'$ being the bit of $j$ that coordinate $k$ carries. Word 5 is all one cycle, so its sum is that cell times a nonzero constant: the zero is a zero. Then word 4 makes the one a one, every free input is a bit, every cell is what the circuit computes, and words 0 to 3 are sums of bits, which their value determines.
+$k'$ being the bit of $j$ that coordinate $k$ carries. Cells are elements of $\K$, not of $\mathrm{GF}(4)$, until this chain says so. \eqref{eq:pub} is a polynomial identity in $\gamma$, so each word's sum holds by itself. Word 5 is all one cycle, so its sum is that cell times a nonzero constant: the zero is a zero. Then word 4 makes the one a one, and an input row makes its cell 0 or 1. Every other row reads constants or rows before it (the circuit has no loop), and the gate sends bits and carries of $\mathrm{GF}(4)$ to $\mathrm{GF}(4)$: by induction every cell is what the circuit computes. Words 0 to 3 are then sums of bits, which their value determines, because the rows they are wired to drop the carry: a public cell with a carry would not be determined.
 
 \section{Polynomials}
 
@@ -107,7 +107,7 @@ and one claim at the point $(\rho_0, \rho_1, u_2, u_3, \dots)$, the first two co
 
 \paragraph{Gate.} $\gate(t)$ is \eqref{eq:gate} moved to one side, on $\wit(t), \wit(t+1), \wit(t+\theta), \wit(t+\theta^2)$. It must vanish on $\reps$: $\gate = q_\gate \cdot \vT$, where $\vT = \sum_{k \le 20} \tau_k w_k$ is the additive polynomial vanishing on $\reps$ ($\tau_k \in \K$ fixed).
 
-\paragraph{Copies and public bits, in one sum.} With challenges $\alpha, \beta$, let $D = \alpha + \wit + \beta t$ and $D' = \alpha + \wit + \beta \perm$. If $\wit$ is constant on the cycles of $\perm$ then $\sum_{\cells} (1/D + 1/D') = 0$, each cell's second term being the next cell's first; and if it is not, the sum is a nonzero rational function of $\alpha$, because for all but a few $\beta$ no two first terms share a pole. So the prover commits the $h$ of degree below $N$ with
+\paragraph{Copies and public bits, in one sum.} With challenges $\alpha, \beta$, let $D = \alpha + \wit + \beta t$ and $D' = \alpha + \wit + \beta \perm$. If $\wit$ is constant on the cycles of $\perm$ then $\sum_{\cells} (1/D + 1/D') = 0$, each cell's second term being the next cell's first. If it is not, then for all but $2 N^2$ values of $\beta$ the first terms have distinct poles and one of them is the pole of no second term (a coincidence between two terms of different labels determines $\beta$), so the sum is a nonzero rational function of $\alpha$, which meets a given value at most $2N$ times. So the prover commits the $h$ of degree below $N$ with
 \begin{equation}\label{eq:h}
   h = \frac1D + \frac1{D'} + \pub \wit \ \text{ on } \cells, \qquad\text{that is}\qquad h \, D D' + q \, w_{22} = D + D' + \pub \wit D D' ,
 \end{equation}
@@ -155,17 +155,17 @@ The third claim is \eqref{eq:h} and the gate's identity at $t$, by the free-coor
 
 \section{Why it is sound}
 
-A sketch; the errors are all about $2^{25} / 2^{192}$. Suppose the four claims hold.
+Suppose the four claims hold. The three challenges fail with probability at most $(2 N^2 + 4 N + 8) / |\E| < 2^{-146}$ (the copy argument's $\beta$), about $2^{26} / |\E|$ (the degree of the identities in $t$) and $3 / |\E|$: more than 128 bits each, which is what a hash-chain transcript needs of every round. \code{formal/quotient} proves the three bounds in Lean, for the protocol read as polynomials.
 \begin{itemize}
   \item \textbf{$R_1$.} Both sides are polynomials of degree 3 in $\rho$, sampled after the $a_j$, so $a_j = g_j(w_2(t))$ for the committed $g_j$ (of degree below $2n$ in the row), and \eqref{eq:cells} gives $\wit$ at the four cells, $\wit := \sum_j X_j \, g_j \circ w_2$. $F$ gives $s = \perm(t)$.
   \item \textbf{$R_2$ at $t$.} It is affine in $\rho$, so both parts hold. Cleared of denominators they are polynomial identities in $t$, sampled after $R_2$: $D D' h^* + w_{22} q^* = N_c$ and $\vT \cdot (D D' q_\gate^* + w_{22} j^*) = D D' \gate$, the starred polynomials being whatever $R_2$ holds, of degree below $4N$. So on $\cells$, where $w_{22} = 0$ and (for all but $2N$ values of $\alpha$) $D D' \ne 0$: $h^* = 1/D + 1/D' + \pub \wit$, and $\gate = 0$ on $\reps$. Anything the prover put in the unused parts of $R_2$ only changed the starred polynomials by multiples of $w_{22}$.
   \item \textbf{$R_2$ at the fixed point.} $h^* \equiv h_0$ on $\cells$ for the first chunk $h_0$ of its table, of degree below $N$, whose top entry is $\sum_\cells h_0$. So $\sum_\cells (1/D + 1/D') + \sum_\cells \pub \wit = \target$: a rational function of $\alpha$ equal to a constant, hence the copies hold, and then \eqref{eq:pub} holds, which is a polynomial identity in $\gamma$.
 \end{itemize}
-The gate on every row, the copies and \eqref{eq:pub} give the statement, as argued under \eqref{eq:pub}. The verifier rejects a $t$ at which the product it inverts is zero.
+The gate on every row, the copies and \eqref{eq:pub} give the statement, as argued under \eqref{eq:pub}. The verifier rejects a $t$ at which the product it inverts is zero. The first identity alone constrains nothing ($h^*$ and $q^*$ exist for any $\wit$): the copies and the public bits rest on the one claim at the fixed point. And the circuit's commitment is trusted to hold the wiring of a circuit without loops.
 
 \section{Zero knowledge}\label{sec:zk}
 
-The verifier sees $a_0, \dots, a_3$ and $s$, and four claims whose points and values it computed itself from them. $s$ is public. Each $g_j$ is committed as $g_j + w_{20} \cdot m_j$ with $m_j$ of three uniformly random coefficients in $\K$: this changes nothing on the rows, and $a_j$ gains $w_{22}(t) \, m_j(r)$, which is uniform in $\E$ as soon as $r \notin \K$ and $w_{22}(t) \ne 0$. So the five elements are simulated by four uniform ones and $\perm(t)$. This is honest-verifier zero knowledge of the reduction, and it assumes that the commitments and the openings of the four claims reveal nothing else, which a table padded with random entries provides as in the two-claim note; that padding is not built here.
+The verifier sees $a_0, \dots, a_3$ and $s$, and four claims whose points and values it computed itself from them. $s$ is public. Each $g_j$ is committed as $g_j + w_{20} \cdot m_j$ with $m_j$ of three uniformly random coefficients in $\K$: this changes nothing on the rows, and $a_j$ gains $w_{22}(t) \, m_j(r)$, which is uniform in $\E$ as soon as $r \notin \K$ (three coefficients over $\K$ cover exactly one value in $\E$). So the five elements are simulated by four uniform ones and $\perm(t)$. This is honest-verifier zero knowledge of the reduction, and it assumes that the commitments and the openings of the four claims reveal nothing else, which a table padded with random entries provides as in the two-claim note; that padding is not built here.
 
 \section{Cost}\label{sec:cost}
 
@@ -189,7 +189,7 @@ floor under EIP-7976, $64\, b$, which binds then & & \textbf{15{,}872} \\
 \end{tabular}
 \end{center}
 
-\noindent Against the two-claim proof, 152{,}064 gas under EIP-7976, this is a tenth, for two more claims. If a claim costs 20{,}000 gas, the totals are 94{,}939 here and still 152{,}064 there, whose floor covers its two claims. The contract is 4{,}931 bytes; a third of its multiplications are the one inversion and the ones it serves.
+\noindent Against the two-claim proof, 152{,}064 gas under EIP-7976, this is a tenth, for two more claims. If a claim costs 20{,}000 gas, the totals are 94{,}939 here and still 152{,}064 there, whose floor covers its two claims. The contract is 4{,}931 bytes; two fifths of its multiplications are the one inversion and the ones it serves.
 
 \paragraph{Prover.} $R_1$ has $2^{23}$ entries and $F$ $2^{22}$, but $R_2$ has $2^{28}$ (19 of its 64 chunks are not zero): the three polynomials need a quarter of that, and the rest is the price of one claim being one tensor of weights. The quotients are computed on a coset of $2^{24}$ points, with three additive transforms forward and two back.
 
