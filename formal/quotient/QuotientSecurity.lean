@@ -13,6 +13,7 @@ import QuotientSecurity.CantorExists
 import QuotientSecurity.Concrete
 import QuotientSecurity.PublicWeight
 import QuotientSecurity.ConcreteZK
+import QuotientSecurity.Sequence
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -257,3 +258,11 @@ import QuotientSecurity.ConcreteZK
 /-- info: 'QuotientSecurity.exists_subfield' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.exists_subfield
+
+/-- info: 'QuotientSecurity.zeroKnowledge_seq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.zeroKnowledge_seq
+
+/-- info: 'QuotientSecurity.prob_not_good' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.prob_not_good

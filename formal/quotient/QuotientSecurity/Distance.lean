@@ -153,25 +153,18 @@ noncomputable def zkBound (P : Params E) (van : K[X]) (U : Finset H) : ENNReal :
   (zkError P van : ENNReal) + (U.card : ENNReal) / (Fintype.card H : ENNReal)
 
 attribute [local irreducible] Good Fresh in
-/-- **Zero knowledge, as one bound.** Let the oracle hold whatever it was asked before, `U`
-containing every handle it was asked about with this statement. Then for every event on the
-outcome (the proof, its verdict, its challenges, the oracle's table), the real experiment and
-the simulator's give probabilities within `zkBound` of each other. -/
-theorem zeroKnowledge (h3 : finrank K E = 3) (hE : P.Exact)
-    (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+/-- The outcomes that are not good (a first handle that is not fresh, challenges that are not
+good for the witness) are rare, in the real experiment and in the simulator's. -/
+theorem prob_not_good (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
     (U : Finset H) (hU : ∀ c₁, c₁ ∉ U → Fresh c₀ stmt c₁)
-    (gK : Fin 4 → K[X]) (van : K[X]) (hvan0 : van ≠ 0)
-    (hvan : ∀ x : P.T, aeval (rowPoly.eval (x : E)) van = 0)
-    (hsat : P.Sat stmt (P.cells (committed gK van 0)))
-    (S : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache → Prop) :
-    Pr[S | realNI c₀ stmt gK van] ≤ Pr[S | simNI (K := K) c₀ stmt] + zkBound P van U ∧
-      Pr[S | simNI (K := K) c₀ stmt] ≤ Pr[S | realNI c₀ stmt gK van] + zkBound P van U := by
+    (gK : Fin 4 → K[X]) (van : K[X]) (hvan0 : van ≠ 0) :
+    Pr[fun o => ¬ (Fresh c₀ stmt o.1.c₁ ∧ Good (P := P) gK van o.1.ch o.1.t) |
+        realNI c₀ stmt gK van] ≤ zkBound P van U ∧
+      Pr[fun o => ¬ (Fresh c₀ stmt o.1.c₁ ∧ Good (P := P) gK van o.1.ch o.1.t) |
+        simNI (K := K) c₀ stmt] ≤ zkBound P van U := by
   classical
   set good : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache → Prop :=
     fun o => Fresh c₀ stmt o.1.c₁ ∧ Good (P := P) gK van o.1.ch o.1.t with hgood
-  have heq : ∀ o, good o → Pr[= o | realNI c₀ stmt gK van] = Pr[= o | simNI (K := K) c₀ stmt] :=
-    fun o h => realNI_eq_simNI h3 hE c₀ stmt gK van hvan hsat o h.1 h.2
-  -- The open experiment's challenges are rarely not good.
   have hopen : Pr[fun o => ¬ Good (P := P) gK van o.1.ch o.1.t | openNI c₀ stmt gK van]
       ≤ (zkError P van : ENNReal) := by
     unfold openNI
@@ -234,6 +227,29 @@ theorem zeroKnowledge (h3 : finrank K E = 3) (hE : P.Exact)
         · exact Or.inl fun hg => ho ⟨hf, hg⟩
         · exact Or.inr hf
     exact hsplit.trans (add_le_add hsimGood hsimFresh)
+  exact ⟨hbadReal, hbadSim⟩
+
+attribute [local irreducible] Good Fresh in
+/-- **Zero knowledge, as one bound.** Let the oracle hold whatever it was asked before, `U`
+containing every handle it was asked about with this statement. Then for every event on the
+outcome (the proof, its verdict, its challenges, the oracle's table), the real experiment and
+the simulator's give probabilities within `zkBound` of each other. -/
+theorem zeroKnowledge (h3 : finrank K E = 3) (hE : P.Exact)
+    (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (U : Finset H) (hU : ∀ c₁, c₁ ∉ U → Fresh c₀ stmt c₁)
+    (gK : Fin 4 → K[X]) (van : K[X]) (hvan0 : van ≠ 0)
+    (hvan : ∀ x : P.T, aeval (rowPoly.eval (x : E)) van = 0)
+    (hsat : P.Sat stmt (P.cells (committed gK van 0)))
+    (S : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache → Prop) :
+    Pr[S | realNI c₀ stmt gK van] ≤ Pr[S | simNI (K := K) c₀ stmt] + zkBound P van U ∧
+      Pr[S | simNI (K := K) c₀ stmt] ≤ Pr[S | realNI c₀ stmt gK van] + zkBound P van U := by
+  classical
+  set good : Outcome (E := E) H × (ofFn (ZAnswer P H)).QueryCache → Prop :=
+    fun o => Fresh c₀ stmt o.1.c₁ ∧ Good (P := P) gK van o.1.ch o.1.t with hgood
+  have heq : ∀ o, good o → Pr[= o | realNI c₀ stmt gK van] = Pr[= o | simNI (K := K) c₀ stmt] :=
+    fun o h => realNI_eq_simNI h3 hE c₀ stmt gK van hvan hsat o h.1 h.2
+  -- The open experiment's challenges are rarely not good.
+  obtain ⟨hbadReal, hbadSim⟩ := prob_not_good c₀ stmt U hU gK van hvan0
   exact ⟨probEvent_le_add_of_eq_on _ _ _ _ heq hbadReal S,
     probEvent_le_add_of_eq_on _ _ _ _ (fun o h => (heq o h).symm) hbadSim S⟩
 
