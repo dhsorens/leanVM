@@ -867,8 +867,8 @@ mod tests {
             assert_eq!(<[F192; 4]>::from(a4), a);
             assert_eq!(<[F192; 4]>::from(F192x4::load(&a)), a);
             let rows = [a, b, want, a].map(F192x4::from);
-            let columns = F192x4::transpose(rows).map(F192x4::to_array);
-            let rows = rows.map(F192x4::to_array);
+            let columns = F192x4::transpose(rows).map(<[F192; 4]>::from);
+            let rows = rows.map(<[F192; 4]>::from);
             assert!((0..4).all(|i| (0..4).all(|j| columns[i][j] == rows[j][i])));
             assert_eq!(<[F192; 4]>::from(a4.mul(b4)), want);
             assert_eq!(<[F192; 4]>::from(a4 + b4), std::array::from_fn(|i| a[i] + b[i]));
