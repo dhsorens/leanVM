@@ -1,4 +1,1 @@
-import QuotientSecurity.RoundOne
-import QuotientSecurity.RoundTwo
-import QuotientSecurity.RoundThree
-import QuotientSecurity.Degrees
+import QuotientSecurity.Spec
