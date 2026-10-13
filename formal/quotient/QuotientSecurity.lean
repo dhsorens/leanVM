@@ -99,3 +99,27 @@ import QuotientSecurity.Witness
 /-- info: 'QuotientSecurity.cells_determined' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.cells_determined
+
+/-- info: 'QuotientSecurity.maskedValue_bijective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.maskedValue_bijective
+
+/-- info: 'QuotientSecurity.input_is_bit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.input_is_bit
+
+/-- info: 'QuotientSecurity.copy_iterate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.copy_iterate
+
+/-- info: 'QuotientSecurity.word_pins' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.word_pins
+
+/-- info: 'QuotientSecurity.gate_output' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.gate_output
+
+/-- info: 'QuotientSecurity.Params.rowPoly_injOn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Params.rowPoly_injOn
