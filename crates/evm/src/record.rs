@@ -7,13 +7,16 @@ use std::ops::{Add, Mul};
 use flock::membership::Scalar;
 use primitives::field::F192;
 
+/// The most scalars a transcript step absorbs.
+pub const MAX_ABSORBED: usize = 5;
+
 /// One recorded value. Operands are indices of earlier nodes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Node {
     Const([u64; 3]),
     /// A half of `y` (0, 1) or of `root` (2, 3).
     Statement(u8),
-    /// A scalar of the witness commitment.
+    /// A scalar of a commitment: two a commitment, in the order they are sent.
     Root(u8),
     /// A scalar of the proof.
     Input(u16),
@@ -22,8 +25,8 @@ pub enum Node {
     Frobenius(u32),
     /// The transcript's seed: the hash of the label.
     Seed,
-    /// The transcript's step: the hash of a state and of the first `n` of three scalars.
-    Hash(u32, [u32; 3], u8),
+    /// The transcript's step: the hash of a state and of the first `n` of these scalars.
+    Hash(u32, [u32; MAX_ABSORBED], u8),
     /// The low 192 bits of a state: a challenge.
     Low(u32),
 }

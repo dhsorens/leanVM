@@ -28,12 +28,11 @@ const SWAP1: u8 = 0x90;
 const RETURN: u8 = 0xf3;
 const REVERT: u8 = 0xfd;
 
-/// Memory below this is scratch for hashing; the slots follow, then the returned words.
-const SLOTS: usize = 0x80;
+/// Memory below the slots is scratch for hashing: the seed's 112 bytes, or a state and the scalars it absorbs.
+const SEED_SCRATCH: usize = 0x80;
 
-/// Where calldata holds the statement's two words, the commitment, and the proof's scalars.
+/// Where calldata holds the statement's two words, then the commitments; the proof's scalars follow them.
 pub const COMMITMENT: usize = 64;
-pub const SCALARS: usize = 96;
 pub const SCALAR_BYTES: usize = 24;
 
 /// `PUSH` of a big-endian number, in as few bytes as it takes.
@@ -75,6 +74,8 @@ struct Compiler<'a> {
     graph: &'a Graph,
     /// The transcript's label before the statement: the protocol's name and the circuit's commitment.
     prefix: &'a [u8; 48],
+    /// Where calldata holds the proof's scalars.
+    scalars: usize,
     /// Kept in memory: used more than once, and not a constant.
     shared: Vec<bool>,
     done: Vec<bool>,
@@ -109,7 +110,7 @@ impl Compiler<'_> {
             Node::Const(limbs) => self.code(&push(&word(limbs))),
             Node::Statement(k) | Node::Root(k) => {
                 let offset = match self.graph.nodes[at] {
-                    Node::Root(_) => COMMITMENT,
+                    Node::Root(_) => COMMITMENT + 32 * (k as usize / 2),
                     _ => 32 * (k as usize / 2),
                 };
                 self.code(&push_usize(offset));
@@ -121,7 +122,7 @@ impl Compiler<'_> {
                 }
             }
             Node::Input(i) => {
-                self.code(&push_usize(SCALARS + SCALAR_BYTES * i as usize));
+                self.code(&push_usize(self.scalars + SCALAR_BYTES * i as usize));
                 self.code(&[&[CALLDATALOAD][..], &push_usize(64), &[SHR]].concat());
             }
             Node::Add(a, b) | Node::Mul(a, b) => {
@@ -194,8 +195,8 @@ pub struct Contract {
 }
 
 /// The contract: revert unless calldata is `calldata_len` bytes and every node of `graph.nonzero` is nonzero,
-/// else return `outputs`, one word each.
-pub fn compile(graph: &Graph, outputs: &[u32], prefix: &[u8; 48], calldata_len: usize) -> Contract {
+/// else return `outputs`, one word each. The proof's scalars start at byte `scalars` of calldata.
+pub fn compile(graph: &Graph, outputs: &[u32], prefix: &[u8; 48], scalars: usize, calldata_len: usize) -> Contract {
     let n = graph.nodes.len();
     let mut uses = vec![0u32; n];
     for &root in graph.nonzero.iter().chain(outputs) {
@@ -240,6 +241,7 @@ pub fn compile(graph: &Graph, outputs: &[u32], prefix: &[u8; 48], calldata_len: 
     let mut compiler = Compiler {
         graph,
         prefix,
+        scalars,
         shared,
         done: vec![false; n],
         depth,
@@ -290,8 +292,13 @@ pub fn compile(graph: &Graph, outputs: &[u32], prefix: &[u8; 48], calldata_len: 
             _ => {}
         }
     }
-    let address = |id: u32| push_usize(SLOTS + 32 * slot[id as usize]);
-    let returned = SLOTS + 32 * n_slots;
+    let absorbed = graph.nodes.iter().map(|node| match node {
+        Node::Hash(_, _, n) => *n as usize,
+        _ => 0,
+    });
+    let slots = SEED_SCRATCH.max(32 * (1 + absorbed.max().unwrap_or(0)));
+    let address = |id: u32| push_usize(slots + 32 * slot[id as usize]);
+    let returned = slots + 32 * n_slots;
 
     let assemble = |fail: usize| {
         let mut code = Vec::new();

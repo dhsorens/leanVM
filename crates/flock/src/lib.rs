@@ -35,6 +35,7 @@ mod gf2;
 pub mod hash;
 pub mod lincheck;
 pub mod membership;
+pub mod quotient;
 /// The circuit driven through the whole reduction. A `src` module rather than
 /// its own test binary so it shares the process, and so the slow
 /// [`hash::matrices`] build, with the unit tests.

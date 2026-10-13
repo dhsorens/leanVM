@@ -636,7 +636,7 @@ fn eq_index<S: Scalar>(index: usize, point: &[S]) -> S {
 
 /// `x^-1` for a nonzero `x`, by its norm to `GF(2^64)`: `m = x^(2^64) x^(2^128)` makes `x m` the norm, whose
 /// inverse is its power `2^64 - 2`.
-fn inverse<S: Scalar>(x: S) -> S {
+pub(crate) fn inverse<S: Scalar>(x: S) -> S {
     let m = x.frobenius() * x.frobenius().frobenius();
     let mut power = x * m;
     power = power * power;
@@ -1118,9 +1118,9 @@ pub fn reduce<S: Scalar>(channel: &mut impl Channel<S>) -> Result<Reduced<S>, Ve
 }
 
 /// The proof as the field verifier reads it.
-struct Stream<'a> {
-    vs: VerifierState<'a>,
-    statement: Statement,
+pub(crate) struct Stream<'a> {
+    pub(crate) vs: VerifierState<'a>,
+    pub(crate) statement: Statement,
 }
 
 impl Channel<F192> for Stream<'_> {

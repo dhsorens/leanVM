@@ -6,15 +6,30 @@ use flock::membership::{Channel, Claims, Reduced, Statement, label, reduce};
 use flock::standalone::Claim;
 use primitives::field::F192;
 
-use crate::codegen::{Contract, SCALAR_BYTES, SCALARS, compile};
-use crate::record::{Node, Sym, record};
+use crate::codegen::{COMMITMENT, Contract, SCALAR_BYTES, compile};
+use crate::record::{MAX_ABSORBED, Node, Sym, record};
+
+/// Where calldata holds the proof's scalars: after the statement and the one commitment.
+const SCALARS: usize = COMMITMENT + 32;
 
 /// The proof as the recorder reads it: every read and every challenge is a node.
-struct Recorder {
+pub(crate) struct Recorder {
     state: Sym,
     /// Read since the last challenge.
     pending: Vec<Sym>,
-    read: u16,
+    roots: u8,
+    pub(crate) read: u16,
+}
+
+impl Recorder {
+    pub(crate) fn new() -> Self {
+        Self {
+            state: Sym::new(Node::Seed),
+            pending: Vec::new(),
+            roots: 0,
+            read: 0,
+        }
+    }
 }
 
 impl Channel<Sym> for Recorder {
@@ -23,7 +38,8 @@ impl Channel<Sym> for Recorder {
     }
 
     fn next_root(&mut self) -> Result<[Sym; 2], Error> {
-        let scalars = std::array::from_fn(|k| Sym::new(Node::Root(k as u8)));
+        let scalars = std::array::from_fn(|k| Sym::new(Node::Root(2 * self.roots + k as u8)));
+        self.roots += 1;
         self.pending.extend(scalars);
         Ok(scalars)
     }
@@ -36,11 +52,14 @@ impl Channel<Sym> for Recorder {
     }
 
     fn sample(&mut self) -> Sym {
-        let mut scalars = [0; 3];
+        let mut scalars = [0; MAX_ABSORBED];
         for (slot, scalar) in scalars.iter_mut().zip(&self.pending) {
             *slot = scalar.0;
         }
-        assert!(self.pending.len() <= 3, "a challenge follows at most three scalars");
+        assert!(
+            self.pending.len() <= MAX_ABSORBED,
+            "a challenge follows too many scalars"
+        );
         self.state = Sym::new(Node::Hash(self.state.0, scalars, self.pending.len() as u8));
         self.pending.clear();
         Sym::new(Node::Low(self.state.0))
@@ -54,11 +73,7 @@ impl Channel<Sym> for Recorder {
 /// The contract verifying proofs against the circuit committed as `index_root`.
 pub fn contract(index_root: &Hash) -> Contract {
     let ((reduced, read), graph) = record(|| {
-        let mut recorder = Recorder {
-            state: Sym::new(Node::Seed),
-            pending: Vec::new(),
-            read: 0,
-        };
+        let mut recorder = Recorder::new();
         let reduced = reduce(&mut recorder).unwrap_or_else(|_| unreachable!("a recorder rejects nothing"));
         (reduced, recorder.read)
     });
@@ -80,7 +95,13 @@ pub fn contract(index_root: &Hash) -> Contract {
         },
     );
     let prefix = label[..label.len() - 64].try_into().expect("a 48-byte prefix");
-    compile(&graph, &outputs, prefix, SCALARS + SCALAR_BYTES * read as usize)
+    compile(
+        &graph,
+        &outputs,
+        prefix,
+        SCALARS,
+        SCALARS + SCALAR_BYTES * read as usize,
+    )
 }
 
 /// A statement and its proof as the contract's calldata.
