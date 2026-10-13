@@ -335,6 +335,59 @@ pub fn dot_base(w: &[Weights8], k: &[F64]) -> F192Unreduced {
         })
 }
 
+/// A sum of [`dot_base`] terms left in its four 128-bit lanes.
+///
+/// [`dot_base`] folds the lanes of every result it returns, a cross-lane move per call. A caller
+/// adding eight-term products to many sums, one product each, keeps the sums here and folds once.
+#[derive(Clone, Copy, Debug)]
+#[repr(C, align(64))]
+pub struct LaneSums([[u64; 8]; 3]);
+
+impl LaneSums {
+    pub const ZERO: Self = Self([[0; 8]; 3]);
+
+    /// Add `sum_i w_i * k_i`.
+    #[inline(always)]
+    pub fn add(&mut self, w: &Weights8, k: &[u64; 8]) {
+        #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
+        // SAFETY: both features are enabled at compile time.
+        unsafe {
+            x86_64::lane_sums_add(self, w, k)
+        };
+        #[cfg(not(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f")))]
+        {
+            let sum = (0..8).fold(F192Unreduced::ZERO, |acc, i| {
+                acc ^ w.get(i).mul_base_unreduced(F64(k[i]))
+            });
+            for (lanes, coeff) in self.0.iter_mut().zip(sum.coeffs) {
+                lanes[0] ^= coeff[0];
+                lanes[1] ^= coeff[1];
+            }
+        }
+    }
+
+    /// Add another sum.
+    #[inline]
+    pub fn merge(&mut self, other: &Self) {
+        for (a, b) in self.0.as_flattened_mut().iter_mut().zip(other.0.as_flattened()) {
+            *a ^= b;
+        }
+    }
+
+    /// The sum, its lanes folded.
+    #[inline]
+    pub fn fold(&self) -> F192Unreduced {
+        F192Unreduced {
+            coeffs: self.0.map(|lanes| {
+                [
+                    lanes[0] ^ lanes[2] ^ lanes[4] ^ lanes[6],
+                    lanes[1] ^ lanes[3] ^ lanes[5] ^ lanes[7],
+                ]
+            }),
+        }
+    }
+}
+
 /// An F192 value whose coefficients are not yet reduced modulo the base polynomial.
 ///
 /// Coefficient `k` is the 128-bit carry-less polynomial multiplying `y^k`, for `k < 3`.
@@ -902,6 +955,31 @@ pub mod x86_64 {
             _mm512_clmulepi64_epi128::<0x00>(c2, k),
             _mm512_clmulepi64_epi128::<0x11>(c2, k),
         ]
+    }
+
+    /// One [`super::dot_base`] block added to sums kept in their lanes.
+    ///
+    /// # Safety
+    ///
+    /// Requires the `vpclmulqdq` and `avx512f` target features.
+    #[cfg(all(target_feature = "vpclmulqdq", target_feature = "avx512f"))]
+    #[inline]
+    #[target_feature(enable = "vpclmulqdq", enable = "avx512f")]
+    pub unsafe fn lane_sums_add(sums: &mut super::LaneSums, w: &super::Weights8, k: &[u64; 8]) {
+        // SAFETY: the function carries both features; `Weights8` and `LaneSums` are 64-byte aligned.
+        unsafe {
+            let kv = _mm512_loadu_si512(k.as_ptr().cast());
+            let (lo, hi, c2) = (
+                _mm512_load_si512(w.lo.as_ptr().cast()),
+                _mm512_load_si512(w.hi.as_ptr().cast()),
+                _mm512_load_si512(w.c2.as_ptr().cast()),
+            );
+            let [e0, e1, o0, o1, e2, o2] = mul_by_pairs(lo, hi, c2, kv);
+            for (lanes, (e, o)) in sums.0.iter_mut().zip([(e0, o0), (e1, o1), (e2, o2)]) {
+                let acc = _mm512_load_si512(lanes.as_ptr().cast());
+                _mm512_store_si512(lanes.as_mut_ptr().cast(), _mm512_ternarylogic_epi64::<0x96>(acc, e, o));
+            }
+        }
     }
 
     /// Eight mixed products by one scalar.

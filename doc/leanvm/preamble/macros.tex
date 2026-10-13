@@ -32,15 +32,16 @@
 
 % ---------- Flock protocol (Annex C) ----------
 \newcommand{\qflock}{q_{\flock}}             % packed Boolean Flock witness
-\newcommand{\qext}[1]{#1^{\sharp}}           % 64-point univariate / multilinear extension
+\newcommand{\qext}[1]{#1^{\sharp}}           % extension through the skip code, then multilinear
 \newcommand{\kblock}{\kappa_{\mathrm{block}}} % variables in one BLAKE2s witness block
 \newcommand{\kbatch}{\kappa_{\mathrm{batch}}} % log number of BLAKE2s instances
 \newcommand{\kbool}{\kappa_{\mathrm{bool}}}   % variables of the unpacked Boolean batch witness
-\newcommand{\kskip}{\kappa_{\mathrm{skip}}}   % variables replaced by the univariate skip
-\newcommand{\skipdom}{\mathcal{H}}            % 64 skip-domain nodes
-\newcommand{\skipcoset}{\mathcal{H}'}         % 64 transmitted round-one nodes
-\newcommand{\fembed}{\varphi_{8}}             % embedding of F_{2^8} into E
-\newcommand{\zskip}{\upsilon_{\mathrm{zc}}}   % zerocheck univariate challenge
+\newcommand{\kskip}{\kappa_{\mathrm{skip}}}   % variables replaced by the AG skip
+\newcommand{\skipdom}{\mathcal{H}}            % the skip curve's 64 points over F_2
+\newcommand{\skipset}{\mathcal{H}_{\E}}       % the skip code's evaluation set, points over E
+\newcommand{\skipcurve}{\mathcal{C}_{\mathrm{sk}}} % the genus-95 curve of the AG skip
+\newcommand{\skippairs}{\Pi_{\mathrm{sk}}}    % the 158 pairs the skip message is sent over
+\newcommand{\zskip}{\upsilon_{\mathrm{zc}}}   % the zerocheck's skip point, in the evaluation set
 \newcommand{\lcalpha}{\alpha_{\mathrm{lc}}}      % lincheck batching challenge (A, B, C, the pin)
 \newcommand{\ksk}{k_{\mathrm{sk}}}              % row index, the skipped half
 \newcommand{\kin}{k_{\mathrm{in}}}              % row index, the within-block half
@@ -150,5 +151,5 @@
 \newcommand{\pair}{\Omega}               % error pairing values        (was V_k)
 \newcommand{\supp}{\mathcal{S}}          % support of \Phimap          (was S)
 \newcommand{\nflock}{\kappa_{\flock}}     % variables of the packed flock witness (was m, L)
-\newcommand{\lag}{\varpi}                 % Lagrange weights of flock's skip (was p_i)
+\newcommand{\lag}{\varpi}                 % the skip code's 64 functions, 1 at one point of the skip domain (was p_i)
 \newcommand{\fcoord}{\mathsf{a}}          % an F_2 coordinate function  (was A_w)

@@ -1,13 +1,13 @@
 // CREDIT: https://github.com/succinctlabs/flock (flock-core), MIT OR Apache-2.0.
 //! Multilinear sumcheck: rounds 2..(m − k_skip + 1) of the zerocheck protocol.
 //!
-//! After the round-1 URM and the verifier's univariate-skip fold-point `z`, the
+//! After the round-1 skip message and the AG-skip point `Q` that folds it, the
 //! protocol enters a standard multilinear sumcheck over `n = m − k_skip`
 //! variables, on the whole R1CS polynomial:
 //!
 //!   `Σ_x eq(r_rest, x) · (a_mlv(x) · b_mlv(x) + c_mlv(x))`
 //!
-//! with claim `P(z)` from round 1. The quadratic AB part and the linear C part
+//! with claim `P(Q)` from round 1. The quadratic AB part and the linear C part
 //! ride the same rounds, so all three claims land at one point; each round
 //! sends `(P_r(1), P_r(∞))` via the Karatsuba ∞-trick, with C contributing to
 //! `P_r(1)` only.
@@ -18,7 +18,7 @@
 //!   A pass folds them on the fly and sends two rounds, the second as a quadratic in the first's challenge.
 //! - **Table rounds.** The last bit pass stores the folded tables, and each later round folds and sums them.
 //!
-//! **Index convention** (matches the C++ extract_c pipeline's `sumcheck_round_pair`
+//! **Index convention** (matches the C++ pipeline's `sumcheck_round_pair`
 //! and the NEON `fold_in_place_pair`): the **low bit** of the multilinear index
 //! is bound first. So `a_mlv[2k]` is the X=0 value and `a_mlv[2k+1]` is the X=1
 //! value, paired by the round message and the fold.
@@ -37,9 +37,9 @@
 use crate::zerocheck::PaddingSpec;
 use crate::zerocheck::bit_fold::{BLOCK, BitFold};
 #[cfg(test)]
-use crate::zerocheck::univariate_skip::pack_bits;
-use crate::zerocheck::univariate_skip::{SplitEq, build_eq};
-use primitives::field::{F192, F192Unreduced, PHI_8_TABLE_192 as PHI_8_TABLE};
+use crate::zerocheck::eq::pack_bits;
+use crate::zerocheck::eq::{SplitEq, build_eq};
+use primitives::field::{F192, F192Unreduced};
 use primitives::stream::Stream;
 
 /// Four independent products. Tuples keep the scalar and NEON paths in registers, while AVX-512 uses the batched helper.
@@ -75,41 +75,13 @@ fn mul_quad_unreduced(
 }
 
 // ---------------------------------------------------------------------------
-// Lagrange weights for the univariate-skip fold at z.
+// Fold a Boolean witness at the skip point.
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
-use primitives::multilinear::lagrange_weights_naive;
-
-/// Interpolate a degree-`< 2·2^k_skip` polynomial at z, given its `2^k_skip`
-/// evaluations on Λ and the assumption that it equals **zero on S**.
-///
-/// This is the verifier's round-1 reconstruction trick: for an honest prover
-/// the combined polynomial `P = P^{AB} + P^C` satisfies `P(λ) = 0` for every
-/// `λ ∈ S` (the zerocheck identity at S). Together with the `2^k_skip`
-/// evaluations on Λ that the prover sends, that's `2·2^k_skip` evaluations -
-/// enough to interpolate the degree-`< 2·2^k_skip` polynomial uniquely.
-///
-pub fn interpolate_at_z_combined(values_on_lambda: &[F192], k_skip: usize, z: F192) -> F192 {
-    let ell = 1usize << k_skip;
-    assert_eq!(values_on_lambda.len(), ell);
-    assert!(2 * ell <= 256, "Λ ∪ S must fit in F_8 (need k_skip ≤ 7)");
-    // The first `ell` nodes are S, where the polynomial is zero by assumption;
-    // the Λ evaluations follow.
-    let mut values = vec![F192::ZERO; 2 * ell];
-    values[ell..].copy_from_slice(values_on_lambda);
-    primitives::multilinear::lagrange_eval(&PHI_8_TABLE[..2 * ell], &values, z)
-}
-
-// ---------------------------------------------------------------------------
-// Fold a Boolean witness at z.
-// ---------------------------------------------------------------------------
-
-/// Evaluate the univariate-skip polynomial at the fold point `z`, given the
-/// precomputed Lagrange `weights`. Returns the multilinear extension table
+/// Fold the skip variables at the skip point, given its `weights`. Returns the multilinear extension table
 /// `a_mlv` of length `2^(m − k_skip)` over F_{2^192}.
 ///
-///   `a_mlv[x_rest] = Σ_s a(s, x_rest) · L_s(z)`
+///   `a_mlv[x_rest] = Σ_s a(s, x_rest) · weights[s]`
 ///
 /// `a(s, x_rest)` is the witness bit at index `x_rest * 2^k_skip + s` (low
 /// bits = skip variable, high bits = rest variables).
@@ -888,20 +860,6 @@ mod tests {
     use super::*;
     use primitives::test_rng::Rng;
 
-    /// Interpolate a degree-`< 2^k_skip` polynomial at z, given its `2^k_skip`
-    /// evaluations on the **extension domain** `Λ = {2^k_skip, …, 2^(k_skip+1) − 1}`
-    /// embedded via `φ_8` (offset by `2^k_skip` from the S-domain nodes).
-    ///
-    /// `P^C` no longer travels on its own (it rides the sum the prover sends), so
-    /// this is only the cross-check handle: it turns the URM kernel's C Λ-vector
-    /// into `P^C(z) = ĉ(z, r_rest)`, which a direct fold of the witness must match.
-    fn interpolate_at_z_on_lambda(values: &[F192], k_skip: usize, z: F192) -> F192 {
-        let ell = 1usize << k_skip;
-        assert_eq!(values.len(), ell);
-        assert!(2 * ell <= 256, "Λ ∪ S must fit in F_8 (need k_skip ≤ 7)");
-        primitives::multilinear::lagrange_eval(&PHI_8_TABLE[ell..2 * ell], values, z)
-    }
-
     /// `fold_in_place_pair` correctness: post-fold a[x] = a[2x] + X·(a[2x+1]+a[2x]).
     #[test]
     fn fold_in_place_pair_matches_formula() {
@@ -926,79 +884,6 @@ mod tests {
                 assert_eq!(a[x], a0 + challenge * (a1 + a0), "log_n={log_n}, x={x}");
                 assert_eq!(b[x], b0 + challenge * (b1 + b0), "log_n={log_n}, x={x}");
             }
-        }
-    }
-
-    /// **The URM kernel's C side**: `C_s · interpolate(round1_c, k_skip, z)`
-    /// equals `ĉ(z, r_rest)` computed by direct folding (Lagrange at z, then
-    /// bind each `r_rest` value). The protocol sends `round1_c` only inside its
-    /// sum with the AB half, so this is what pins that half on its own.
-    #[test]
-    fn c_eval_from_round1_c_matches_direct_fold() {
-        use crate::zerocheck::univariate_skip_optimized::{
-            c_s, medium_challenges, round1_shift_reduce_extract_c_packed_padded, small_challenges,
-        };
-        use pcs::ntt::{AdditiveNttGf8, InvNttTableByteSingleGf8};
-        use primitives::field::F8;
-
-        const K_SKIP: usize = 6;
-        const N_INNER: usize = 7;
-
-        for &m in &[14usize, 15, 16] {
-            let mut rng = Rng::new(500 + m as u64);
-            let a = rng.bits(1 << m);
-            let b = rng.bits(1 << m);
-            let c = rng.bits(1 << m);
-
-            // Build the equality tail with the seven protocol-fixed constants,
-            // matching how `prove` constructs it.
-            let mut r = vec![F192::ZERO; m - K_SKIP];
-            for (i, v) in small_challenges().iter().enumerate() {
-                r[i] = *v;
-            }
-            for (i, v) in medium_challenges().iter().enumerate() {
-                r[3 + i] = *v;
-            }
-            for slot in r[N_INNER..].iter_mut() {
-                *slot = rng.ext();
-            }
-            let z = rng.ext();
-
-            let a_packed = pack_bits(&a);
-            let b_packed = pack_bits(&b);
-            let c_packed = pack_bits(&c);
-
-            let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-            let ntt_l = AdditiveNttGf8::new(K_SKIP, F8(1u8 << K_SKIP));
-            let inv_table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
-            let (_round1_ab, round1_c) = round1_shift_reduce_extract_c_packed_padded(
-                &a_packed,
-                &b_packed,
-                &c_packed,
-                m,
-                K_SKIP,
-                &r,
-                &inv_table,
-                &PaddingSpec::dense(m),
-            );
-
-            // Path A: interpolate round1_c at z, scale by C_s.
-            let c_eval_via_interpolation = c_s() * interpolate_at_z_on_lambda(&round1_c, K_SKIP, z);
-
-            // Path B: direct fold of c at z (Lagrange) then bind each
-            // r_rest element with fold_in_place_single.
-            let weights = lagrange_weights_naive(K_SKIP, z);
-            let mut c_mlv = fold_at_z_naive(&c, m, K_SKIP, &weights);
-            for &r_val in &r {
-                fold_in_place_single(&mut c_mlv, r_val);
-            }
-            assert_eq!(c_mlv.len(), 1);
-            let c_eval_via_fold = c_mlv[0];
-
-            assert_eq!(
-                c_eval_via_interpolation, c_eval_via_fold,
-                "c-claim identity broken at m={m}"
-            );
         }
     }
 
@@ -1087,16 +972,15 @@ mod tests {
             let mut rng = Rng::new(0xB17_0000 + m as u64);
             let (bits, packed_bits) = random_witness(&mut rng, m);
             let n_mlv = m - K_SKIP;
-            let z = rng.ext();
             let r_rest = rng.ext_vec(n_mlv);
             let rho = rng.ext_vec(n_mlv);
-            let lagrange = lagrange_weights_naive(K_SKIP, z);
+            let skip_weights = rng.ext_vec(1 << K_SKIP);
             let dense = PaddingSpec::dense(m);
 
-            // Level 0 of the naive route: the univariate-skip fold at z.
-            let mut tables = [0, 1, 2].map(|i| fold_at_z_naive(&bits[i], m, K_SKIP, &lagrange));
+            // Level 0 of the naive route: the fold at the skip point.
+            let mut tables = [0, 1, 2].map(|i| fold_at_z_naive(&bits[i], m, K_SKIP, &skip_weights));
             for t in 0..=4 {
-                let fold = BitFold::at_level(&lagrange, &rho[..t]);
+                let fold = BitFold::at_level(&skip_weights, &rho[..t]);
                 let r_eq = &r_rest[t + 1..];
                 let expected = naive_message(&tables, r_eq);
 
@@ -1142,11 +1026,11 @@ mod tests {
                 k_log,
                 useful_bits_per_block: useful,
             };
-            let lagrange = lagrange_weights_naive(K_SKIP, rng.ext());
+            let skip_weights = rng.ext_vec(1 << K_SKIP);
             let r_rest = rng.ext_vec(m - K_SKIP);
             let rho = rng.ext_vec(4);
             for t in 0..=4 {
-                let fold = BitFold::at_level(&lagrange, &rho[..t]);
+                let fold = BitFold::at_level(&skip_weights, &rho[..t]);
                 let r_eq = &r_rest[t + 1..];
                 let run = |p: &PaddingSpec| {
                     (
@@ -1178,10 +1062,9 @@ mod tests {
         let mut rng = Rng::new(55);
         let a = rng.bits(1 << m);
         let b = rng.bits(1 << m);
-        let z = rng.ext();
         let r_eq = rng.ext_vec(m - k_skip - 1);
 
-        let weights = lagrange_weights_naive(k_skip, z);
+        let weights = rng.ext_vec(1 << k_skip);
         let a_mlv = fold_at_z_naive(&a, m, k_skip, &weights);
         let b_mlv = fold_at_z_naive(&b, m, k_skip, &weights);
 

@@ -104,15 +104,12 @@ use primitives::field::F192;
 pub const K_LOG: usize = 14;
 /// `k = 2^K_LOG`.
 pub const K: usize = 1 << K_LOG;
-/// Univariate-skip dim, must match [`crate::zerocheck::K_SKIP`].
+/// AG-skip dim, must match [`crate::zerocheck::K_SKIP`].
 pub const K_SKIP: usize = 6;
 
 // A claim's `2^K_SKIP` slices are a ring-switch claim on `q_flock` only if that
 // matches the packing width; otherwise `ring_claim` fails at run time.
-const _: () = assert!(
-    K_SKIP == LOG_PACKING,
-    "the univariate skip must match the PCS packing width"
-);
+const _: () = assert!(K_SKIP == LOG_PACKING, "the AG skip must match the PCS packing width");
 
 /// Number of BLAKE2s rounds.
 pub const N_ROUNDS: usize = primitives::hash::ROUNDS;
@@ -800,11 +797,11 @@ pub struct ReductionReplay {
 }
 
 /// The lincheck input point carried over from the zerocheck claim: the
-/// univariate-skip coordinate, then the multilinear challenges split at
+/// skip point's weights, then the multilinear challenges split at
 /// `inner_rest_len` into the inner-rest and outer halves.
 fn x_ab_of(zc: &crate::zerocheck::ZerocheckClaim, inner_rest_len: usize) -> crate::lincheck::QuirkyPoint {
     crate::lincheck::QuirkyPoint {
-        z_skip: zc.z,
+        skip_weights: zc.skip_weights.to_vec(),
         x_inner_rest: zc.mlv_challenges[..inner_rest_len].to_vec(),
         x_outer: zc.mlv_challenges[inner_rest_len..].to_vec(),
     }

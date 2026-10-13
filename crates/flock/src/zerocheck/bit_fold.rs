@@ -13,7 +13,7 @@
 
 use primitives::field::F192;
 
-use crate::zerocheck::univariate_skip::build_eq;
+use crate::zerocheck::eq::build_eq;
 
 /// Rows folded per call.
 pub const BLOCK: usize = 64;
@@ -58,12 +58,12 @@ impl BitFold {
     /// Position `q` covers the `2^t` consecutive rows `q * 2^t + u`, so its weights are a tensor:
     ///
     /// ```text
-    ///     w[64 u + s] = eq(rho, u) * L_s(z)        u in 0..2^t, s in 0..64
+    ///     w[64 u + s] = eq(rho, u) * f_s(Q)        u in 0..2^t, s in 0..64
     /// ```
-    pub fn at_level(lagrange: &[F192], rho: &[F192]) -> Self {
+    pub fn at_level(skip_weights: &[F192], rho: &[F192]) -> Self {
         let weights: Vec<F192> = build_eq(rho)
             .iter()
-            .flat_map(|&e| lagrange.iter().map(move |&l| e * l))
+            .flat_map(|&e| skip_weights.iter().map(move |&w| e * w))
             .collect();
         Self::new(&weights)
     }

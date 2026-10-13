@@ -32,26 +32,40 @@ Set $\kskip=6$ and $\nflock=\kbool-\kskip$. The prover commits to $z$ by packing
 
 \subsection{Zerocheck}\label{flock:zerocheck}
 
-Flock zerochecks \eqref{flock:eq:r1cs} (Definition~\ref{def:zerocheck}), but replaces the first $\kskip$ rounds by one univariate round~\cite{Gru24}. Split $u=(i,v)$ with $i\in\cube{\kskip}$ and $v\in\cube{\nflock}$. Let $\fembed:\F_{2^8}\hookrightarrow\E$ be the subfield embedding, with a byte interpreted in the polynomial basis, and define
-\[
-\skipdom=\{\fembed(0),\ldots,\fembed(63)\},\qquad \skipcoset=\fembed(64)+\skipdom=\{\fembed(64),\ldots,\fembed(127)\}.
-\]
-Thus $\skipdom$ is a $64$-point additive subspace and $\skipcoset$ is its disjoint coset, in the additive-NTT ordering of Annex~\ref{annex:pcs}.
+Flock zerochecks \eqref{flock:eq:r1cs} (Definition~\ref{def:zerocheck}), but replaces the first $\kskip$ rounds by one round through a multiplication code~\cite{DBHR26}, the \emph{AG skip}. It is the univariate skip of~\cite{Gru24} with the Reed-Solomon code exchanged for an algebraic-geometry code, chosen so that the product of two binary messages is again binary: the prover's round-one message is then a sum of selected equality weights, with no field product per witness bit. Split $u=(i,v)$ with $i\in\cube{\kskip}$ and $v\in\cube{\nflock}$.
 
-Write $\lag_i$ for the Lagrange basis of $\skipdom$: $\lag_i(\fembed(i'))=[i=i']$.
+\paragraph{The code.} Let $\skipcurve$ be the curve over $\Ftwo$ of genus $95$ whose affine model is
+\begin{equation}\label{flock:eq:curve}
+y^4+(x+1)y^2+(x^3+x)y+x^7+x^3=0,\qquad z_i^2+z_i=g_i(x,y)\quad(i=1,2,3),
+\end{equation}
+with $g_1,g_2,g_3$ the rational functions of~\cite[Eq.~(A.1)]{DBHR26}, whose denominators divide $d(x)=(x+1)(x^{10}+x^4+1)$. It has exactly $64$ points over $\Ftwo$, the \emph{skip domain} $\skipdom=\{P_0,\ldots,P_{63}\}$, and~\cite{DBHR26} gives a divisor $D$ of degree $158$ on it such that the functions $L(D)$ with poles bounded by $D$ form a space of dimension $64$ on which evaluation at $\skipdom$ is a bijection onto $\Ftwo^{64}$. Write $\lag_i\in L(D)$ for the function with $\lag_i(P_{i'})=[i=i']$. Products of two such functions lie in $L(2D)$, of dimension $222$.
+
+\begin{fact}[Pairs]\label{fact:skip-pairs}
+There is a set $\skippairs$ of $158$ pairs $i<k$ such that the $64$ squares $\lag_i^2$ and the $158$ products $\lag_i\lag_k$, $(i,k)\in\skippairs$, form a basis of $L(2D)$. A function of $L(2D)$ vanishes on $\skipdom$ if and only if its coordinates over the squares are zero.
+\end{fact}
+The second sentence follows from the first: a product $\lag_i\lag_k$ with $i\neq k$ vanishes at every point of $\skipdom$, and $\lag_i^2$ at every point but $P_i$. The first is a rank computation on the extension matrix of~\cite[\S A.3]{DBHR26}, and $\skippairs$ is the greedy choice in lexicographic order.
+
+The codewords are evaluations over the challenge field. The \emph{evaluation set} $\skipset$ is the set of solutions $(x,y,z_1,z_2,z_3)\in\E^5$ of \eqref{flock:eq:curve}, its second equation multiplied through by $d(x)$, at which $d(x)\,\eta(x)\,\eta_0(x)\neq 0$, where $\eta$ of degree $49$ and $\eta_0$ of degree $31$ are the common denominators of the bases of $L(2D)$ and $L(D)$. Every $\lag_i$ is $\eta_0(x)^{-1}$ times a polynomial in $x,y,z_1,z_2,z_3$ with coefficients in $\Ftwo$, so the verifier evaluates all $64$ at a point of $\skipset$ from the point's coordinates.
+
+\begin{fact}[Distance~{\cite[Eq.~(B.4)]{DBHR26}}]\label{fact:skip-distance}
+The zeros in $\skipset$ of a nonzero $F\in L(2D)\otimes\E$ lie over at most $2248$ values of $x$.
+\end{fact}
+Each such zero lies over a root of the norm of $\eta F$ down to $\E(x)$, a nonzero rational function whose numerator has degree at most $2248$. This is the bound~\cite{DBHR26} certifies from the equations alone; the geometric one, $2\deg D=316$ zeros, is not needed here.
+
+Write $\lag_i$ also for these evaluations.
 
 \begin{definition}[Quirky extension]\label{def:quirky}
-For $f:\cube{\kskip}\times\cube{n}\to\Ftwo$, its \emph{quirky extension} interpolates the first $\kskip$ coordinates over $\skipdom$ and extends the other $n$ multilinearly:
+For $f:\cube{\kskip}\times\cube{n}\to\Ftwo$, its \emph{quirky extension} extends the first $\kskip$ coordinates through the code and the other $n$ multilinearly:
 \[
-  \qext f:\E\times\E^{n}\to\E,\qquad
+  \qext f:\skipset\times\E^{n}\to\E,\qquad
   \qext f(Y,v):=\sum_{i=0}^{63}\lag_i(Y)\,\mle f(i,v),
 \]
-so $\qext f$ has degree $63$ in $Y$, degree one in every other variable, and $\qext f(\fembed(i),v)=\mle f(i,v)$ for every $i\in\cube{\kskip}$. Below $f$ is $a$, $b$ or $c$, with $n=\nflock$, or $A_0$ or $B_0$ read as a row followed by a column, with $n=2\kblock-\kskip$. Its argument $(Y,v)$ is a \emph{quirky point}.
+so $\qext f(\cdot,v)$ lies in $L(D)\otimes\E$, $\qext f$ has degree one in every other variable, and $\qext f(P_i,v)=\mle f(i,v)$ for every $i\in\cube{\kskip}$. Below $f$ is $a$, $b$ or $c$, with $n=\nflock$, or $A_0$ or $B_0$ read as a row followed by a column, with $n=2\kblock-\kskip$. Its argument $(Y,v)$ is a \emph{quirky point}.
 \end{definition}
 
 The zerocheck point $r \in \E^{\nflock}$ is defined as follows:
 \begin{itemize}
-  \item Its first seven coordinates $r_0, \dots, r_6$ are fixed to $\fembed(\mathtt{0xf7}),\fembed(\mathtt{0x53}),\fembed(\mathtt{0xb5})$ and $g_0^{2^j}/(1+g_0^{2^j})$ for $0\leq j<4$, where $g_0\in\E$ is public. Lemma~\ref{lem:fixed-zerocheck} applies.
+  \item Its first seven coordinates $r_0, \dots, r_6$ are fixed to $\gen^{2^j}/(1+\gen^{2^j})$ for $0\leq j<6$ and to $y/(1+y)$, with $\gen$ the generator of $\K$ and $y$ that of $\E$ over $\K$. Their $2^7$ equality weights are the elements $\gen^{k}y^{t}$, $0\leq k<64$, $t\in\{0,1\}$, divided by one constant: they are part of a basis of $\E$ over $\Ftwo$, so Lemma~\ref{lem:fixed-zerocheck} applies. The first six are what lets the prover read $64$ consecutive blocks of one coordinate as one element of $\K$.
   \item The remaining coordinates $r_7,\dots,r_{\nflock-1}$ are sampled at random by the verifier.
 \end{itemize}
 
@@ -59,11 +73,20 @@ Define
 \begin{equation}\label{flock:eq:pskip}
 P(Y)=\sum_{v\in\cube{\nflock}}\eq(r,v)\bigl(\qext a(Y,v)\qext b(Y,v)+\qext c(Y,v)\bigr),
 \end{equation}
-which lies in $\E[Y]$ and has degree at most $126$, the product contributing $2\times 63$ and the linear term $63$. If \eqref{flock:eq:r1cs} holds, then $P(h)=0$ for every $h\in\skipdom$. The prover sends $P|_{\skipcoset}$, $64$ values: together with the $64$ assumed zeros on $\skipdom$ that is a degree-below-$128$ polynomial's worth of evaluations, so the verifier interpolates $P$ over the $128$-point space $\skipdom\cup\skipcoset$.
+which lies in $L(2D)\otimes\E$. If \eqref{flock:eq:r1cs} holds, then $P(P_i)=0$ for every $i$, so by Fact~\ref{fact:skip-pairs}
+\begin{equation}\label{flock:eq:pskip-pairs}
+P=\sum_{(i,k)\in\skippairs}p_{ik}\,\lag_i\lag_k
+\end{equation}
+and the prover sends the $158$ coefficients $p_{ik}\in\E$: the $64$ over the squares are the zeros the verifier assumes.
 
-The verifier then samples $\zskip\in\E$ and reconstructs the claimed value
+The verifier then samples $x_0\in\E$. About one $x$ in twelve has a point of $\skipset$ over it, so the prover answers with a counter $\delta\in\K$, an integer below $2^{16}$ read as bits, and with $y,z_1,z_2,z_3\in\E$. The verifier checks the range of $\delta$ and that
 \[
-v_P \qeq P(\zskip).
+\zskip=(x_0+\omega\delta,\,y,\,z_1,\,z_2,\,z_3)\in\skipset,
+\]
+where $\omega\in\E$ is a fixed public constant outside $\K$. A step inside $\K$ would not do: the first condition for a point to lie over $x$ is $\operatorname{Tr}(x^3+x)=0$, the trace of $\K$ vanishes on the polynomials in $\gen$ of degree below $60$, and a counter stepping by $1$ would then move that trace only linearly, leaving one $x_0$ in $2^{17}$ with no counter that passes. The verifier
+then evaluates the $64$ weights $\lag_i(\zskip)$, and reconstructs the claimed value
+\[
+v_P \qeq \sum_{(i,k)\in\skippairs}p_{ik}\,\lag_i(\zskip)\,\lag_k(\zskip).
 \]
 
 The parties run sumcheck over the remaining $\nflock$ Boolean variables in \eqref{flock:eq:pskip}, with Gruen's eq-factor optimization~\cite{Gru24}. Writing $R_{\mathrm{zc}}\in\E$ for the running claim after the last round, the prover sends $v_a,v_b\in\E$ and the terminal identity
@@ -81,7 +104,7 @@ where $\fc\in\E^{\nflock}$ is the vector of sumcheck challenges and the third cl
 Lincheck reduces the three zerocheck claims to claims on $z$. The block structure is what keeps it cheap: the matrices repeat one BLAKE2s circuit, so lincheck runs over a single block, not over the batch. Split $\fc=(\fc_{\mathrm{in}},\fc_{\mathrm{out}})$, where $\fc_{\mathrm{in}}\in\E^{\kblock-\kskip}$ selects the remaining within-block coordinates and $\fc_{\mathrm{out}}\in\E^{\kbatch}$ selects a batch instance.
 
 \begin{lemma}[Block diagonality folds the batch into $z$]\label{lem:flock-block-diagonal}
-For $a=Az$ with $A=I_{2^{\kbatch}}\otimes A_0$, at every point $(\zskip,\fc_{\mathrm{in}},\fc_{\mathrm{out}})\in\E\times\E^{\kblock-\kskip}\times\E^{\kbatch}$,
+For $a=Az$ with $A=I_{2^{\kbatch}}\otimes A_0$, at every point $(\zskip,\fc_{\mathrm{in}},\fc_{\mathrm{out}})\in\skipset\times\E^{\kblock-\kskip}\times\E^{\kbatch}$,
 \[
 \qext a(\zskip,\fc_{\mathrm{in}},\fc_{\mathrm{out}})=\sum_{j\in\cube{\kblock}}\qext A_0(\zskip,\fc_{\mathrm{in}},j)\,\mle z(j,\fc_{\mathrm{out}}),
 \]
@@ -102,7 +125,7 @@ so, splitting the row as $k=(\ksk,\kin)$ with $\ksk\in\cube{\kskip}$ and $\kin\i
 \end{align*}
 \end{proof}
 
-The $c$ claim has the same shape, with the column index split as $j=(\jsk,\jin) \in\cube{\kskip} \times \cube{\kblock-\kskip}$, $\jsk$ the coordinates the univariate skip replaced and $\jin$ the within-block coordinates that remain:
+The $c$ claim has the same shape, with the column index split as $j=(\jsk,\jin) \in\cube{\kskip} \times \cube{\kblock-\kskip}$, $\jsk$ the coordinates the AG skip replaced and $\jin$ the within-block coordinates that remain:
 \begin{equation}\label{flock:eq:c-as-column}
 \qext z(\zskip,\fc_{\mathrm{in}},\fc_{\mathrm{out}})=\sum_{j\in\cube{\kblock}}\lag_{\jsk}(\zskip)\,\eq(\fc_{\mathrm{in}},\jin)\,\mle z(j,\fc_{\mathrm{out}}),
 \end{equation}
@@ -170,8 +193,8 @@ s_i \qeq \mle z(i,\fc'_{\mathrm{in}},\fc_{\mathrm{out}})\qquad\text{for }i\in\cu
 \begin{protocol}[Flock summary]\label{flock:protocol}
 After the witness $z$ has been committed, and its size announced:
 \begin{enumerate}
-\item The verifier forms the zerocheck point $r$: seven fixed coordinates, the rest sampled. The $\kskip$ variables the univariate skip replaced consume no equality challenge.
-\item The prover sends $P|_{\skipcoset}$, $64$ values. The verifier samples $\zskip$ and reconstructs $v_P$.
+\item The verifier forms the zerocheck point $r$: seven fixed coordinates, the rest sampled. The $\kskip$ variables the AG skip replaced consume no equality challenge.
+\item The prover sends the $158$ coefficients of $P$ over the pairs \eqref{flock:eq:pskip-pairs}. The verifier samples $x_0$, the prover answers with the counter $\delta$ and the rest of the point $\zskip$, and the verifier checks $\zskip\in\skipset$ and reconstructs $v_P$.
 \item The parties run $\nflock$ quadratic zerocheck rounds on \eqref{flock:eq:pskip}, which the prover ends by sending $v_a,v_b$; the terminal identity \eqref{flock:eq:zc-terminal} then fixes $v_c$.
 \item The verifier samples $\lcalpha$ and the parties run the $8$ quadratic lincheck rounds on \eqref{flock:eq:lincheck}. The prover sends $(s_0,\ldots,s_{63})$, and the verifier checks \eqref{flock:eq:lincheck-terminal}: one circuit walk natively, the hint \eqref{flock:eq:matpart} in recursion.
 \end{enumerate}
@@ -275,10 +298,10 @@ degree three in $\lcalpha$, all four coefficients fixed before $\lcalpha$ is dra
 
 With all three pinned, the zerocheck's terminal identity \eqref{flock:eq:zc-terminal} becomes a real check again: it fixes $R_{\mathrm{zc}}$ to the true value of the summand at $\fc$.
 
-Now let $z$ violate \eqref{flock:eq:r1cs} at $u=(i,v)$. Then $P(\fembed(i))$ is the extension at $r$ of a nonzero Boolean multilinear (Definition~\ref{def:quirky}, Fact~\ref{fact:eq}), and the seven fixed coordinates of $r$ carry $\Ftwo$-independent weights, so it stays nonzero except with $(\nflock-7)/|\E|$ (Lemma~\ref{lem:fixed-zerocheck}): the $64$ zeros the verifier assumes on $\skipdom$ are false. Let $\hat P$ interpolate those zeros together with the received coset values. It vanishes on $\skipdom$ while $P$ does not, so $\hat P\neq P$ and $v_P\neq P(\zskip)$ except with $127/|\E|$ (Corollary~\ref{cor:idtest}). The $\nflock$ zerocheck rounds then run on a false initial claim with a true terminal value, and reject except with $2\nflock/|\E|$.
+Now let $z$ violate \eqref{flock:eq:r1cs} at $u=(i,v)$. Then $P(P_i)$ is the extension at $r$ of a nonzero Boolean multilinear (Definition~\ref{def:quirky}, Fact~\ref{fact:eq}), and the seven fixed coordinates of $r$ carry $\Ftwo$-independent weights, so it stays nonzero except with $(\nflock-7)/|\E|$ (Lemma~\ref{lem:fixed-zerocheck}): the $64$ zeros the verifier assumes on $\skipdom$ are false. Let $\hat P$ be the function \eqref{flock:eq:pskip-pairs} of the received coefficients. It vanishes on $\skipdom$ while $P$ does not, so $\hat P+P$ is a nonzero element of $L(2D)\otimes\E$, and both are fixed before $x_0$ is drawn. By Fact~\ref{fact:skip-distance}, $v_P=P(\zskip)$ then needs $x_0+\omega\delta$ to be one of at most $2248$ values. The prover chooses $\delta$ among $2^{16}$ and the point over $x_0+\omega\delta$ freely, and neither choice helps beyond that: $v_P\neq P(\zskip)$ except with $2^{16}\cdot 2248/|\E|$. The $\nflock$ zerocheck rounds then run on a false initial claim with a true terminal value, and reject except with $2\nflock/|\E|$.
 
 Summing those terms, such a $z$ is accepted with probability at most
 \[
-\frac{16+3+\kbatch+(\nflock-7)+127+2\nflock}{|\E|}=\frac{4\kbatch+163}{|\E|}<2^{-183},
+\frac{16+3+\kbatch+(\nflock-7)+2^{16}\cdot 2248+2\nflock}{|\E|}=\frac{4\kbatch+36+2^{16}\cdot 2248}{|\E|}<2^{-164},
 \]
 on top of the two errors granted above.

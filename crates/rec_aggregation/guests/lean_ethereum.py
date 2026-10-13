@@ -182,19 +182,47 @@ ETA_FORM_BASE = ETA_FORM_BASE_PLACEHOLDER
 N_ETA_POWS = N_ETA_POWS_PLACEHOLDER
 
 # ------------------------------------------------------------ flock (the R1CS)
-# Univariate skip: K_SKIP variables fold in one skip round (half-domain 2^K_SKIP
-# phi8 nodes), then N_FIXED_CHALLENGE_ROUNDS fixed inner rounds (FIXED_CHALLENGES),
-# then sampled outer rounds. LAGRANGE_INV_* are the one baked inverse barycentric
-# denominator per domain (combined, S). The zerocheck point/round buffers are sized
-# at runtime in the exponent (m = K_LOG + tau_5 and m - 6, both certified);
-# LINCHECK_ROUNDS = K_LOG - K_SKIP is protocol-fixed and PIN_COLUMN is the
-# const-pin column.
+# AG skip: K_SKIP variables fold in one skip round, through a multiplication code on
+# a genus-95 curve, then N_FIXED_CHALLENGE_ROUNDS fixed inner rounds
+# (FIXED_CHALLENGES), then sampled outer rounds. The zerocheck point/round buffers
+# are sized at runtime in the exponent (m = K_LOG + tau_5 and m - 6, both
+# certified); LINCHECK_ROUNDS = K_LOG - K_SKIP is protocol-fixed and PIN_COLUMN is
+# the const-pin column.
 K_SKIP = K_SKIP_PLACEHOLDER
 N_FIXED_CHALLENGE_ROUNDS = N_FIXED_CHALLENGE_ROUNDS_PLACEHOLDER
 FIXED_CHALLENGES = FIXED_CHALLENGES_PLACEHOLDER
-PHI8_NODES = PHI8_NODES_PLACEHOLDER
-LAGRANGE_INV_COMBINED = LAGRANGE_INV_COMBINED_PLACEHOLDER
-LAGRANGE_INV_S = LAGRANGE_INV_S_PLACEHOLDER
+# The curve's affine model. A polynomial in x is the integer whose bit d is its
+# coefficient of x^d; AG_AS_NUMERATORS[4 * i + b] is the coefficient of y^b in
+# AG_AS_DENOMINATOR * (z_i^2 + z_i).
+AG_X_POWERS = 50
+AG_AS_DENOMINATOR = AG_AS_DENOMINATOR_PLACEHOLDER
+AG_AS_NUMERATORS = AG_AS_NUMERATORS_PLACEHOLDER
+AG_PRODUCT_DENOMINATOR = AG_PRODUCT_DENOMINATOR_PLACEHOLDER
+AG_BASE_DENOMINATOR = AG_BASE_DENOMINATOR_PLACEHOLDER
+# The prover's counter lies in the span of g^0..g^(AG_COUNTER_BITS-1), whose
+# vanishing polynomial is AG_COUNTER_BITS steps t -> t * (t + AG_COUNTER_STEPS[i]).
+# One count moves the sampled x by AG_COUNTER_STEP.
+AG_COUNTER_BITS = AG_COUNTER_BITS_PLACEHOLDER
+AG_COUNTER_STEP = AG_COUNTER_STEP_PLACEHOLDER
+AG_COUNTER_STEPS = AG_COUNTER_STEPS_PLACEHOLDER
+# The skip message rides over the AG_SUFFIX products f_i * f_k, pair t being
+# (AG_PAIR_I[t], AG_PAIR_K[t]).
+AG_SUFFIX = AG_SUFFIX_PLACEHOLDER
+AG_PAIR_I = AG_PAIR_I_PLACEHOLDER
+AG_PAIR_K = AG_PAIR_K_PLACEHOLDER
+# The 64 weights f_i(Q) are sums of monomials m_a y^b x^d, taken AG_BLOCK_BITS
+# monomials at a time: block blk owns 2^AG_BLOCK_BITS cells, cell v the sum of the
+# monomials v's bits select. Bit j of block blk is the monomial of group
+# AG_SLOT_GROUP[blk * AG_BLOCK_BITS + j] = 4 a + b (32 for none) and degree
+# AG_SLOT_DEGREE[..]; AG_CELL_USED marks the sums some weight needs; weight i is the
+# sum of the cells AG_TERMS[AG_TERM_START[i] .. AG_TERM_START[i + 1]].
+AG_BLOCK_BITS = AG_BLOCK_BITS_PLACEHOLDER
+AG_BLOCKS = AG_BLOCKS_PLACEHOLDER
+AG_SLOT_GROUP = AG_SLOT_GROUP_PLACEHOLDER
+AG_SLOT_DEGREE = AG_SLOT_DEGREE_PLACEHOLDER
+AG_CELL_USED = AG_CELL_USED_PLACEHOLDER
+AG_TERMS = AG_TERMS_PLACEHOLDER
+AG_TERM_START = AG_TERM_START_PLACEHOLDER
 LINCHECK_ROUNDS = LINCHECK_ROUNDS_PLACEHOLDER
 PIN_COLUMN = PIN_COLUMN_PLACEHOLDER
 K_LOG = K_LOG_PLACEHOLDER
@@ -284,8 +312,8 @@ BYTECODE_VARS = BYTECODE_VARS_PLACEHOLDER  # = BYTECODE_LOG + LOG2_BYTECODE_COLS
 # The exported record's layout: the shared bytecode point, then the flock data.
 FRESH_BC_VALUE = BYTECODE_VARS
 FRESH_ALPHA = BYTECODE_VARS + 1
-FRESH_Z_SKIP = BYTECODE_VARS + 2
-FRESH_ZCHI = BYTECODE_VARS + 3
+FRESH_SKIP_WEIGHTS = BYTECODE_VARS + 2
+FRESH_ZCHI = FRESH_SKIP_WEIGHTS + 2 ** K_SKIP
 FRESH_LINCHECK_RS = FRESH_ZCHI + LINCHECK_ROUNDS
 FRESH_Z_PARTIAL = FRESH_LINCHECK_RS + LINCHECK_ROUNDS
 FRESH_MATPART = FRESH_Z_PARTIAL + 2 ** K_SKIP
@@ -774,22 +802,62 @@ def eqtree(point_ptr, out, n_coords: Const):
 
 
 @inline
-def lag64(z, out, node_base: Const):
-    # The 64 phi8-domain Lagrange NUMERATORS at z over nodes
-    # PHI8_NODES[node_base .. node_base + 64]: out[i] = prod_{j != i} (z +
-    # PHI8_NODES[node_base + j]). Every barycentric denominator over an aligned phi8
-    # window is the same element, so callers scale the finished sum once by
-    # LAGRANGE_INV_S / LAGRANGE_INV_COMBINED instead of the numerators one by one.
-    pre = StackBuf(65)
-    pre[0] = 1
-    for i in unroll(0, 64):
-        pre[i + 1] = pre[i] * (z + PHI8_NODES[node_base + i])
-    suf = StackBuf(65)
-    suf[64] = 1
-    for i in unroll(0, 64):
-        suf[63 - i] = suf[64 - i] * (z + PHI8_NODES[node_base + 63 - i])
-    for i in unroll(0, 64):
-        out[i] = pre[i] * suf[i + 1]
+def ag_poly(xp, mask: Const):
+    # The polynomial `mask` at x, from the powers xp[d] = x^d.
+    acc = 0
+    for d in unroll(0, AG_X_POWERS):
+        if const((mask // 2 ** d) % 2 == 1):
+            acc = acc + xp[d]
+    return acc
+
+
+def ag_skip_weights(x, y, z_1, z_2, z_3, out):
+    # The AG skip's 64 weights out[i] = f_i(Q) at the curve point Q = (x, y, z_1,
+    # z_2, z_3), every coordinate the prover's: Q is checked to be a point of the
+    # curve's affine model over no pole, which is the code's evaluation set.
+    xp = StackBuf(AG_X_POWERS)
+    xp[0] = 1
+    xp[1] = x
+    for d in unroll(2, AG_X_POWERS):
+        xp[d] = xp[d - 1] * x
+    y_2 = y * y
+    y_3 = y_2 * y
+    as_denominator = ag_poly(xp, AG_AS_DENOMINATOR)
+    base_denominator = ag_poly(xp, AG_BASE_DENOMINATOR)
+    poles = as_denominator * ag_poly(xp, AG_PRODUCT_DENOMINATOR) * base_denominator
+    assert poles != 0
+    quartic = y_2 * y_2 + (x + 1) * y_2 + (xp[3] + x) * y + xp[7] + xp[3]
+    assert quartic == 0
+    zs = [z_1, z_2, z_3]
+    for i in unroll(0, 3):
+        rhs = ag_poly(xp, AG_AS_NUMERATORS[4 * i]) + ag_poly(xp, AG_AS_NUMERATORS[4 * i + 1]) * y + ag_poly(xp, AG_AS_NUMERATORS[4 * i + 2]) * y_2 + ag_poly(xp, AG_AS_NUMERATORS[4 * i + 3]) * y_3
+        assert as_denominator * (zs[i] * zs[i] + zs[i]) == rhs
+    # cy[4 a + b] = m_a y^b, m the eight products of the z.
+    cy = StackBuf(32)
+    cy[0] = 1
+    cy[4] = z_3
+    cy[8] = z_2
+    cy[12] = z_2 * z_3
+    cy[16] = z_1
+    cy[20] = z_1 * z_3
+    cy[24] = z_1 * z_2
+    cy[28] = cy[24] * z_3
+    for a in unroll(0, 8):
+        for b in unroll(1, 4):
+            cy[4 * a + b] = cy[4 * a + b - 1] * y
+    cells = StackBuf(AG_BLOCKS * 2 ** AG_BLOCK_BITS)
+    for blk in unroll(0, AG_BLOCKS):
+        for j in unroll(0, AG_BLOCK_BITS):
+            if const(AG_SLOT_GROUP[blk * AG_BLOCK_BITS + j] != 32):
+                cells[blk * 2 ** AG_BLOCK_BITS + 2 ** j] = cy[AG_SLOT_GROUP[blk * AG_BLOCK_BITS + j]] * xp[AG_SLOT_DEGREE[blk * AG_BLOCK_BITS + j]]
+                for u in unroll(1, 2 ** j):
+                    if const(AG_CELL_USED[blk * 2 ** AG_BLOCK_BITS + 2 ** j + u] == 1):
+                        cells[blk * 2 ** AG_BLOCK_BITS + 2 ** j + u] = cells[blk * 2 ** AG_BLOCK_BITS + u] + cells[blk * 2 ** AG_BLOCK_BITS + 2 ** j]
+    for i in unroll(0, 2 ** K_SKIP):
+        acc = cells[AG_TERMS[AG_TERM_START[i]]]
+        for t in unroll(AG_TERM_START[i] + 1, AG_TERM_START[i + 1]):
+            acc = acc + cells[AG_TERMS[t]]
+        out[GEN ** i] = acc / base_denominator
     return
 
 
@@ -1744,20 +1812,21 @@ def verify_tables(fs0, fs1, cursor, pi_0, pi_1, zeta, g_bus_mu, dims_g, block_ka
     return fs[0], fs[1], cursor, g_zc_n, bc_share, rm
 
 
-def verify_flock(fs0, fs1, cursor, tau_blake2s_g, zerocheck_chis, lincheck_rs, z_partial):
-    # Flock's zerocheck (univariate skip, k_skip = 6) then its lincheck, whose
+def verify_flock(fs0, fs1, cursor, tau_blake2s_g, zerocheck_chis, lincheck_rs, z_partial, skip_weights):
+    # Flock's zerocheck (AG skip, k_skip = 6) then its lincheck, whose
     # matrix evaluation is DEFERRED to the caller's statement. The three run buffers
-    # come in pre-sized; the point z, lincheck's alpha and the deferred matrix part
-    # come back with the walked Fiat-Shamir state and stream cursor.
+    # come in pre-sized, as does skip_weights, which receives the skip point's 64
+    # weights; lincheck's alpha and the deferred matrix part come back with the
+    # walked Fiat-Shamir state and stream cursor.
     #
     # tau's reach is bounded: the count gadget gives tau < 34 (every flock buffer is
     # sized for that), and q_flock's committed kappa = K_LOG + tau feeds the
     # certified size m, whose dispatch bound caps tau below any baked structure. The
-    # first K_SKIP Boolean rounds are replaced by the univariate skip and consume no
+    # first K_SKIP Boolean rounds are replaced by the AG skip and consume no
     # equality challenges; the remaining r coordinates are N_FIXED_CHALLENGE_ROUNDS
     # fixed inner values then sampled outer ones. The prover builds round 1 from
     # this equality tail, so its sampled part is squeezed before round 1 is fetched,
-    # and round 1 before z, which evaluates it.
+    # and round 1 before the skip point, which evaluates it.
     fs = [fs0, fs1]
     mr1cs_g = tau_blake2s_g * GEN ** K_LOG  # runtime m = K_LOG + tau_5, in the exponent
     zerocheck_r = HeapBuf(mr1cs_g)
@@ -1776,25 +1845,33 @@ def verify_flock(fs0, fs1, cursor, tau_blake2s_g, zerocheck_chis, lincheck_rs, z
         row[GEN ** (PAIR_SLOTS + 1)] = point_fs[1]
     pts_last = flock_pts * mr1cs_g ** PAIR_SLOTS
     fs = [pts_last[GEN ** 0], pts_last[GEN ** 1]]
-    # round-1 message (P = P^AB + P^C on Lambda, 2^K_SKIP words): fetch +
-    # observe each word as it comes off the stream, then sample z.
-    zc_round1 = HeapBuf(2 ** K_SKIP)
-    for i in unroll(0, 2 ** K_SKIP):
+    # round-1 message (P over the AG_SUFFIX pairs): fetch + observe each word as it
+    # comes off the stream, then sample x_0.
+    zc_round1 = HeapBuf(AG_SUFFIX)
+    for t in unroll(0, AG_SUFFIX):
         fs, w, cursor = fs_next(fs, cursor)
-        zc_round1[GEN ** i] = w
-    fs, zerocheck_z = squeeze(fs)  # cursor now sits at the multilinear round messages, walked below
-    # P(z), interpolated at z over ALL 128 phi8 nodes: the transmitted Lambda values
-    # (nodes 64..128) plus the S half, zero by the zerocheck identity. The finished
-    # sum is scaled once by the domain's inverse denominator; the full-domain
-    # product only adds the S-half factor to the Lambda numerators.
-    lagrange_nums = StackBuf(2 ** K_SKIP)
-    lag64(zerocheck_z, lagrange_nums, 2 ** K_SKIP)
-    s_half_product = GEN ** 0
+        zc_round1[GEN ** t] = w
+    fs, x_0 = squeeze(fs)
+    # The skip point Q: the prover's counter moves x_0 under a curve point, by
+    # AG_COUNTER_STEP a count,
+    # whose other coordinates are the prover's too. A false message survives only
+    # over a root of its norm, a polynomial in x, so neither choice is worth more
+    # than the 2^AG_COUNTER_BITS values of x it reaches.
+    fs, delta, cursor = fs_next(fs, cursor)
+    fs, y, cursor = fs_next(fs, cursor)
+    fs, z_1, cursor = fs_next(fs, cursor)
+    fs, z_2, cursor = fs_next(fs, cursor)
+    fs, z_3, cursor = fs_next(fs, cursor)  # cursor now sits at the multilinear round messages, walked below
+    span = delta
+    for i in unroll(0, AG_COUNTER_BITS):
+        span = span * (span + AG_COUNTER_STEPS[i])
+    assert span == 0
+    ag_skip_weights(x_0 + AG_COUNTER_STEP * delta, y, z_1, z_2, z_3, skip_weights)
+    # P at Q. Its 64 coordinates over the squares f_i^2 are zero by the zerocheck
+    # identity; the transmitted ones are over the products f_i * f_k.
     zc_running = 0  # the zerocheck running claim entering the multilinear rounds
-    for i in unroll(0, 2 ** K_SKIP):
-        s_half_product *= (zerocheck_z + PHI8_NODES[i])
-        zc_running += lagrange_nums[i] * zc_round1[GEN ** i]
-    zc_running *= s_half_product * LAGRANGE_INV_COMBINED
+    for t in unroll(0, AG_SUFFIX):
+        zc_running += zc_round1[GEN ** t] * skip_weights[GEN ** AG_PAIR_I[t]] * skip_weights[GEN ** AG_PAIR_K[t]]
     mr1cs_rounds_g = mr1cs_g * INV_GEN ** 6  # the multilinear rounds: m - 6
     for i in unroll(0, N_FIXED_CHALLENGE_ROUNDS):
         r_eq = zerocheck_r[GEN ** (K_SKIP + i)]
@@ -1837,10 +1914,6 @@ def verify_flock(fs0, fs1, cursor, tau_blake2s_g, zerocheck_chis, lincheck_rs, z
     fs, a_eval, cursor = fs_next(fs, cursor)
     fs, b_eval, cursor = fs_next(fs, cursor)
     c_eval = zc_running + a_eval * b_eval
-    # The phi8 Lagrange weights at z over the S nodes: the quirky extension's
-    # own combination, which the lincheck terminal applies to the 64 slices.
-    claim_nums = StackBuf(2 ** K_SKIP)
-    lag64(zerocheck_z, claim_nums, 0)
 
     # ---- flock lincheck (matrix evaluation DEFERRED) ----
     matrix_eval = hint_witness("matpart")
@@ -1867,20 +1940,19 @@ def verify_flock(fs0, fs1, cursor, tau_blake2s_g, zerocheck_chis, lincheck_rs, z
     pin_term *= z_partial[GEN ** (PIN_COLUMN % 2 ** K_SKIP)]
     # The C term. Its column weight is the row weight itself (C = I), and both
     # sides are tensors, so it collapses to eq(chi_in, chi_in_prime) times the
-    # phi8 Lagrange combination of the 64 slices: no second matrix walk, no
+    # skip point's combination of the 64 slices: no second matrix walk, no
     # second family.
     c_point_eq = GEN ** 0
     for t in unroll(0, LINCHECK_ROUNDS):
         c_point_eq *= (1 + zerocheck_chis[GEN ** t] + lincheck_rs[GEN ** (LINCHECK_ROUNDS - 1 - t)])
     c_slice_value = 0
     for i in unroll(0, 2 ** K_SKIP):
-        c_slice_value += claim_nums[i] * z_partial[GEN ** i]
-    c_slice_value *= LAGRANGE_INV_S
+        c_slice_value += skip_weights[GEN ** i] * z_partial[GEN ** i]
     # deferred matrix eval + pin + C
     assert lc_running == matrix_eval + pin_term + lincheck_beta * c_point_eq * c_slice_value
     # z_partial IS the claim: the terminal identity above pins its 64 slices, and
     # ring switching binds every one of them.
-    return fs[0], fs[1], cursor, zerocheck_z, lincheck_alpha, matrix_eval
+    return fs[0], fs[1], cursor, lincheck_alpha, matrix_eval
 
 
 def certify_placement(kappa_base, g_squares):
@@ -2096,7 +2168,7 @@ def verify_sub(pi_0, pi_1, seed_0, seed_1, g_logs_pow2, g_squares, defer_out):
     zerocheck_chis = HeapBuf(tau_blake2s_g * GEN ** (K_LOG - K_SKIP))  # m - 6 rounds
     lincheck_rs = HeapBuf(LINCHECK_ROUNDS)
     z_partial = HeapBuf(2 ** K_SKIP)
-    fs0, fs1, cursor, zerocheck_z, lincheck_alpha, matrix_eval = verify_flock(fs[0], fs[1], cursor, tau_blake2s_g, zerocheck_chis, lincheck_rs, z_partial)
+    fs0, fs1, cursor, lincheck_alpha, matrix_eval = verify_flock(fs[0], fs[1], cursor, tau_blake2s_g, zerocheck_chis, lincheck_rs, z_partial, defer_out * GEN ** FRESH_SKIP_WEIGHTS)
     fs = [fs0, fs1]
 
     # ---- stacked mixed opening: ring-switch front + claim combination ----
@@ -2190,7 +2262,6 @@ def verify_sub(pi_0, pi_1, seed_0, seed_1, g_logs_pow2, g_squares, defer_out):
         defer_out[GEN ** (BYTECODE_LOG + k)] = bus_alpha[GEN ** k]
     defer_out[GEN ** FRESH_BC_VALUE] = bc_share
     defer_out[GEN ** FRESH_ALPHA] = lincheck_alpha
-    defer_out[GEN ** FRESH_Z_SKIP] = zerocheck_z
     for k in unroll(0, LINCHECK_ROUNDS):
         defer_out[GEN ** (FRESH_ZCHI + k)] = zerocheck_chis[GEN ** k]
         defer_out[GEN ** (FRESH_LINCHECK_RS + k)] = lincheck_rs[GEN ** k]
@@ -3674,7 +3745,7 @@ def aggregate_claims(n_children_g, child_pi, child_fresh, child_carried, defer_s
     fs0, fs1, mat_running = batch_sumcheck(agg_fs[0], agg_fs[1], mat_msgs, mat_running, mat_point, 2 * K_LOG)
     agg_fs = [fs0, fs1]
     # Terminal weights. A fresh claim's is U_t(r*) = urow_t(r*_row) * wcol_t(r*_col),
-    # with row_weight = (sum_i L_i(zz_t) eq(r*[0..6], i)) * eq(zchi_t, r*[6..K_LOG])
+    # with row_weight = (sum_i f_i(Q_t) eq(r*[0..6], i)) * eq(zchi_t, r*[6..K_LOG])
     # and col_weight = (sum_i z_partial_t[i] eq(r*[K_LOG..K_LOG+6], i)) * prod_j (1 +
     # lrr_j + r*[2*K_LOG-1-j]) (the lincheck binds column variables top-down). A
     # carried claim's is a plain eq over all 2*K_LOG coordinates.
@@ -3687,12 +3758,9 @@ def aggregate_claims(n_children_g, child_pi, child_fresh, child_carried, defer_s
     w_sums[GEN ** 1] = 0
     for xc in mul_range(1, n_children_g):
         fresh = fresh_row[xc]
-        row_nums = StackBuf(2 ** K_SKIP)
-        lag64(fresh[GEN ** FRESH_Z_SKIP], row_nums, 0)
         row_weight = 0
         for i in unroll(0, 2 ** K_SKIP):
-            row_weight += row_nums[i] * eq_rows[GEN ** (2 ** K_SKIP - 2 + i)]
-        row_weight *= LAGRANGE_INV_S
+            row_weight += fresh[GEN ** (FRESH_SKIP_WEIGHTS + i)] * eq_rows[GEN ** (2 ** K_SKIP - 2 + i)]
         for k in unroll(0, LINCHECK_ROUNDS):
             row_weight *= (1 + fresh[GEN ** (FRESH_ZCHI + k)] + mat_point[GEN ** (K_SKIP + k)])
         col_weight = 0

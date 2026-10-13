@@ -25,6 +25,7 @@
 //! gadgets, forwards and transposed, kept separate because the fused
 //! three-operand adder's bit boundaries are the subtlest thing here.
 
+pub mod ag_code;
 mod gf2;
 pub mod hash;
 pub mod lincheck;

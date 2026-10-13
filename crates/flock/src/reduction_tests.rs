@@ -26,7 +26,7 @@ fn packed_bytes(words: &[u64]) -> &[u8] {
 
 fn x_ab_of(zc: &ZerocheckClaim, inner_rest_len: usize) -> QuirkyPoint {
     QuirkyPoint {
-        z_skip: zc.z,
+        skip_weights: zc.skip_weights.to_vec(),
         x_inner_rest: zc.mlv_challenges[..inner_rest_len].to_vec(),
         x_outer: zc.mlv_challenges[inner_rest_len..].to_vec(),
     }

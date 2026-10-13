@@ -431,7 +431,7 @@ struct DeferredSubproof {
     bytecode_selector_point: Vec<F192>,
     bytecode_value: F192,
     matrix_a_coefficient: F192,
-    skip_point: F192,
+    skip_weights: Vec<F192>,
     zerocheck_row_point: Vec<F192>,
     lincheck_round_point: Vec<F192>,
     lincheck_terminal_values: Vec<F192>,
@@ -1033,7 +1033,9 @@ fn aggregate_deferred_claims(
         }
         transcript.observe(subproof.bytecode_value);
         transcript.observe(subproof.matrix_a_coefficient);
-        transcript.observe(subproof.skip_point);
+        for &value in &subproof.skip_weights {
+            transcript.observe(value);
+        }
         for &value in &subproof.zerocheck_row_point {
             transcript.observe(value);
         }
@@ -1135,7 +1137,7 @@ fn aggregate_deferred_claims(
     for (subproof, carried) in subproofs.iter().zip(carried_claims) {
         let (gf, cga, cgb) = (transcript.sample(), transcript.sample(), transcript.sample());
         us.push(flock::lincheck::build_quirky_eq_table(
-            subproof.skip_point,
+            &subproof.skip_weights,
             &subproof.zerocheck_row_point,
             6,
         ));
@@ -1256,7 +1258,7 @@ fn aggregate_deferred_claims(
         let eqc = pcs::whir::build_eq_table_ext(&r_col[..6]);
         let (mut wam, mut wbm) = (F192::ZERO, F192::ZERO);
         for (t, (subproof, carried)) in subproofs.iter().zip(carried_claims).enumerate() {
-            let lam = primitives::multilinear::lagrange_weights_naive(6, subproof.skip_point);
+            let lam = &subproof.skip_weights;
             let mut urow: F192 = (0..64).map(|i| lam[i] * eqr[i]).fold(F192::ZERO, |a, x| a + x);
             for (k, &z) in subproof.zerocheck_row_point.iter().enumerate() {
                 urow *= F192::ONE + z + r_row[6 + k];
@@ -1486,7 +1488,7 @@ fn gen_verify(
     // Flock replay data, all named struct fields.
     let lcrounds = flock::hash::K_LOG - 6;
     let zcf = [summary.zc_claim.a_eval, summary.zc_claim.b_eval];
-    let zc_z = summary.zc_claim.z;
+    let skip_weights = summary.zc_claim.skip_weights;
     let zchi = &summary.zc_claim.mlv_challenges;
     let lc_alpha = summary.lc_claim.alpha;
     let lc_beta = summary.lc_claim.beta;
@@ -1521,13 +1523,13 @@ fn gen_verify(
         pinw *= if bit == 1 { rv } else { F192::ONE + rv };
     }
     pinw *= lcz[flock::hash::Z_CONST_POS % 64];
-    // The c term: eq(ρ_in, ρ'_in) times the φ8-Lagrange combination of the 64
+    // The c term: eq(ρ_in, ρ'_in) times the skip point's combination of the 64
     // slices, ρ'_in being the lincheck challenges read back in coordinate order.
     let mut c_point_eq = F192::ONE;
     for (t, &rin) in zchi[..lcrounds].iter().enumerate() {
         c_point_eq *= F192::ONE + rin + lrr[lcrounds - 1 - t];
     }
-    let c_slice_value = primitives::multilinear::lagrange_weights_naive(6, zc_z)
+    let c_slice_value = skip_weights
         .iter()
         .zip(lcz)
         .fold(F192::ZERO, |acc, (&w, &s)| acc + w * s);
@@ -1629,7 +1631,7 @@ fn gen_verify(
         bytecode_selector_point,
         bytecode_value,
         matrix_a_coefficient: lc_alpha,
-        skip_point: zc_z,
+        skip_weights: skip_weights.to_vec(),
         zerocheck_row_point: zchi[..lcrounds].to_vec(),
         lincheck_round_point: summary.lc_claim.r_rounds,
         lincheck_terminal_values: summary.lc_claim.s_hat_v,
@@ -2399,6 +2401,70 @@ struct ClaimDescriptor {
     qflock_slot: usize,
 }
 
+/// The guest's constants for the AG skip (`flock::ag_code`): the curve's equations, the counter's
+/// vanishing polynomial, the pairs, and the plan that sums monomials into the 64 weights.
+///
+/// The plan is the method of four Russians. The base functional's nonzero slots are cut into
+/// blocks of `BLOCK_BITS` monomials; a block's `2^BLOCK_BITS` subset sums are built once, and
+/// each weight takes one of them per block rather than one monomial per set bit.
+fn ag_skip_placeholders(ps: &mut impl FnMut(&str, String)) {
+    use flock::ag_code::tables::{BASE_DENOMINATOR, BASE_SLOT_MASKS, PAIRS, PRODUCT_DENOMINATOR};
+    use flock::ag_code::{AS_DENOMINATOR, AS_NUMERATORS, COUNTER_BITS, COUNTER_STEP, K, SUFFIX};
+    const BLOCK_BITS: usize = 5;
+
+    ps("AG_AS_DENOMINATOR", AS_DENOMINATOR.to_string());
+    ps("AG_AS_NUMERATORS", literals(AS_NUMERATORS.as_flattened()));
+    ps("AG_PRODUCT_DENOMINATOR", PRODUCT_DENOMINATOR.to_string());
+    ps("AG_BASE_DENOMINATOR", BASE_DENOMINATOR.to_string());
+    // The vanishing polynomial of span(g^0..g^i) is `L_i`, and `L_(i+1)(t) = L_i(t) (L_i(t) + L_i(g^i))`.
+    let mut steps = Vec::with_capacity(COUNTER_BITS);
+    for i in 0..COUNTER_BITS {
+        let step = steps.iter().fold(F192::from(g_pow(i)), |t, &s| t * (t + s));
+        steps.push(step);
+    }
+    ps("AG_COUNTER_BITS", COUNTER_BITS.to_string());
+    ps("AG_COUNTER_STEP", f192_literal(COUNTER_STEP));
+    ps("AG_COUNTER_STEPS", literals(steps.iter().map(|&s| f192_literal(s))));
+    ps("AG_SUFFIX", SUFFIX.to_string());
+    ps("AG_PAIR_I", literals(PAIRS.iter().map(|p| p.0)));
+    ps("AG_PAIR_K", literals(PAIRS.iter().map(|p| p.1)));
+
+    let slots: Vec<usize> = (0..BASE_SLOT_MASKS.len())
+        .filter(|&s| BASE_SLOT_MASKS[s] != 0)
+        .collect();
+    let n_blocks = slots.len().div_ceil(BLOCK_BITS);
+    let (mut group, mut degree) = (vec![32; n_blocks * BLOCK_BITS], vec![0; n_blocks * BLOCK_BITS]);
+    for (bit, &slot) in slots.iter().enumerate() {
+        (group[bit], degree[bit]) = (slot / 32, slot % 32);
+    }
+    let mut used = vec![0u8; n_blocks << BLOCK_BITS];
+    let mut terms: Vec<Vec<usize>> = vec![Vec::new(); K];
+    for (blk, block) in slots.chunks(BLOCK_BITS).enumerate() {
+        for (i, terms) in terms.iter_mut().enumerate() {
+            let mut cell = (0..block.len()).fold(0, |v, j| v | ((BASE_SLOT_MASKS[block[j]] >> i & 1) as usize) << j);
+            if cell != 0 {
+                terms.push((blk << BLOCK_BITS) + cell);
+            }
+            // A sum is built from the one without its top monomial, which is then needed too.
+            while !cell.is_power_of_two() && cell != 0 {
+                used[(blk << BLOCK_BITS) + cell] = 1;
+                cell ^= 1 << cell.ilog2();
+            }
+        }
+    }
+    let starts = terms.iter().scan(0, |at, t| Some(std::mem::replace(at, *at + t.len())));
+    ps("AG_BLOCK_BITS", BLOCK_BITS.to_string());
+    ps("AG_BLOCKS", n_blocks.to_string());
+    ps("AG_SLOT_GROUP", literals(&group));
+    ps("AG_SLOT_DEGREE", literals(&degree));
+    ps("AG_CELL_USED", literals(&used));
+    ps(
+        "AG_TERM_START",
+        literals(starts.chain([terms.iter().map(Vec::len).sum()])),
+    );
+    ps("AG_TERMS", literals(terms.iter().flatten()));
+}
+
 fn literals(values: impl IntoIterator<Item = impl std::fmt::Display>) -> String {
     format!(
         "[{}]",
@@ -2641,15 +2707,12 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
         .collect();
     ps("N_TABLE_COLS", literals(&committed));
     ps("TABLE_COLS_CAP", (committed.iter().max().unwrap() + 1).to_string());
-    let fixed_challenges: Vec<F192> = flock::zerocheck::univariate_skip_optimized::small_challenges()
-        .into_iter()
-        .chain(flock::zerocheck::univariate_skip_optimized::medium_challenges())
-        .collect();
+    let fixed_challenges = flock::zerocheck::ag_skip::friendly_challenges();
     ps("FIXED_CHALLENGES", flds(&fixed_challenges));
-    // Flock univariate skip: 6 skipped variables, then the fixed inner rounds.
+    // Flock AG skip: 6 skipped variables, then the fixed inner rounds.
     ps("K_SKIP", "6".to_string());
     ps("N_FIXED_CHALLENGE_ROUNDS", fixed_challenges.len().to_string());
-    ps("PHI8_NODES", flds(&primitives::field::PHI_8_TABLE_192[..128]));
+    ag_skip_placeholders(&mut ps);
     // Tower F192 = F64[Y]/(Y^3+Y+1), Y = new(0,1,0). Y_TOWER embeds Y for
     // AIR lane reassembly; Y_INV splits a canonical word into its two K limbs.
     let y_tower = F192::new(0, 1, 0);
@@ -2667,16 +2730,6 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
         })
         .collect();
     ps("COORD_BASIS", flds(&coord_basis));
-    // One constant per domain, not one per node: every barycentric denominator over an aligned φ₈
-    // window is the same element (`primitives::multilinear::window_denominator`).
-    ps(
-        "LAGRANGE_INV_COMBINED",
-        f192_literal(primitives::multilinear::window_denominator(128)),
-    );
-    ps(
-        "LAGRANGE_INV_S",
-        f192_literal(primitives::multilinear::window_denominator(64)),
-    );
     ps("LINCHECK_ROUNDS", lcrounds.to_string());
     ps("PIN_COLUMN", flock::hash::Z_CONST_POS.to_string());
     ps("K_LOG", flock::hash::K_LOG.to_string());
@@ -2924,13 +2977,13 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("BYTECODE_LOG", kbc.to_string());
     // The stacked bytecode: nbcv/2 encoding columns per side, aligned with the bus
     // tuple, so their slots span the fingerprint's own bits. The defer region is
-    // 2*kbc points + sel bits + 2 reduced + alpha + z_skip + 2*lcrounds rounds
-    // + 64 z_partial + 1 matpart.
+    // 2*kbc points + sel bits + 2 reduced + alpha + 64 skip weights + 2*lcrounds
+    // rounds + 64 z_partial + 1 matpart.
     let bc_cols = nbcv / 2;
     let log2_bc_cols = leanvm_core::leaf::N_TUPLE_BITS;
     ps("BYTECODE_COLS", bc_cols.to_string());
     ps("LOG2_BYTECODE_COLS", log2_bc_cols.to_string());
-    ps("DEFER_SIZE", (kbc + log2_bc_cols + 2 * lcrounds + 68).to_string());
+    ps("DEFER_SIZE", (kbc + log2_bc_cols + 2 * lcrounds + 131).to_string());
     ps("BYTECODE_VARS", (kbc + log2_bc_cols).to_string());
     let agg_state = pack_state(FiatShamirState::from_label(RECURSION_AGG_LABEL).state());
     ps("AGG_SEED_0", dsl_u128(agg_state[0]).to_string());

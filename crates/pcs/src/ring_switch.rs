@@ -779,7 +779,7 @@ mod tests {
 
         let suffix_point = rng.ext_vec(log_n);
         let prefix_weights: Vec<F192> = if generalized_weights {
-            // Synthetic non-eq weights (e.g. standing in for phi_8 Lagrange
+            // Synthetic non-eq weights (e.g. standing in for the AG skip's
             // weights): any 64 E-values work.
             rng.ext_vec(PACKING_WIDTH)
         } else {

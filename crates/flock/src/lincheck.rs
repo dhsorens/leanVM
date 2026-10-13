@@ -31,23 +31,22 @@
 //!
 //! The prover partially folds the witness at the shared outer point and forms the column marginal of `A + α B + α² I`, with a constant-wire pin at `α³`. A product sumcheck reduces its inner product to the final `2^k_skip` witness slices, which the prover sends after the rounds. The verifier reconstructs the terminal marginal through the circuit's bilinear form; ring switching binds the slices to the commitment.
 //!
-//! ## Quirky (univariate-skip) claim points
+//! ## Quirky (AG-skip) claim points
 //!
-//! To compose with the **zerocheck's univariate skip** for the first `k_skip`
+//! To compose with the **zerocheck's AG skip** for the first `k_skip`
 //! variables, claim points use the [`QuirkyPoint`] representation:
 //!
-//!   `x = (z_skip ∈ F_{2^192},  x_inner_rest ∈ F_{2^192}^{k_log − k_skip},  x_outer ∈ F_{2^192}^{n_log})`
+//!   `x = (Q,  x_inner_rest ∈ F_{2^192}^{k_log − k_skip},  x_outer ∈ F_{2^192}^{n_log})`
 //!
-//! - `z_skip` is the univariate-skip challenge; it represents all `k_skip`
-//!   skip variables collapsed via the polynomial extension with Lagrange
-//!   basis on `φ_8(0), …, φ_8(2^{k_skip} − 1)`.
+//! - `Q` is the skip point, a point of the skip code's curve; it represents all
+//!   `k_skip` skip variables through its `2^k_skip` weights `f_s(Q)`
+//!   ([`crate::ag_code`]), which is all of it a claim point carries.
 //! - The remaining `k_log − k_skip` inner coords plus the `n_log` outer
 //!   coords are standard multilinear.
 //!
 //! When evaluating the bilinear matrix MLE at a quirky claim point, the
 //! eq factor for the inner row index becomes the **outer product of**:
-//! `L_{i_skip}(z_skip) · eq(x_inner_rest, i_inner_rest)`, where `L_*` are
-//! Lagrange weights at `z_skip` for the `k_skip` skip dims (see
+//! `f_{i_skip}(Q) · eq(x_inner_rest, i_inner_rest)` (see
 //! [`build_quirky_eq_table`]).
 //!
 //! The prover's partial fold `ẑ(·, x_outer)` is unchanged: it only depends
@@ -89,7 +88,7 @@
 use fiat_shamir::transcript::{Challenger, ProverState, Receiver, Transmitter, VerifierState};
 use pcs::ring_switch::inner_product_ext;
 use primitives::field::F192;
-use primitives::multilinear::{eq_eval, eq_table as build_eq, lagrange_weights_naive};
+use primitives::multilinear::{eq_eval, eq_table as build_eq};
 
 // ---------------------------------------------------------------------------
 // LincheckCircuit: the per-block linear structure lincheck consumes
@@ -150,16 +149,13 @@ pub trait LincheckCircuit: Sync {
 // Public types
 // ---------------------------------------------------------------------------
 
-/// A "quirky" claim point: one univariate-skip coord (`z_skip`) representing
-/// the first `k_skip` variables via the polynomial extension with the φ_8 basis,
-/// followed by multilinear coords for the rest of inner and for outer.
-///
-/// Total "elements" = `1 + (k_log − k_skip) + n_log`, which is the shape the
-/// zerocheck's extract_c output uses.
+/// A "quirky" claim point: the AG-skip point representing the first `k_skip`
+/// variables through its `2^k_skip` weights (`skip_weights`), followed by
+/// multilinear coords for the rest of inner and for outer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QuirkyPoint {
-    /// Univariate-skip challenge ∈ F₁₉₂ (tower). Binds all `k_skip` skip variables.
-    pub z_skip: F192,
+    /// The weights `f_s(Q)` of the AG-skip point. Binds all `k_skip` skip variables.
+    pub skip_weights: Vec<F192>,
     /// Multilinear coords for the inner dims *after* the skip block. Length
     /// `k_log − k_skip`.
     pub x_inner_rest: Vec<F192>,
@@ -216,7 +212,7 @@ pub enum VerifyError {
     /// `k_skip` exceeds `k_log` (the matrix inner dimension).
     KSkipExceedsKLog { k_skip: usize, k_log: usize },
     /// The scalar consistency check failed for one of (A, B, C).
-    /// Detected: `Σ_{i_inner} M̂_0_quirky(z_skip, x_inner_rest, i_inner) · z_x_vec[i_inner] ≠ v`.
+    /// Detected: `Σ_{i_inner} M̂_0_quirky(Q, x_inner_rest, i_inner) · z_x_vec[i_inner] ≠ v`.
     ConsistencyFailed { which: &'static str },
     /// The proof stream ran out while reading a message.
     Transcript(fiat_shamir::transcript::Error),
@@ -901,20 +897,19 @@ pub fn pack_z_lincheck_from_packed(z_packed_words: &[u64], m: usize, k_log: usiz
 /// Build the **quirky eq table** for a claim point on the inner half:
 ///
 ///   `out[i_skip + i_inner_rest · 2^k_skip]
-///     = L_{i_skip}(z_skip)  ·  eq(x_inner_rest, i_inner_rest)`
+///     = skip_weights[i_skip]  ·  eq(x_inner_rest, i_inner_rest)`
 ///
-/// where `L_{i_skip}` are Lagrange weights at `z_skip` for the φ_8 basis
-/// over `{0, …, 2^k_skip − 1}`. Length: `2^k_log`.
+/// Length: `2^k_log`.
 ///
 /// Encoding: the skip dim occupies the **low** `k_skip` bits of the table
 /// index (matches z_packed's stripe layout / zerocheck's LSB-first
-/// univariate-skip variable ordering). The `k_log − k_skip` multilinear
+/// skip variable ordering). The `k_log − k_skip` multilinear
 /// inner-rest dims occupy the next bits.
-pub fn build_quirky_eq_table(z_skip: F192, x_inner_rest: &[F192], k_skip: usize) -> Vec<F192> {
-    let lambda_skip = lagrange_weights_naive(k_skip, z_skip);
+pub fn build_quirky_eq_table(skip_weights: &[F192], x_inner_rest: &[F192], k_skip: usize) -> Vec<F192> {
+    assert_eq!(skip_weights.len(), 1 << k_skip);
     let eq_rest = build_eq(x_inner_rest);
     // Layout: index = i_skip + i_inner_rest · 2^k_skip  ⇒  i_skip is low bits.
-    outer_product(&eq_rest, &lambda_skip)
+    outer_product(&eq_rest, skip_weights)
 }
 
 /// `out[i_lo + i_hi · lo.len()] = lo[i_lo] · hi[i_hi]`: the `lo` dims vary
@@ -1112,8 +1107,8 @@ pub fn prove_padded_capture_s_hat_v(
     let alpha = ps.sample();
 
     // 2. Build the α-batched column marginal through the circuit.
-    let eq_inner =
-        tracing::info_span!("Eq table").in_scope(|| build_quirky_eq_table(x_ab.z_skip, &x_ab.x_inner_rest, k_skip));
+    let eq_inner = tracing::info_span!("Eq table")
+        .in_scope(|| build_quirky_eq_table(&x_ab.skip_weights, &x_ab.x_inner_rest, k_skip));
     let mut comb_vec = tracing::info_span!("Fold circuit").in_scope(|| circuit.fold_alpha_batched(alpha, &eq_inner));
 
     // 3. The zerocheck's c-claim, at α². `C = I`, so `ĉ(x_ab)` is the z-claim
@@ -1251,7 +1246,7 @@ pub fn verify(
     //    the verifier only ever consumes it through one inner product, so
     //    that work is deferred to step 5 (and walk-capable circuits answer it
     //    in O(circuit) ops without the marginal at all).
-    let eq_inner = build_quirky_eq_table(x_ab.z_skip, &x_ab.x_inner_rest, k_skip);
+    let eq_inner = build_quirky_eq_table(&x_ab.skip_weights, &x_ab.x_inner_rest, k_skip);
 
     // 3. Replay the multilinear product-sumcheck (inner_rest_len rounds).
     //    Only the transcript messages drive the running claim; the prover's
@@ -1306,12 +1301,12 @@ pub fn verify(
     };
     final_sum += beta * w_col[circuit.const_pin_col()];
     // The c term's `⟨eq_inner, w_col⟩`, by the tensor structure of both sides:
-    // `eq_inner = eq(x_inner_rest) ⊗ λ(z_skip)` and `w_col = eq(r_inner_rest) ⊗
-    // z_partial`, so it is 8 eq factors times a 64-term Lagrange combination
+    // `eq_inner = eq(x_inner_rest) ⊗ skip_weights` and `w_col = eq(r_inner_rest) ⊗
+    // z_partial`, so it is 8 eq factors times a 64-term combination
     // instead of a length-k inner product. That is the form the recursive
     // verifier can afford.
-    let lambda_skip = lagrange_weights_naive(k_skip, x_ab.z_skip);
-    let c_slice_value = lambda_skip
+    let c_slice_value = x_ab
+        .skip_weights
         .iter()
         .zip(&z_partial)
         .fold(F192::ZERO, |acc, (&w, &s)| acc + w * s);
@@ -1454,11 +1449,11 @@ mod tests {
         out
     }
 
-    /// Sample a random `QuirkyPoint` for testing: z_skip ∈ F₁₉₂,
+    /// Sample a random `QuirkyPoint` for testing: arbitrary skip weights,
     /// x_inner_rest of length `k_log − k_skip`, x_outer of length `n_log`.
     fn random_quirky_point(m: usize, k_log: usize, k_skip: usize, rng: &mut Rng) -> QuirkyPoint {
         QuirkyPoint {
-            z_skip: rng.ext(),
+            skip_weights: rng.ext_vec(1 << k_skip),
             x_inner_rest: rng.ext_vec(k_log - k_skip),
             x_outer: rng.ext_vec(m - k_log),
         }
@@ -1466,7 +1461,7 @@ mod tests {
 
     /// "Quirky MLE evaluation" of a Boolean vector `f` at a quirky point.
     ///
-    /// `ã(z_skip, x_inner_rest, x_outer) = Σ_i  f[i] · L_{i_skip}(z_skip)
+    /// `ã(Q, x_inner_rest, x_outer) = Σ_i  f[i] · skip_weights[i_skip]
     ///                                          · eq(x_inner_rest, i_inner_rest)
     ///                                          · eq(x_outer, i_outer)`
     ///
@@ -1482,7 +1477,7 @@ mod tests {
 
         // Tower helpers: the point is F192 (the verifier's field), and the
         // expected value must equal the F192 claim the verifier derives.
-        let lambda = lagrange_weights_naive(k_skip, point.z_skip);
+        let lambda = &point.skip_weights;
         let eq_rest = build_eq(&point.x_inner_rest);
         let eq_outer = build_eq(&point.x_outer);
         debug_assert_eq!(lambda.len(), k_skip_dim);
@@ -1729,7 +1724,7 @@ mod tests {
     fn prove_verify_roundtrip_honest() {
         // Exercise a range of k_skip values:
         //   k_skip = 0 (no skip)     : reduces to multilinear lincheck
-        //   k_skip = k_log (max)     : only univariate inner
+        //   k_skip = k_log (max)     : only skipped inner
         //   k_skip < k_log (typical) : protocol-realistic case
         for &(m, k_log, k_skip) in &[
             (10usize, 4, 0),
@@ -1840,9 +1835,9 @@ mod tests {
 
         // Pick a mutation position where BOTH row vectors are nonzero so the
         // mutation guarantees both checks would diverge.
-        let z_skip_g = x_ab.z_skip;
+        let skip_weights_g = &x_ab.skip_weights;
         let x_inner_rest_g = x_ab.x_inner_rest.to_vec();
-        let eq_inner = build_quirky_eq_table(z_skip_g, &x_inner_rest_g, k_skip);
+        let eq_inner = build_quirky_eq_table(skip_weights_g, &x_inner_rest_g, k_skip);
         let row_a = sparse_row_fold(&a_0, &eq_inner);
         let row_b = sparse_row_fold(&b_0, &eq_inner);
         let idx = (0..k)
@@ -1912,7 +1907,7 @@ mod tests {
         // Wrong x_inner_rest length.
         let mut ch = fiat_shamir::transcript::VerifierState::from_label(b"flock-test-v0", &proof_t);
         let bad_x_ab = QuirkyPoint {
-            z_skip: x_ab.z_skip,
+            skip_weights: x_ab.skip_weights.clone(),
             x_inner_rest: x_ab.x_inner_rest[..x_ab.x_inner_rest.len() - 1].to_vec(),
             x_outer: x_ab.x_outer.clone(),
         };

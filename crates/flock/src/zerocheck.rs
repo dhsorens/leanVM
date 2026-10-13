@@ -7,8 +7,11 @@
 //! Protocol shape (m = log_n, k_skip = [`K_SKIP`] = 6):
 //!   1. Verifier constructs `r ∈ F_{2^192}^{m-k_skip}` from fixed inner
 //!      coordinates and sampled outer coordinates.
-//!   2. Prover sends `P(λ) = P^{AB}(λ) + P^C(λ)` for λ ∈ Λ, |Λ| = 2^k_skip.
-//!   3. Verifier samples `z ∈ F_{2^192}` (univariate-skip fold point).
+//!   2. Prover sends the skip message `P`: the [`ag_code::SUFFIX`] = 158 coordinates,
+//!      over the pairs, of `Σ_x eq(r, x) · (a(·, x) × b(·, x) + R c(·, x))`. Its 64-coordinate
+//!      prefix is zero by the zerocheck identity and never rides the wire.
+//!   3. Verifier samples `x_0`. Prover answers with a curve point `Q` whose `x` is
+//!      `x_0` plus a counter (the AG-skip fold point), which the verifier checks.
 //!   4. For each of the `m - k_skip` multilinear rounds, prover sends
 //!      the linear and quadratic coefficients; the verifier derives the constant from the claim and samples the round challenge.
 //!   5. Prover sends final MLE evaluations `(â, b̂)`; `ĉ` is what the terminal
@@ -23,31 +26,25 @@
 //! shape-corrupted ones.
 
 use fiat_shamir::transcript::{Challenger, ProverState, Receiver, Transmitter, VerifierState};
-use primitives::field::{F8, F192};
+use primitives::field::F192;
 
-use pcs::ntt::{AdditiveNttGf8, InvNttTableByteSingleGf8};
+use crate::ag_code::{self, CurvePoint};
 
+pub mod ag_skip;
 pub mod bit_fold;
+pub mod eq;
 pub mod multilinear;
-pub mod univariate_skip;
-pub mod univariate_skip_optimized;
 
 use bit_fold::BitFold;
 use multilinear::{
     PackedWitness, bit_round_materialize, bit_round_pair, fold_and_compute_round_pair_into,
-    fold_and_compute_round_single_into, fold_in_place_pair, fold_in_place_single, interpolate_at_z_combined,
-    round_pair_naive, round_single_naive,
-};
-use primitives::multilinear::lagrange_weights_naive;
-use univariate_skip_optimized::{
-    c_s, medium_challenges, round1_shift_reduce_extract_c_packed_padded, small_challenges,
+    fold_and_compute_round_single_into, fold_in_place_pair, fold_in_place_single, round_pair_naive, round_single_naive,
 };
 
-/// Number of variables folded in round 1 via the additive-NTT univariate skip.
-/// |Λ| = 2^K_SKIP = 64 elements, which is the round-1 prover message: one
-/// length-64 vector of F192, the AB and C halves already summed.
+/// Number of variables folded in round 1 via the AG skip: a block of `2^K_SKIP = 64` witness
+/// bits is one message of the multiplication code.
 pub const K_SKIP: usize = 6;
-const N_INNER: usize = 7; // 3 small + 4 medium fixed-constant eq dimensions
+const N_INNER: usize = 7; // fixed-constant eq dimensions, see `ag_skip::friendly_challenges`
 
 /// Passes over the packed bits, two rounds each, before the folded tables are stored.
 ///
@@ -57,21 +54,17 @@ const N_INNER: usize = 7; // 3 small + 4 medium fixed-constant eq dimensions
 /// - The byte-table fold is compute-bound, its tables growing with the level, so a pass costs more than the stored tables' traffic: store at once.
 const PAIR_PASSES: usize = if bit_fold::GFNI { 2 } else { 0 };
 
-/// Build the equality coordinates that remain after the univariate skip.
+/// Build the equality coordinates that remain after the AG skip.
 fn equality_tail(m: usize, mut sample_vec: impl FnMut(usize) -> Vec<F192>) -> Vec<F192> {
     let outer = sample_vec(m - K_SKIP - N_INNER);
-    small_challenges()
-        .into_iter()
-        .chain(medium_challenges())
-        .chain(outer)
-        .collect()
+    ag_skip::friendly_challenges().into_iter().chain(outer).collect()
 }
 
-/// Witness padding descriptor for URM work-skipping.
+/// Witness padding descriptor for round-1 work-skipping.
 ///
 /// The witness is a sequence of `2^(m - k_log)` blocks of `2^k_log` bits each;
 /// inside each block, bits `[0, useful_bits_per_block)` carry real data and
-/// bits `[useful_bits_per_block, 2^k_log)` are zero padding. URM contributions
+/// bits `[useful_bits_per_block, 2^k_log)` are zero padding. Round-1 contributions
 /// from a chunk of all-zero bits are themselves zero, so we can skip those
 /// chunks and produce byte-identical output.
 pub use pcs::pack::PaddingSpec;
@@ -81,21 +74,21 @@ pub use pcs::pack::PaddingSpec;
 // ---------------------------------------------------------------------------
 
 /// Evaluation claims on the multilinear extensions of a, b, c, all three at the
-/// **same** point `(z, mlv_challenges)`: C rides the sumcheck with AB, so the
+/// **same** point `(Q, mlv_challenges)`: C rides the sumcheck with AB, so the
 /// three claims share the point its challenges define, and lincheck can batch
 /// them into one reduction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ZerocheckClaim {
-    /// Univariate-skip challenge sampled after round 1 (binds the K_SKIP
-    /// skip variables), represented directly in `F192`.
-    pub z: F192,
+    /// The weights `f_s(Q)` of the AG-skip point `Q` fixed after round 1 (it binds the K_SKIP
+    /// skip variables): the claims' combination of a block's 64 bits.
+    pub skip_weights: [F192; ag_code::K],
     /// Sumcheck bind challenges, one per multilinear round; length = `m - K_SKIP`.
     pub mlv_challenges: Vec<F192>,
-    /// `â(z, mlv_challenges)`.
+    /// `â(Q, mlv_challenges)`.
     pub a_eval: F192,
-    /// `b̂(z, mlv_challenges)`.
+    /// `b̂(Q, mlv_challenges)`.
     pub b_eval: F192,
-    /// `ĉ(z, mlv_challenges)`, derived from the terminal identity rather than
+    /// `ĉ(Q, mlv_challenges)`, derived from the terminal identity rather than
     /// transmitted: the sumcheck ends at `â·b̂ + ĉ`, so `ĉ = claim + â·b̂`.
     /// Nothing checks it here; lincheck's α-batched identity pins all three.
     pub c_eval: F192,
@@ -106,6 +99,8 @@ pub struct ZerocheckClaim {
 pub enum VerifyError {
     /// `log_n` doesn't satisfy `log_n >= K_SKIP`.
     LogNTooSmall { log_n: usize, k_skip: usize },
+    /// The skip point is not a counter away from the sampled `x`, or not in the code's evaluation set.
+    SkipPoint,
     /// The proof stream ran out while reading a message.
     Transcript(fiat_shamir::transcript::Error),
 }
@@ -161,39 +156,27 @@ pub fn prove_packed_padded(
     // ---- Construct the equality tail (with fixed constants in the inner 7 dims) ----
     //
     // r_rest layout:
-    //   r_rest[0..3]               : protocol small-eq constants φ_8(0xF7..)
-    //   r_rest[3..7]               : protocol medium-eq constants β_i
+    //   r_rest[0..7]               : protocol constants, `ag_skip::friendly_challenges`
     //   r_rest[7..m-k_skip]        : sampled outer equality coordinates
     // Prover and verifier use the same tower-valued challenges directly.
     let r_rest = equality_tail(m, |n| ps.sample_vec(n));
 
-    // ---- Round 1: URM (extract_c, parallel) ----
-    //
-    // The optimized URM drops a `C_s = φ_8(0x1C)` scalar from its accumulators
-    // (a prover-side optimization tied to the small-eq trick: see the
-    // C_s factor analysis in `univariate_skip_optimized`). The wire format
-    // must be in "naive" convention so the verifier doesn't need to know
-    // about this internal optimization; we restore the C_s factor here.
+    // ---- Round 1: the skip message, then the point that evaluates it ----
     let span = tracing::info_span!("Round 1").entered();
-    let ntt_s = AdditiveNttGf8::new(k_skip, F8::ZERO);
-    let ntt_l = AdditiveNttGf8::new(k_skip, F8(1u8 << k_skip));
-    let inv_table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
-    let (round1_ab_opt, round1_c_opt) = round1_shift_reduce_extract_c_packed_padded(
-        a_packed, b_packed, c_packed, m, k_skip, &r_rest, &inv_table, padding,
-    );
-    let c_s = c_s();
-    let round1: Vec<F192> = round1_ab_opt
-        .iter()
-        .zip(&round1_c_opt)
-        .map(|(x, y)| c_s * (*x + *y))
-        .collect();
+    let round1 = ag_skip::round1(a_packed, b_packed, c_packed, m, &r_rest, padding);
     drop(span);
-
-    // ---- Transmit + bind round-1 message on the stream, sample z ----
     for &x in round1.iter() {
         ps.add_scalar(x);
     }
-    let z = ps.sample();
+    // The sampled `x` lies under a curve point about one time in sixteen, so the prover walks a
+    // counter. It and the point's other coordinates ride the stream, bound before the rounds.
+    let (delta, point) = ag_code::find_point(ps.sample());
+    for x in [delta, point.y, point.z[0], point.z[1], point.z[2]] {
+        ps.add_scalar(x);
+    }
+    let skip_weights = point
+        .weights()
+        .expect("find_point returns a point of the evaluation set");
 
     // ---- Rounds 2 onwards: straight from the packed bits ----
     //
@@ -214,13 +197,12 @@ pub fn prove_packed_padded(
         b: b_packed,
         c: c_packed,
     };
-    let lagrange = lagrange_weights_naive(k_skip, z);
-    // The running claim, mirrored from the verifier (same round-1 values, same z).
+    // The running claim, mirrored from the verifier (same round-1 values, same point).
     // `(1 + r) G(0) + r G(1) = claim` lets the wire drop `G(0)`, so the prover needs it too.
-    let mut c_running = interpolate_at_z_combined(&round1, k_skip, z);
+    let mut c_running = ag_code::eval_pairs(&round1, &skip_weights);
     let mut mlv_chis: Vec<F192> = Vec::with_capacity(n_mlv);
     for t in (0..(n_mlv - 1) & !1).step_by(2).take(PAIR_PASSES) {
-        let fold = BitFold::at_level(&lagrange, &mlv_chis);
+        let fold = BitFold::at_level(&skip_weights, &mlv_chis);
         let pair = bit_round_pair(bits, &fold, &r_rest[t + 1..], padding);
         let (g1, g_inf) = pair.first;
         c_running = send_round(ps, c_running, r_rest[t], None, g1, g_inf, &mut mlv_chis);
@@ -228,7 +210,7 @@ pub fn prove_packed_padded(
         c_running = send_round(ps, c_running, r_rest[t + 1], None, g1, g_inf, &mut mlv_chis);
     }
     let materialize_level = mlv_chis.len();
-    let fold = BitFold::at_level(&lagrange, &mlv_chis);
+    let fold = BitFold::at_level(&skip_weights, &mlv_chis);
     let ((g1, g_inf), [mut a_mlv, mut b_mlv, mut c_mlv]) =
         bit_round_materialize(bits, &fold, &r_rest[materialize_level + 1..], padding);
     c_running = send_round(ps, c_running, r_rest[materialize_level], None, g1, g_inf, &mut mlv_chis);
@@ -343,7 +325,7 @@ pub fn prove_packed_padded(
     drop(span);
 
     ZerocheckClaim {
-        z,
+        skip_weights,
         mlv_challenges: mlv_chis,
         a_eval: final_a_eval,
         b_eval: final_b_eval,
@@ -370,27 +352,42 @@ pub fn verify(log_n: usize, vs: &mut VerifierState<'_>) -> Result<ZerocheckClaim
         return Err(VerifyError::LogNTooSmall { log_n: m, k_skip });
     }
     let n_mlv = m - k_skip;
-    let ell = 1usize << k_skip;
 
     // ---- Re-derive the equality tail (in lockstep with prove_packed) ----
     // The verifier samples tower challenges directly, matching the prover.
     let r_rest = equality_tail(m, |n| vs.sample_vec(n));
 
-    // ---- Read + bind the round-1 message off the stream, sample z ----
-    let round1: Vec<F192> = vs.next_scalars(ell).map_err(VerifyError::Transcript)?;
-    let z = vs.sample();
+    // ---- Read + bind the skip message and the skip point off the stream ----
+    let round1: Vec<F192> = vs.next_scalars(ag_code::SUFFIX).map_err(VerifyError::Transcript)?;
+    let x0 = vs.sample();
+    let [delta, y, z1, z2, z3]: [F192; 5] = vs
+        .next_scalars(5)
+        .map_err(VerifyError::Transcript)?
+        .try_into()
+        .expect("five scalars were read");
+    // The prover picks the counter and the point over `x`. A false message survives only over
+    // a root of its norm, a polynomial in `x`, so neither choice is worth more than the
+    // `2^COUNTER_BITS` values of `x` it reaches.
+    if !ag_code::is_counter(delta) {
+        return Err(VerifyError::SkipPoint);
+    }
+    let point = CurvePoint {
+        x: ag_code::counter_x(x0, delta),
+        y,
+        z: [z1, z2, z3],
+    };
+    let skip_weights = point.weights().ok_or(VerifyError::SkipPoint)?;
 
     // ---- Reconstruct the initial running claim ----
     //
-    // `P = P^{AB} + P^C` has degree < 2·ell in λ. The prover sent only ell
-    // evaluations on Λ: not enough on its own. The verifier uses the
-    // **zerocheck assumption** `P(λ) = 0` for `λ ∈ S`: together with the ell
-    // Λ-evaluations that is 2·ell, enough to interpolate P at z.
+    // The message `P` of the product code has 222 coordinates and the prover sent 158. The
+    // verifier uses the **zerocheck assumption**: the other 64, over the squares `f_s^2`, are
+    // the equality-weighted sums of `a·b + c`, zero.
     //
-    // If the prover's witness is dishonest the S-zero assumption fails and the
+    // If the prover's witness is dishonest the assumption fails and the
     // reconstructed claim is wrong; the chain then ends at a `ĉ` that is not
     // the true evaluation, and lincheck's α-batched identity rejects.
-    let mut c_running = interpolate_at_z_combined(&round1, k_skip, z);
+    let mut c_running = ag_code::eval_pairs(&round1, &skip_weights);
 
     // ---- Multilinear sumcheck chain ----
     //
@@ -438,7 +435,7 @@ pub fn verify(log_n: usize, vs: &mut VerifierState<'_>) -> Result<ZerocheckClaim
     let final_c_eval = c_running + final_a_eval * final_b_eval;
 
     Ok(ZerocheckClaim {
-        z,
+        skip_weights,
         mlv_challenges: mlv_chis,
         a_eval: final_a_eval,
         b_eval: final_b_eval,
@@ -462,12 +459,11 @@ mod tests {
         prove_packed_padded(a_packed, b_packed, c_packed, m, &PaddingSpec::dense(m), ps)
     }
 
-    /// The quirky evaluation `f̂(z, chi)` of a Boolean witness: the φ8-Lagrange
-    /// combination, at `z`, of the multilinear extensions of its 2^K_SKIP bit
+    /// The quirky evaluation `f̂(Q, chi)` of a Boolean witness: the combination,
+    /// by the skip point's weights, of the multilinear extensions of its 2^K_SKIP bit
     /// slices. This is what the three zerocheck claims are supposed to be.
-    fn quirky_eval(bits: &[bool], z: F192, chi: &[F192]) -> F192 {
+    fn quirky_eval(bits: &[bool], weights: &[F192], chi: &[F192]) -> F192 {
         let ell = 1usize << K_SKIP;
-        let weights = primitives::multilinear::lagrange_weights_naive(K_SKIP, z);
         let eq = primitives::multilinear::eq_table(chi);
         let mut acc = F192::ZERO;
         for (v, &e) in eq.iter().enumerate() {
@@ -483,7 +479,7 @@ mod tests {
     /// Pack three Boolean vectors into the (a_packed, b_packed, c_packed)
     /// shape that `prove_packed` consumes.
     fn pack_abc(a: &[bool], b: &[bool], c: &[bool]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
-        use univariate_skip::pack_bits;
+        use eq::pack_bits;
         (pack_bits(a), pack_bits(b), pack_bits(c))
     }
 
@@ -507,11 +503,11 @@ mod tests {
             let mut ps = fiat_shamir::transcript::ProverState::from_label(b"flock-test-v0");
             let claim = prove_packed(&a_p, &b_p, &c_p, m, &mut ps);
 
-            // Shape checks: the streamed proof is round1 ‖ (m − K_SKIP)
-            // message pairs ‖ (final_a, final_b). C rides the sumcheck, so
-            // there is no second Λ-vector and no transmitted ĉ.
+            // Shape checks: the streamed proof is round1 ‖ counter ‖ the point's four
+            // coordinates ‖ (m − K_SKIP) message pairs ‖ (final_a, final_b). C rides the
+            // sumcheck, so there is no second message and no transmitted ĉ.
             let stream = ps.into_proof().stream;
-            assert_eq!(stream.len(), (1 << K_SKIP) + 2 * (m - K_SKIP) + 2, "m={m}");
+            assert_eq!(stream.len(), ag_code::SUFFIX + 5 + 2 * (m - K_SKIP) + 2, "m={m}");
             assert_eq!(claim.mlv_challenges.len(), m - K_SKIP, "m={m}");
 
             // Claim's eval fields agree with the streamed final evals (both are
@@ -567,9 +563,9 @@ mod tests {
             let claim = verify(m, &mut ch).expect("honest proof");
 
             let chi = &claim.mlv_challenges;
-            assert_eq!(claim.a_eval, quirky_eval(&a, claim.z, chi), "â at m={m}");
-            assert_eq!(claim.b_eval, quirky_eval(&b, claim.z, chi), "b̂ at m={m}");
-            assert_eq!(claim.c_eval, quirky_eval(&c, claim.z, chi), "ĉ at m={m}");
+            assert_eq!(claim.a_eval, quirky_eval(&a, &claim.skip_weights, chi), "â at m={m}");
+            assert_eq!(claim.b_eval, quirky_eval(&b, &claim.skip_weights, chi), "b̂ at m={m}");
+            assert_eq!(claim.c_eval, quirky_eval(&c, &claim.skip_weights, chi), "ĉ at m={m}");
         }
     }
 
@@ -601,9 +597,9 @@ mod tests {
                 let mut ch = fiat_shamir::transcript::VerifierState::from_label(b"flock-test-v0", &proof_t);
                 let claim = verify(m, &mut ch).expect("shape is still valid");
                 let chi = &claim.mlv_challenges;
-                let all_true = claim.a_eval == quirky_eval(&a, claim.z, chi)
-                    && claim.b_eval == quirky_eval(&b, claim.z, chi)
-                    && claim.c_eval == quirky_eval(&c, claim.z, chi);
+                let all_true = claim.a_eval == quirky_eval(&a, &claim.skip_weights, chi)
+                    && claim.b_eval == quirky_eval(&b, &claim.skip_weights, chi)
+                    && claim.c_eval == quirky_eval(&c, &claim.skip_weights, chi);
                 assert!(!all_true, "false statement (m={m}, seed={seed}) left every claim true");
             }
         }
@@ -619,25 +615,32 @@ mod tests {
         let _ = prove_packed(&a_p, &b_p, &c_p, m, &mut ch_prove);
         let proof_t = ch_prove.into_proof();
 
-        let ell = 1usize << K_SKIP;
+        // The stream: the skip message, the counter and the point's four coordinates, the rounds.
+        let rounds = ag_code::SUFFIX + 5;
         let n_mlv = m - K_SKIP;
-        let mutations: [(&str, usize); 6] = [
+        let mutations: [(&str, usize); 8] = [
             ("round1[0]", 0),
             ("round1[5]", 5),
-            ("multilinear_rounds[0].0", ell),
-            ("multilinear_rounds[mid].1", ell + 2 * (n_mlv / 2) + 1),
-            ("final_a_eval", ell + 2 * n_mlv),
-            ("final_b_eval", ell + 2 * n_mlv + 1),
+            ("counter", ag_code::SUFFIX),
+            ("point y", ag_code::SUFFIX + 1),
+            ("multilinear_rounds[0].0", rounds),
+            ("multilinear_rounds[mid].1", rounds + 2 * (n_mlv / 2) + 1),
+            ("final_a_eval", rounds + 2 * n_mlv),
+            ("final_b_eval", rounds + 2 * n_mlv + 1),
         ];
         for (label, word) in mutations {
             let mut bad = proof_t.clone();
             bad.stream[word].c0 ^= 1;
             let mut ch = fiat_shamir::transcript::VerifierState::from_label(b"flock-test-v0", &bad);
-            let claim = verify(m, &mut ch).expect("shape is still valid");
+            // A word up to the point moves it off the curve, which is a rejection here.
+            let Ok(claim) = verify(m, &mut ch) else {
+                assert!(word < rounds, "tampered proof ({label}) lost its shape");
+                continue;
+            };
             let chi = &claim.mlv_challenges;
-            let all_true = claim.a_eval == quirky_eval(&a, claim.z, chi)
-                && claim.b_eval == quirky_eval(&b, claim.z, chi)
-                && claim.c_eval == quirky_eval(&c, claim.z, chi);
+            let all_true = claim.a_eval == quirky_eval(&a, &claim.skip_weights, chi)
+                && claim.b_eval == quirky_eval(&b, &claim.skip_weights, chi)
+                && claim.c_eval == quirky_eval(&c, &claim.skip_weights, chi);
             assert!(!all_true, "tampered proof ({label}) left every claim true");
         }
     }
@@ -763,7 +766,7 @@ mod tests {
         let claim2 = prove_packed(&a_p, &b_p, &c_p, m, &mut ch2);
 
         assert_eq!(ch1.into_proof().stream, ch2.into_proof().stream);
-        assert_eq!(claim1.z, claim2.z);
+        assert_eq!(claim1.skip_weights, claim2.skip_weights);
         assert_eq!(claim1.mlv_challenges, claim2.mlv_challenges);
     }
 }
