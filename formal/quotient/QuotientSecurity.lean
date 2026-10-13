@@ -178,3 +178,7 @@ import QuotientSecurity.CantorExists
 /-- info: 'QuotientSecurity.exists_cantorBasis' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.exists_cantorBasis
+
+/-- info: 'QuotientSecurity.exists_cantorBasis_big' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.exists_cantorBasis_big

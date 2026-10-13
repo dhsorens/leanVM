@@ -1,4 +1,5 @@
 import QuotientSecurity.Cantor
+import Mathlib.FieldTheory.Finite.GaloisField
 
 /-!
 # A Cantor basis exists
@@ -159,5 +160,27 @@ def CantorBasis.map {E : Type*} [Field E] {n : ℕ} (B : CantorBasis F n) (f : F
   succ := fun k hk => by
     have := congrArg f (B.succ k hk)
     simpa [sq] using this
+
+/-- **A Cantor basis exists in the protocol's field**: a field of `2^192` elements contains one
+of `2^64`, whose basis it inherits. -/
+theorem exists_cantorBasis_big {E : Type*} [Field E] [Fintype E] [CharP E 2]
+    (hE : Fintype.card E = 2 ^ 192) (n : ℕ) (hn0 : 0 < n) (hn : n ≤ 64) :
+    Nonempty (CantorBasis E n) := by
+  classical
+  have : Fact (Nat.Prime 2) := ⟨Nat.prime_two⟩
+  let _ : Algebra (ZMod 2) E := ZMod.algebra E 2
+  have : Fintype (GaloisField 2 64) := Fintype.ofFinite _
+  have hK : Fintype.card (GaloisField 2 64) = 2 ^ 64 := by
+    rw [Fintype.card_eq_nat_card]; exact GaloisField.card 2 64 (by norm_num)
+  have hrE : Module.finrank (ZMod 2) E = 192 := by
+    have h := Module.card_eq_pow_finrank (K := ZMod 2) (V := E)
+    rw [hE, ZMod.card] at h
+    exact (Nat.pow_right_injective (le_refl 2) h).symm
+  have hrK : Module.finrank (ZMod 2) (GaloisField 2 64) = 64 :=
+    GaloisField.finrank 2 (by norm_num)
+  obtain ⟨f⟩ := FiniteField.nonempty_algHom_of_finrank_dvd (F := ZMod 2)
+    (K := GaloisField 2 64) (L := E) (by rw [hrK, hrE]; norm_num)
+  obtain ⟨B⟩ := exists_cantorBasis (F := GaloisField 2 64) hK n hn0 hn
+  exact ⟨B.map f.toRingHom⟩
 
 end QuotientSecurity
