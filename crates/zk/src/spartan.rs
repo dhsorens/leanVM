@@ -20,7 +20,7 @@
 
 use fiat_shamir::ProverState;
 use fiat_shamir::TranscriptError;
-use fiat_shamir::arith::{Arith, Native, RoundPolynomial, Verifier};
+use fiat_shamir::arith::{Arith, Native, RoundWeight, Verifier};
 use primitives::field::F192;
 use primitives::multilinear::{eq_table, fold_low_inplace};
 
@@ -114,7 +114,7 @@ pub(crate) fn prove(ps: &mut ProverState, sides: [Vec<F192>; 3], mask: &[F192]) 
         coeffs[0] += alpha * (prefix + suffix);
         coeffs[1] += alpha * g0;
         coeffs[2] += alpha * g1;
-        RoundPolynomial { coeffs }.send(ps, true);
+        ps.send_round(&coeffs, RoundWeight::Eq);
         let ri: F192 = ps.verifier_message();
         prefix += (g0 + g1 * ri) * ri;
         for table in [&mut az, &mut bz, &mut cz] {
@@ -152,7 +152,7 @@ pub(crate) fn verify<V: Verifier>(v: &mut V, n_rows: usize) -> Result<Claims<V::
     let mut s = v.mul(alpha, s_g);
     let mut r = Vec::with_capacity(l);
     for &t in &tau {
-        let coeffs = RoundPolynomial::read(v, 3, s, Some(t))?.coeffs;
+        let coeffs = v.read_round(3, s, Some(t))?;
         let ri = v.verifier_message();
         s = v.poly_eval(&coeffs, ri);
         r.push(ri);

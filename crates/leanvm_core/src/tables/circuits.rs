@@ -19,16 +19,13 @@
 use super::{Clock, Fill, N_CLASS_CIRCUITS, N_TABLES, PerTable, TableId};
 use crate::cpu::{Payloads, RowRef, Trace};
 use crate::rv::RiscvProgram;
-use flock::Tables;
 use flock::circuit::Circuit;
 use flock::reduction::{Instance, Shape, min_n_blocks_log};
+use flock::{BatchRows, Tables};
 use primitives::field::F64;
 use std::sync::OnceLock;
 
-/// The fewest variables the zerocheck's cube has: flock's univariate skip plus its fixed-point dimensions.
-///
-/// It floors the batch of a small circuit.
-pub const MIN_CUBE_LOG: usize = flock::zerocheck::MIN_LOG_N;
+pub use flock::zerocheck::MIN_CUBE_LOG;
 
 /// The most input ports a circuit with a word-level witness has: EXT's clock circuit's seventeen.
 const MAX_INPUT_WORDS: usize = 17;
@@ -257,7 +254,7 @@ impl CircuitId {
             }
         };
         // What the circuit computed is what the interpreter did, or the bus would carry one and flock prove the other.
-        let check = |row: &S, z: &[u64]| {
+        let check = |_: usize, row: &S, z: &[u64]| {
             let row = view(row);
             let at = p.fetch(row.row.index as usize);
             for (k, &port) in ports.iter().enumerate().skip(n_inputs) {
@@ -270,6 +267,7 @@ impl CircuitId {
             }
         };
         let z = F64::as_bits_mut(window);
+        let instances = BatchRows::new(rows, &rows[0], n_blocks_log);
         let fill = match (part, &spec.circuit) {
             (Part::Class, Some(class)) => class.fill,
             _ => Fill::Walk,
@@ -278,11 +276,9 @@ impl CircuitId {
         // the others walk it 64 instances at a time.
         match (part, fill) {
             // A clock circuit with ports of its own (EXT's) takes its input words through its ports.
-            (Part::Clock, _) if !spec.clock_inputs.is_empty() => circuit.witness_by_instance_into(
+            (Part::Clock, _) if !spec.clock_inputs.is_empty() => circuit.witness_by_instance(
                 z,
-                rows,
-                &rows[0],
-                n_blocks_log,
+                instances,
                 |row, z, az, bz| {
                     let mut words = [0u64; MAX_INPUT_WORDS];
                     let words = &mut words[..n_inputs];
@@ -292,25 +288,19 @@ impl CircuitId {
                 check,
             ),
             // The others read the row's clock and previous timestamps straight off it.
-            (Part::Clock, _) => circuit.witness_by_instance_into(
+            (Part::Clock, _) => circuit.witness_by_instance(
                 z,
-                rows,
-                &rows[0],
-                n_blocks_log,
+                instances,
                 |row, z, az, bz| {
                     let row = view(row);
                     Clock::witness(&slots, row.row.ts, &row.prev()[..slots.len()], z, az, bz);
                 },
                 check,
             ),
-            (Part::Class, Fill::Walk) => {
-                circuit.witness_by_walk_into(z, rows, &rows[0], n_blocks_log, input_words, check)
-            }
-            (Part::Class, Fill::Instance(instance)) => circuit.witness_by_instance_into(
+            (Part::Class, Fill::Walk) => circuit.witness_by_walk(z, instances, input_words, check),
+            (Part::Class, Fill::Instance(instance)) => circuit.witness_by_instance(
                 z,
-                rows,
-                &rows[0],
-                n_blocks_log,
+                instances,
                 |row, z, az, bz| {
                     let mut words = [0u64; MAX_INPUT_WORDS];
                     let words = &mut words[..n_inputs];
@@ -320,11 +310,9 @@ impl CircuitId {
                 check,
             ),
             // Eight rows share a native arithmetic call.
-            (Part::Class, Fill::Batch8(batch)) => circuit.witness_by_batch8_into(
+            (Part::Class, Fill::Batch8(batch)) => circuit.witness_by_batch8(
                 z,
-                rows,
-                &rows[0],
-                n_blocks_log,
+                instances,
                 |rows, z, az, bz| {
                     let mut words = [[0u64; MAX_INPUT_WORDS]; 8];
                     for (row, words) in rows.into_iter().zip(&mut words) {

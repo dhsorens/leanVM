@@ -4,8 +4,10 @@
 use fiat_shamir::arith::Arith;
 use primitives::field::gf2_64::{reduce, software::clmul};
 use primitives::field::{F192, PHI8_TABLE};
+use primitives::multilinear::eq_table;
 
 use super::K_SKIP;
+use crate::lincheck::outer_product;
 
 /// The skip domain `S`: the first `2^k_skip` nodes of the phi_8 table.
 ///
@@ -50,7 +52,7 @@ impl SkipDomain {
         // Add the basis elements `phi_8(2^j)` one at a time.
         for j in 0..self.k_skip {
             let a = PHI8_TABLE[1 << j];
-            let at_a = Self::linearized(&c, a);
+            let at_a = linearized(&c, a);
             // `V(X)^2` shifts every coefficient up a power; `V(a) V(X)` scales them in place.
             for k in (0..=j + 1).rev() {
                 let squared = if k == 0 { F192::ZERO } else { c[k - 1].square() };
@@ -58,16 +60,6 @@ impl SkipDomain {
             }
         }
         c
-    }
-
-    /// A linearized polynomial `sum_j c_j x^(2^j)` at `x`.
-    fn linearized(c: &[F192], x: F192) -> F192 {
-        let (mut power, mut acc) = (x, F192::ZERO);
-        for &cj in c {
-            acc += cj * power;
-            power = power.square();
-        }
-        acc
     }
 
     /// `V_S(z)`: `k_skip` squarings and as many products by constants of `K`.
@@ -82,27 +74,9 @@ impl SkipDomain {
         (c[..self.k_skip].iter().zip(&powers)).fold(powers[self.k_skip], |acc, (&cj, &p)| a.mul_const_add(p, cj, acc))
     }
 
-    /// `1 / (z + node)` for each node.
-    fn inverses_at<A: Arith>(a: &mut A, z: A::E, nodes: &[F192]) -> Vec<A::E> {
-        (nodes.iter())
-            .map(|&node| {
-                let difference = a.add_const(z, node);
-                a.inv(difference)
-            })
-            .collect()
-    }
-
     /// `1 / (z + s_i)` over `S`, which the Lagrange sum over `S` takes.
     pub(crate) fn inverses<A: Arith>(self, a: &mut A, z: A::E) -> Vec<A::E> {
-        Self::inverses_at(a, z, &PHI8_TABLE[..self.size()])
-    }
-
-    /// `scale * sum_i values_i * inverses_i`.
-    pub(crate) fn lagrange_with<A: Arith>(a: &mut A, scale: A::E, inverses: &[A::E], values: &[A::E]) -> A::E {
-        assert_eq!(inverses.len(), values.len(), "a value per node");
-        let zero = a.zero();
-        let sum = (inverses.iter().zip(values)).fold(zero, |acc, (&h, &value)| a.mul_add(value, h, acc));
-        a.mul(scale, sum)
+        inverses_at(a, z, &PHI8_TABLE[..self.size()])
     }
 
     /// The first round's message, known on `Lambda` and zero on `S`, interpolated at `z` over the window `S + Lambda`.
@@ -116,12 +90,12 @@ impl SkipDomain {
         let size = self.size();
         // The coset's vanishing polynomial is the domain's shifted by a constant, `V_S` being linear.
         let lambda = &PHI8_TABLE[size..2 * size];
-        let offset = Self::linearized(&self.vanishing_coefficients(), lambda[0]);
+        let offset = linearized(&self.vanishing_coefficients(), lambda[0]);
         let on_lambda = a.add_const(vanishing, offset);
         let both = a.mul(vanishing, on_lambda);
         let scaled = a.mul_const(both, window_denominator(2 * size));
-        let inverses = Self::inverses_at(a, z, lambda);
-        Self::lagrange_with(a, scaled, &inverses, values)
+        let inverses = inverses_at(a, z, lambda);
+        lagrange_sum(a, scaled, &inverses, values)
     }
 
     /// `D_l * V_S(z)`, `l` the domain's size: the scale of the Lagrange sum over `S`.
@@ -133,13 +107,50 @@ impl SkipDomain {
     pub fn lagrange_at<A: Arith>(self, a: &mut A, z: A::E, vanishing: A::E, values: &[A::E]) -> A::E {
         let scaled = self.lagrange_scale(a, vanishing);
         let inverses = self.inverses(a, z);
-        Self::lagrange_with(a, scaled, &inverses, values)
+        lagrange_sum(a, scaled, &inverses, values)
     }
 
     /// The Lagrange basis of `S` at `z`, the prover's form: `L_i(z) = D_l * prod_{k != i} (z + s_k)`.
-    pub fn lagrange_weights(self, z: F192) -> Vec<F192> {
+    pub(crate) fn lagrange_weights(self, z: F192) -> Vec<F192> {
         window_lagrange_weights(self.k_skip, z)
     }
+
+    /// The eq table of a skip point's inner half: the Lagrange basis at `z_skip` on the low index bits.
+    ///
+    /// ```text
+    ///     out[i_skip + i_rest 2^k_skip] = L_(i_skip)(z_skip) * eq(x_inner_rest, i_rest)
+    /// ```
+    pub fn inner_eq_table(self, z_skip: F192, x_inner_rest: &[F192]) -> Vec<F192> {
+        outer_product(&eq_table(x_inner_rest), &self.lagrange_weights(z_skip))
+    }
+}
+
+/// A linearized polynomial `sum_j c_j x^(2^j)` at `x`.
+fn linearized(c: &[F192], x: F192) -> F192 {
+    let (mut power, mut acc) = (x, F192::ZERO);
+    for &cj in c {
+        acc += cj * power;
+        power = power.square();
+    }
+    acc
+}
+
+/// `1 / (z + node)` for each node.
+fn inverses_at<A: Arith>(a: &mut A, z: A::E, nodes: &[F192]) -> Vec<A::E> {
+    (nodes.iter())
+        .map(|&node| {
+            let difference = a.add_const(z, node);
+            a.inv(difference)
+        })
+        .collect()
+}
+
+/// `scale * sum_i values_i * inverses_i`: a Lagrange sum, given its nodes' inverses at the point.
+pub(crate) fn lagrange_sum<A: Arith>(a: &mut A, scale: A::E, inverses: &[A::E], values: &[A::E]) -> A::E {
+    assert_eq!(inverses.len(), values.len(), "a value per node");
+    let zero = a.zero();
+    let sum = (inverses.iter().zip(values)).fold(zero, |acc, (&h, &value)| a.mul_add(value, h, acc));
+    a.mul(scale, sum)
 }
 
 /// The Lagrange basis of the first `2^log_size` nodes of the phi_8 table at `z`.
@@ -182,7 +193,7 @@ fn window_denominator(size: usize) -> F192 {
     DENOMINATORS[size.trailing_zeros() as usize]
 }
 
-/// [`window_denominator`] for every window size, at compile time.
+/// The barycentric weight of every window size, at compile time.
 ///
 /// The nodes lie in `K`, so the product and its inverse stay there.
 ///

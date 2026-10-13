@@ -231,7 +231,7 @@ impl<L: Lanes> BlockSums<L> {
             let low = L::load(&eq.low[q & (eq.low.len() - 1)..]);
             self.add_group(
                 blocks[start..start + L::WIDTH].as_flattened(),
-                low * L::splat(eq.high[q >> eq.low_log()]),
+                low * L::splat(eq.high[q >> eq.low_log]),
             );
         }
         let q = first + L::WIDTH * groups;

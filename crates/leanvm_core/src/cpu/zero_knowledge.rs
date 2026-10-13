@@ -103,7 +103,7 @@ pub(super) fn prove(program: &Program, mut w: Witness, output: Output, rate: Rat
             .expect("the prover's own claims are well formed");
         rec.finish().1
     });
-    info_span!("Outer proof").in_scope(|| zk::outer::prove(&mut ps, &record, &keys));
+    info_span!("Outer proof").in_scope(|| keys.prove_outer(&mut ps, &record));
     Proof(ps.into_proof(), ProofKind::ZeroKnowledge)
 }
 
@@ -136,7 +136,7 @@ where
     let mut rec = Recorder::new(inner);
     let core = record_proof(program, &mut rec, output)?;
     let claims = core.claims.into_plain(&mut rec)?;
-    let mut inner = zk::outer::verify(rec, &core.keys).map_err(CpuError::Outer)?;
+    let mut inner = core.keys.verify_outer(rec).map_err(CpuError::Outer)?;
     inner.check_eof()?;
     Ok((inner, claims))
 }
@@ -338,7 +338,7 @@ impl<E: Copy> DeferredClaims<Value<E>> {
             rec.ensure_eq(expected, claim.value, || CpuError::Flock {
                 table,
                 part,
-                error: FlockError::Lincheck(LincheckError::SumcheckMismatch),
+                error: FlockError::Lincheck(LincheckError::FormMismatch),
             })?;
             forms.push(form);
             weights.push(w);

@@ -19,16 +19,17 @@
 //! That analysis runs in floating point, in the test module only.
 //!
 //! A test checks every table entry against it, so changing a constant it reads fails until the table is regenerated.
+//!
+//! # The production profile
+//!
+//! Johnson list decoding at rates `2^-1` to `2^-4`, with 128-bit round-by-round soundness over `E`.
+//!
+//! - L0 takes no OOD sample, so its commitment binds only to a list.
+//! - Every challenge drawn before the opening pays for that list's size.
+//! - Every later level takes one OOD sample.
 
 use fiat_shamir::ProofOfWork;
 use thiserror::Error;
-
-// The production profile: Johnson list decoding at rates 2^-1 to 2^-4, 128-bit round-by-round soundness over `E`.
-//
-// L0 takes no OOD sample, so its commitment binds only to a list.
-// Every challenge drawn before the opening pays for that list's size.
-//
-// Every later level takes one OOD sample.
 
 /// Round-by-round soundness target, in bits.
 ///
@@ -118,7 +119,7 @@ pub(crate) enum LadderError {
 /// # Errors
 ///
 /// Returns the rate when it lies outside `MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE`.
-pub(crate) fn validate_log_inv_rate(log_inv_rate: usize) -> Result<(), ConfigError> {
+fn validate_log_inv_rate(log_inv_rate: usize) -> Result<(), ConfigError> {
     if !(MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE).contains(&log_inv_rate) {
         return Err(ConfigError::RateOutOfRange { log_inv_rate });
     }
@@ -128,20 +129,20 @@ pub(crate) fn validate_log_inv_rate(log_inv_rate: usize) -> Result<(), ConfigErr
 /// Proof-of-work bits each level grinds before its query positions are sampled.
 ///
 /// The query count then only has to close the remaining `SECURITY_BITS - QUERY_GRINDING_BITS` bits.
-pub const QUERY_GRINDING_BITS: usize = 17;
+pub(crate) const QUERY_GRINDING_BITS: usize = 17;
 
 const _: () = assert!(QUERY_GRINDING_BITS <= ProofOfWork::MAX_BITS as usize);
 
 /// Variables the L0 lane fold binds: the log of the L0 interleaving, so a leaf holds `2^6` lanes.
 pub const INITIAL_FOLDING_FACTOR: usize = 6;
 /// Variables each recursive level folds.
-pub const SUBSEQUENT_FOLDING_FACTOR: usize = 4;
+pub(crate) const SUBSEQUENT_FOLDING_FACTOR: usize = 4;
 
 /// Bits the total Reed-Solomon domain loses after the initial fold.
 ///
 /// A fold of `k` variables raises the inverse-rate logarithm by `k` minus this reduction.
 /// With the six-variable initial fold, the first recursive level's inverse-rate logarithm is `6 - 3 = 3` above L0's.
-pub const RS_DOMAIN_INITIAL_REDUCTION_FACTOR: usize = 3;
+pub(crate) const RS_DOMAIN_INITIAL_REDUCTION_FACTOR: usize = 3;
 
 /// Bits the total Reed-Solomon domain loses after each subsequent fold.
 ///
@@ -154,7 +155,7 @@ const _: () = assert!(RS_DOMAIN_SUBSEQUENT_REDUCTION_FACTOR <= SUBSEQUENT_FOLDIN
 /// Folding stops once at most this many variables remain.
 ///
 /// The residual polynomial `yr`, at most `2^RESIDUAL_MAX_LOG` values, is then sent in the clear.
-pub const RESIDUAL_MAX_LOG: usize = 5;
+pub(crate) const RESIDUAL_MAX_LOG: usize = 5;
 
 /// One WHIR opening's shape and per-level soundness parameters.
 ///
@@ -264,9 +265,64 @@ impl Config {
         &self.ood_samples
     }
 
-    /// Coefficients a hiding commitment adds past each L0 lane's power of two, `k = q_0 + 2`, which the L0 query count was derived for; zero for a configuration that does not hide.
+    /// Coefficients a hiding commitment adds past each L0 lane's power of two; zero for a configuration that does not hide.
+    ///
+    /// It is `k = q_0 + 2`, which the L0 query count was derived for.
     pub const fn padding(&self) -> usize {
         self.padding
+    }
+
+    /// The configuration prover and verifier share for a witness of `2^log_n` words of `K` at L0 rate `2^-log_inv_rate`.
+    ///
+    /// It is the production 128-bit Johnson profile:
+    ///
+    /// - the level ladder,
+    /// - the tabulated query counts,
+    /// - `QUERY_GRINDING_BITS` at every level,
+    /// - one OOD sample at every level past L0.
+    ///
+    /// # Errors
+    ///
+    /// Returns a rate outside `MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE`, or a size outside `MIN_LOG_N..=MAX_LOG_N`.
+    pub fn for_rate(log_n: usize, log_inv_rate: usize) -> Result<Self, ConfigError> {
+        validate_log_inv_rate(log_inv_rate)?;
+        if !(MIN_LOG_N..=MAX_LOG_N).contains(&log_n) {
+            return Err(ConfigError::SizeOutOfRange { log_n });
+        }
+        let queries = WHIR_QUERIES[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N];
+        Ok(Self::tabulated(log_n, log_inv_rate, queries, 0))
+    }
+
+    /// The configuration prover and verifier share for a hiding opening of `2^log_n` words at L0 rate `2^-log_inv_rate`.
+    ///
+    /// It is the plain configuration with two changes:
+    ///
+    /// - the L0 query counts are those of the padded L0 code;
+    /// - each committed lane is padded by `k = q_0 + 2` uniform coefficients.
+    ///
+    /// Why `q_0 + 2`:
+    ///
+    /// - `q_0` opened symbols of a lane are uniform once it has at least `q_0` padding coefficients.
+    /// - The rest keep every unopened leaf's symbol of that lane uniform, which hides the Merkle root.
+    ///
+    /// # Errors
+    ///
+    /// A rate outside `MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE`, or a size outside `MIN_LOG_N_HIDING..=MAX_LOG_N`.
+    pub fn hiding(log_n: usize, log_inv_rate: usize) -> Result<Self, ConfigError> {
+        validate_log_inv_rate(log_inv_rate)?;
+        if !(MIN_LOG_N_HIDING..=MAX_LOG_N).contains(&log_n) {
+            return Err(ConfigError::HidingSizeOutOfRange { log_n });
+        }
+        let queries = WHIR_QUERIES_HIDING[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N_HIDING];
+        Ok(Self::tabulated(log_n, log_inv_rate, queries, queries[0] + 2))
+    }
+
+    /// The lanes a hiding commitment of `data_lanes` lanes of data commits.
+    ///
+    /// The data, then zero lanes up to a multiple of four, then the random group.
+    #[must_use]
+    pub const fn hiding_lanes(data_lanes: usize) -> usize {
+        data_lanes.next_multiple_of(RANDOM_LANES) + RANDOM_LANES
     }
 }
 
@@ -278,78 +334,81 @@ struct LadderShape {
     k_levels: Vec<usize>,
 }
 
-/// Descend the level ladder, `SUBSEQUENT_FOLDING_FACTOR` variables a level, until `RESIDUAL_MAX_LOG` or fewer remain.
-///
-/// `next_rate` picks each new level's inverse-rate logarithm from four integers:
-///
-/// ```text
-///     (new level, previous rate, fold just taken, message dimension the new level carries)
-/// ```
-///
-/// It is the only thing that separates the production ladder from the test-support one.
-///
-/// # Errors
-///
-/// - A ladder error when nothing is left after the lane fold, or when fewer than two levels result.
-/// - Whatever `next_rate` returns.
-fn derive_ladder<E: From<LadderError>>(
-    log_n: usize,
-    initial_k: usize,
-    log_inv_rate: usize,
-    mut next_rate: impl FnMut(usize, usize, usize, usize) -> Result<usize, E>,
-) -> Result<LadderShape, E> {
-    if log_n <= initial_k {
-        return Err(LadderError::TooFewVariables { log_n, initial_k }.into());
+impl LadderShape {
+    /// Descend the level ladder, `SUBSEQUENT_FOLDING_FACTOR` variables a level, until `RESIDUAL_MAX_LOG` or fewer remain.
+    ///
+    /// `next_rate` picks each new level's inverse-rate logarithm from four integers:
+    ///
+    /// ```text
+    ///     (new level, previous rate, fold just taken, message dimension the new level carries)
+    /// ```
+    ///
+    /// It is the only thing that separates the production ladder from the test-support one.
+    ///
+    /// # Errors
+    ///
+    /// - A ladder error when nothing is left after the lane fold, or when fewer than two levels result.
+    /// - Whatever `next_rate` returns.
+    fn derive<E: From<LadderError>>(
+        log_n: usize,
+        initial_k: usize,
+        log_inv_rate: usize,
+        mut next_rate: impl FnMut(usize, usize, usize, usize) -> Result<usize, E>,
+    ) -> Result<Self, E> {
+        if log_n <= initial_k {
+            return Err(LadderError::TooFewVariables { log_n, initial_k }.into());
+        }
+        let mut shape = Self {
+            log_inv_rates: vec![log_inv_rate],
+            k_levels: vec![initial_k],
+        };
+        let mut n_running = log_n - initial_k;
+        let mut rate_running = log_inv_rate;
+        let mut fold_running = initial_k;
+        while n_running > RESIDUAL_MAX_LOG {
+            let k = SUBSEQUENT_FOLDING_FACTOR.min(n_running);
+            let log_msg_cols_next = n_running - k;
+            let rate = next_rate(shape.k_levels.len(), rate_running, fold_running, log_msg_cols_next)?;
+            shape.log_inv_rates.push(rate);
+            shape.k_levels.push(k);
+            n_running -= k;
+            rate_running = rate;
+            fold_running = k;
+        }
+        if shape.k_levels.len() < 2 {
+            return Err(LadderError::TooFewLevels { log_n }.into());
+        }
+        Ok(shape)
     }
-    let mut shape = LadderShape {
-        log_inv_rates: vec![log_inv_rate],
-        k_levels: vec![initial_k],
-    };
-    let mut n_running = log_n - initial_k;
-    let mut rate_running = log_inv_rate;
-    let mut fold_running = initial_k;
-    while n_running > RESIDUAL_MAX_LOG {
-        let k = SUBSEQUENT_FOLDING_FACTOR.min(n_running);
-        let log_msg_cols_next = n_running - k;
-        let rate = next_rate(shape.k_levels.len(), rate_running, fold_running, log_msg_cols_next)?;
-        shape.log_inv_rates.push(rate);
-        shape.k_levels.push(k);
-        n_running -= k;
-        rate_running = rate;
-        fold_running = k;
-    }
-    if shape.k_levels.len() < 2 {
-        return Err(LadderError::TooFewLevels { log_n }.into());
-    }
-    Ok(shape)
-}
 
-/// The production ladder.
-///
-/// The total RS domain loses `RS_DOMAIN_INITIAL_REDUCTION_FACTOR` bits after the initial fold, then one bit a fold.
-/// So a fold of `k` variables raises the inverse-rate logarithm by `k - reduction`.
-///
-/// # Errors
-///
-/// Returns a ladder error for a size with no ladder, or a fold below the reduction it pays for.
-fn derive_ladder_shape(log_n: usize, initial_k: usize, log_inv_rate: usize) -> Result<LadderShape, LadderError> {
-    let mut domain_reduction = RS_DOMAIN_INITIAL_REDUCTION_FACTOR;
-    derive_ladder(
-        log_n,
-        initial_k,
-        log_inv_rate,
-        |level, rate_running, fold_running, _cols| {
-            let rate_increase = fold_running
-                .checked_sub(domain_reduction)
-                .ok_or(LadderError::FoldBelowReduction {
-                    level,
-                    fold: fold_running,
-                    reduction: domain_reduction,
-                })?;
-            domain_reduction = RS_DOMAIN_SUBSEQUENT_REDUCTION_FACTOR;
-            Ok(rate_running + rate_increase)
-        },
-    )
+    /// The production ladder.
+    ///
+    /// The total RS domain loses `RS_DOMAIN_INITIAL_REDUCTION_FACTOR` bits after the initial fold, then one bit a fold.
+    /// So a fold of `k` variables raises the inverse-rate logarithm by `k - reduction`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a ladder error for a size with no ladder, or a fold below the reduction it pays for.
+    fn production(log_n: usize, initial_k: usize, log_inv_rate: usize) -> Result<Self, LadderError> {
+        let mut domain_reduction = RS_DOMAIN_INITIAL_REDUCTION_FACTOR;
+        Self::derive(
+            log_n,
+            initial_k,
+            log_inv_rate,
+            |level, rate_running, fold_running, _cols| {
+                let rate_increase =
+                    fold_running
+                        .checked_sub(domain_reduction)
+                        .ok_or(LadderError::FoldBelowReduction {
+                            level,
+                            fold: fold_running,
+                            reduction: domain_reduction,
+                        })?;
+                domain_reduction = RS_DOMAIN_SUBSEQUENT_REDUCTION_FACTOR;
+                Ok(rate_running + rate_increase)
+            },
+        )
+    }
 }
 
 /// Log of the smallest configured witness, in words: the production ladder's floor, with one level of margin.
@@ -432,27 +491,6 @@ const WHIR_QUERIES: [[&[usize]; MAX_LOG_N - MIN_LOG_N + 1]; MAX_LOG_INV_RATE - M
     ],
 ];
 
-/// The configuration prover and verifier share for a witness of `2^log_n` words of `K` at L0 rate `2^-log_inv_rate`.
-///
-/// It is the production 128-bit Johnson profile:
-///
-/// - the level ladder,
-/// - the tabulated query counts,
-/// - `QUERY_GRINDING_BITS` at every level,
-/// - one OOD sample at every level past L0.
-///
-/// # Errors
-///
-/// Returns a rate outside `MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE`, or a size outside `MIN_LOG_N..=MAX_LOG_N`.
-pub fn config_for_rate(log_n: usize, log_inv_rate: usize) -> Result<Config, ConfigError> {
-    validate_log_inv_rate(log_inv_rate)?;
-    if !(MIN_LOG_N..=MAX_LOG_N).contains(&log_n) {
-        return Err(ConfigError::SizeOutOfRange { log_n });
-    }
-    let queries = WHIR_QUERIES[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N];
-    Ok(tabulated(log_n, log_inv_rate, queries, 0))
-}
-
 /// Smallest committed witness, `2^MIN_LOG_N_HIDING` words, that the hiding table covers.
 ///
 /// A smaller zero-knowledge stack is committed at this size.
@@ -470,15 +508,7 @@ pub const MIN_LOG_N_HIDING: usize = 20;
 /// - One lane masks only the line `eq(r, u) * K` of each coordinate: the other two `K` dimensions of `E` would show the witness.
 /// - Four lanes `4j..4j+4` have weights `P * {1, r_a, r_b, r_a r_b}` up to an invertible map, `P` the product over the other lane bits.
 /// - Those span `E` over `K` unless `r_a` or `r_b` lies in `K`, or `P` is zero: probability below `2^-120`.
-pub const RANDOM_LANES: usize = 4;
-
-/// The lanes a hiding commitment of `data_lanes` lanes of data commits.
-///
-/// The data, then zero lanes up to a multiple of four, then the random group.
-#[must_use]
-pub const fn hiding_lanes(data_lanes: usize) -> usize {
-    data_lanes.next_multiple_of(RANDOM_LANES) + RANDOM_LANES
-}
+pub(crate) const RANDOM_LANES: usize = 4;
 
 /// Per-level query counts (L0, L1, ...) of the hiding opening, at `[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N_HIDING]`.
 ///
@@ -536,46 +566,22 @@ const WHIR_QUERIES_HIDING: [[&[usize]; MAX_LOG_N - MIN_LOG_N_HIDING + 1]; MAX_LO
     ],
 ];
 
-/// The shared prover/verifier config of a hiding opening of a `K`-witness of `2^log_n` F64 words at L0 inverse-rate logarithm `log_inv_rate`.
-///
-/// The shared prover and verifier config of a hiding opening of `2^log_n` words at L0 rate `2^-log_inv_rate`.
-///
-/// It is the plain configuration with two changes:
-///
-/// - the L0 query counts are those of the padded L0 code;
-/// - each committed lane is padded by `k = q_0 + 2` uniform coefficients.
-///
-/// Why `q_0 + 2`:
-///
-/// - `q_0` opened symbols of a lane are uniform once it has at least `q_0` padding coefficients.
-/// - The rest keep every unopened leaf's symbol of that lane uniform, which hides the Merkle root.
-///
-/// # Errors
-///
-/// A rate outside `MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE`, or a size outside `MIN_LOG_N_HIDING..=MAX_LOG_N`.
-pub fn config_for_rate_hiding(log_n: usize, log_inv_rate: usize) -> Result<Config, ConfigError> {
-    validate_log_inv_rate(log_inv_rate)?;
-    if !(MIN_LOG_N_HIDING..=MAX_LOG_N).contains(&log_n) {
-        return Err(ConfigError::HidingSizeOutOfRange { log_n });
+impl Config {
+    /// The production config with these query counts and this L0 padding.
+    fn tabulated(log_n: usize, log_inv_rate: usize, queries: &[usize], padding: usize) -> Self {
+        let shape = LadderShape::production(log_n, INITIAL_FOLDING_FACTOR, log_inv_rate)
+            .expect("the tabulated window always has a ladder");
+        let levels = shape.k_levels.len();
+        Self::new(
+            INITIAL_FOLDING_FACTOR,
+            shape.k_levels[1..].to_vec(),
+            shape.log_inv_rates,
+            queries.to_vec(),
+            vec![QUERY_GRINDING_BITS; levels],
+            std::iter::once(0).chain(std::iter::repeat_n(1, levels - 1)).collect(),
+            padding,
+        )
     }
-    let queries = WHIR_QUERIES_HIDING[log_inv_rate - MIN_LOG_INV_RATE][log_n - MIN_LOG_N_HIDING];
-    Ok(tabulated(log_n, log_inv_rate, queries, queries[0] + 2))
-}
-
-/// The production config with these query counts and this L0 padding.
-fn tabulated(log_n: usize, log_inv_rate: usize, queries: &[usize], padding: usize) -> Config {
-    let shape = derive_ladder_shape(log_n, INITIAL_FOLDING_FACTOR, log_inv_rate)
-        .expect("the tabulated window always has a ladder");
-    let levels = shape.k_levels.len();
-    Config::new(
-        INITIAL_FOLDING_FACTOR,
-        shape.k_levels[1..].to_vec(),
-        shape.log_inv_rates,
-        queries.to_vec(),
-        vec![QUERY_GRINDING_BITS; levels],
-        std::iter::once(0).chain(std::iter::repeat_n(1, levels - 1)).collect(),
-        padding,
-    )
 }
 
 #[cfg(test)]
@@ -618,11 +624,10 @@ pub(crate) mod tests {
         reason = "The soundness analysis is real-valued; it only runs in tests, which pin the integer table to it."
     )]
     use super::{
-        Config, ConfigError, INITIAL_FOLDING_FACTOR, L0_LIST_BITS, LOG_INV_RATE_0, LadderError, MAX_LOG_INV_RATE,
-        MAX_LOG_N, MIN_LOG_INV_RATE, MIN_LOG_N, MIN_LOG_N_HIDING, QUERY_GRINDING_BITS,
+        Config, ConfigError, INITIAL_FOLDING_FACTOR, L0_LIST_BITS, LOG_INV_RATE_0, LadderError, LadderShape,
+        MAX_LOG_INV_RATE, MAX_LOG_N, MIN_LOG_INV_RATE, MIN_LOG_N, MIN_LOG_N_HIDING, QUERY_GRINDING_BITS,
         RS_DOMAIN_INITIAL_REDUCTION_FACTOR, RS_DOMAIN_SUBSEQUENT_REDUCTION_FACTOR, SECURITY_BITS, WHIR_QUERIES,
-        WHIR_QUERIES_HIDING, config_for_rate, config_for_rate_hiding, derive_ladder, derive_ladder_shape,
-        validate_log_inv_rate,
+        WHIR_QUERIES_HIDING, validate_log_inv_rate,
     };
     use primitives::field::F64;
     use std::fmt::Write;
@@ -756,7 +761,7 @@ pub(crate) mod tests {
             return Err(DerivationError::NoFeasibleLevel { level: 0, log_inv_rate });
         }
         // Each new level takes the smallest rate strictly below the previous one whose block holds its queries.
-        let shape = derive_ladder(
+        let shape = LadderShape::derive(
             log_n,
             initial_k,
             log_inv_rate,
@@ -1478,7 +1483,7 @@ pub(crate) mod tests {
 
             // The ladder's geometry does not depend on the slack.
             // The per-level search below checks the exact block-length feasibility, and picks the slack and queries.
-            let shape = derive_ladder_shape(log_n, initial_k, log_inv_rate)?;
+            let shape = LadderShape::production(log_n, initial_k, log_inv_rate)?;
             let n_levels = shape.log_inv_rates.len();
 
             // Why no union-bound margin over the whole transcript: the target is 128-bit RBR soundness.
@@ -1657,12 +1662,12 @@ pub(crate) mod tests {
         });
         assert!(
             tabulated == rows,
-            "WHIR_QUERIES is stale, replace its rows in crates/pcs/src/whir/config/mod.rs with:\n{rows}"
+            "WHIR_QUERIES is stale, replace its rows in crates/pcs/src/whir/config.rs with:\n{rows}"
         );
         // Fixture state: one rate past each end of the window, and sizes from 0 to 8 past the largest.
         for log_inv_rate in MIN_LOG_INV_RATE - 1..=MAX_LOG_INV_RATE + 1 {
             for log_n in 0..=MAX_LOG_N + 8 {
-                let tabulated = config_for_rate(log_n, log_inv_rate);
+                let tabulated = Config::for_rate(log_n, log_inv_rate);
                 // The rate is checked before the size, so an out-of-range rate wins.
                 if !(MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE).contains(&log_inv_rate) {
                     assert_eq!(tabulated, Err(ConfigError::RateOutOfRange { log_inv_rate }));
@@ -1709,7 +1714,7 @@ pub(crate) mod tests {
         );
         for log_inv_rate in MIN_LOG_INV_RATE - 1..=MAX_LOG_INV_RATE + 1 {
             for log_n in 0..=MAX_LOG_N + 8 {
-                let tabulated = config_for_rate_hiding(log_n, log_inv_rate);
+                let tabulated = Config::hiding(log_n, log_inv_rate);
                 if !(MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE).contains(&log_inv_rate) {
                     assert_eq!(tabulated, Err(ConfigError::RateOutOfRange { log_inv_rate }));
                 } else if !(MIN_LOG_N_HIDING..=MAX_LOG_N).contains(&log_n) {

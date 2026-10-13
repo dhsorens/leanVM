@@ -15,7 +15,7 @@ use crate::bus::{BusForm, BusProof, BusVerify, PackedForm, Producer};
 use crate::constraints::{Air, BitColumns, Residual, Summand};
 use crate::tables::ClassTable;
 use fiat_shamir::arith::{Arith, Native};
-use primitives::field::{F192, Subfield};
+use primitives::field::{F192, F192Unreduced, Subfield};
 
 /// The two bus sides' weights in the batch, `1` and `xi`, shared by every table.
 ///
@@ -183,11 +183,11 @@ impl Summand for Term {
     #[inline(always)]
     fn eval<T: Subfield>(&self, cols: &[T], quadratic: bool) -> F192 {
         match self {
-            Self::Table(bus) => T::reduce(bus.eval_unreduced(cols, quadratic)),
+            Self::Table(bus) => bus.eval_unreduced(cols, quadratic).reduce(),
             // `sum_i c_i * (1 + b_i * P'_i)`, whose quadratic part is the products.
             Self::Producer(s) => {
                 let n = s.coefficients.len();
-                let products = (0..n).fold(T::lift(F192::ZERO), |acc, i| {
+                let products = (0..n).fold(F192Unreduced::ZERO, |acc, i| {
                     acc ^ (cols[i] * cols[n + i]).mul_e_unreduced(s.coefficients[i])
                 });
                 let constant = if quadratic {
@@ -195,7 +195,7 @@ impl Summand for Term {
                 } else {
                     s.coefficients.iter().fold(F192::ZERO, |a, &b| a + b)
                 };
-                T::reduce(products) + constant
+                products.reduce() + constant
             }
         }
     }

@@ -4,10 +4,10 @@
 //!
 //! A kernel written over [`Subfield`] runs on both, and its `K` instance stays in 64-bit arithmetic.
 
-use super::{F64, F192, F192Unreduced, mul_base8, mul4};
+use super::{F64, F192, F192Unreduced};
 #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
 use super::{Weights8, dot_base};
-use core::ops::{Add, BitXor, BitXorAssign, Mul};
+use core::ops::{Add, Mul};
 
 /// A subfield of `E`: `K`, or `E` itself.
 ///
@@ -18,31 +18,20 @@ pub trait Subfield: Copy + Send + Sync + Add<Output = Self> + Mul<Output = Self>
     /// The additive identity.
     const ZERO: Self;
 
-    /// Where products accumulate before their one reduction.
-    type Unreduced: Copy + Send + Sync + BitXor<Output = Self::Unreduced> + BitXorAssign;
-
     /// The product `self * e`.
     fn mul_e(self, e: F192) -> F192;
 
     /// The product `self * e`, unreduced.
-    fn mul_e_unreduced(self, e: F192) -> Self::Unreduced;
-
-    /// An `E` value as an accumulator term.
-    ///
-    /// Exact: reducing a reduced value leaves it unchanged.
-    fn lift(e: F192) -> Self::Unreduced;
-
-    /// The accumulated sum, reduced.
-    fn reduce(acc: Self::Unreduced) -> F192;
+    fn mul_e_unreduced(self, e: F192) -> F192Unreduced;
 
     /// `sum_i coeffs[i] * vals[i]`, unreduced.
-    fn dot_unreduced(coeffs: &[F192], vals: &[Self]) -> Self::Unreduced;
+    fn dot_unreduced(coeffs: &[F192], vals: &[Self]) -> F192Unreduced;
 
     /// `sum_i coeffs[i] * vals[i]` over packed coefficients, unreduced.
     ///
     /// `vals` holds exactly `coeffs.width()` values.
     #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
-    fn dot_packed(coeffs: &PackedCoeffs, vals: &[Self]) -> Self::Unreduced;
+    fn dot_packed(coeffs: &PackedCoeffs, vals: &[Self]) -> F192Unreduced;
 
     /// `vals[i] * e` for eight values at once.
     fn mul_e8(vals: [Self; 8], e: F192) -> [F192; 8];
@@ -50,14 +39,13 @@ pub trait Subfield: Copy + Send + Sync + Add<Output = Self> + Mul<Output = Self>
     /// `constant + sum_i coeffs[i] * vals[i]`, with one reduction for the whole slice.
     #[inline(always)]
     fn dot(coeffs: &[F192], vals: &[Self], constant: F192) -> F192 {
-        Self::reduce(Self::dot_unreduced(coeffs, vals) ^ Self::lift(constant))
+        // A reduced value reduces to itself, so the constant joins the sum unreduced.
+        (Self::dot_unreduced(coeffs, vals) ^ F192Unreduced::from(constant)).reduce()
     }
 }
 
 impl Subfield for F64 {
     const ZERO: Self = Self::ZERO;
-
-    type Unreduced = F192Unreduced;
 
     #[inline(always)]
     fn mul_e(self, e: F192) -> F192 {
@@ -65,41 +53,29 @@ impl Subfield for F64 {
     }
 
     #[inline(always)]
-    fn mul_e_unreduced(self, e: F192) -> Self::Unreduced {
+    fn mul_e_unreduced(self, e: F192) -> F192Unreduced {
         e.mul_base_unreduced(self)
     }
 
     #[inline(always)]
-    fn lift(e: F192) -> Self::Unreduced {
-        e.into()
-    }
-
-    #[inline(always)]
-    fn reduce(acc: Self::Unreduced) -> F192 {
-        acc.reduce()
-    }
-
-    #[inline(always)]
-    fn dot_unreduced(coeffs: &[F192], vals: &[Self]) -> Self::Unreduced {
-        (coeffs.iter().zip(vals)).fold(F192Unreduced::ZERO, |acc, (&w, &v)| acc ^ w.mul_base_unreduced(v))
+    fn dot_unreduced(coeffs: &[F192], vals: &[Self]) -> F192Unreduced {
+        (coeffs.iter().zip(vals)).map(|(&w, &v)| w.mul_base_unreduced(v)).sum()
     }
 
     #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
     #[inline(always)]
-    fn dot_packed(coeffs: &PackedCoeffs, vals: &[Self]) -> Self::Unreduced {
+    fn dot_packed(coeffs: &PackedCoeffs, vals: &[Self]) -> F192Unreduced {
         dot_base(&coeffs.base, vals)
     }
 
     #[inline(always)]
     fn mul_e8(vals: [Self; 8], e: F192) -> [F192; 8] {
-        mul_base8(e, vals)
+        F192::mul_base8(e, vals)
     }
 }
 
 impl Subfield for F192 {
     const ZERO: Self = Self::ZERO;
-
-    type Unreduced = F192Unreduced;
 
     #[inline(always)]
     fn mul_e(self, e: F192) -> F192 {
@@ -107,35 +83,25 @@ impl Subfield for F192 {
     }
 
     #[inline(always)]
-    fn mul_e_unreduced(self, e: F192) -> Self::Unreduced {
+    fn mul_e_unreduced(self, e: F192) -> F192Unreduced {
         self.mul_unreduced(e)
     }
 
     #[inline(always)]
-    fn lift(e: F192) -> Self::Unreduced {
-        e.into()
-    }
-
-    #[inline(always)]
-    fn reduce(acc: Self::Unreduced) -> F192 {
-        acc.reduce()
-    }
-
-    #[inline(always)]
-    fn dot_unreduced(coeffs: &[F192], vals: &[Self]) -> Self::Unreduced {
-        (coeffs.iter().zip(vals)).fold(F192Unreduced::ZERO, |acc, (&w, &v)| acc ^ w.mul_unreduced(v))
+    fn dot_unreduced(coeffs: &[F192], vals: &[Self]) -> F192Unreduced {
+        (coeffs.iter().zip(vals)).map(|(&w, &v)| w.mul_unreduced(v)).sum()
     }
 
     #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
     #[inline(always)]
-    fn dot_packed(coeffs: &PackedCoeffs, vals: &[Self]) -> Self::Unreduced {
+    fn dot_packed(coeffs: &PackedCoeffs, vals: &[Self]) -> F192Unreduced {
         dot_base(&coeffs.ext, Self::coefficients(vals))
     }
 
     #[inline(always)]
     fn mul_e8(vals: [Self; 8], e: F192) -> [F192; 8] {
-        let lo = mul4([vals[0], vals[1], vals[2], vals[3]], [e; 4]);
-        let hi = mul4([vals[4], vals[5], vals[6], vals[7]], [e; 4]);
+        let lo = Self::mul4([vals[0], vals[1], vals[2], vals[3]], [e; 4]);
+        let hi = Self::mul4([vals[4], vals[5], vals[6], vals[7]], [e; 4]);
         [lo[0], lo[1], lo[2], lo[3], hi[0], hi[1], hi[2], hi[3]]
     }
 }

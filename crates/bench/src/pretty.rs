@@ -83,6 +83,15 @@ pub fn pretty_f64(value: f64) -> String {
     out
 }
 
+/// `bytes` in the largest binary unit that leaves at least one of it, as `1.5 GiB`.
+pub fn pretty_bytes(bytes: u64) -> String {
+    let (unit, scale) = [("GiB", 1 << 30), ("MiB", 1 << 20), ("KiB", 1 << 10)]
+        .into_iter()
+        .find(|&(_, scale)| bytes >= scale)
+        .unwrap_or(("B", 1));
+    format!("{} {unit}", pretty_f64(bytes as f64 / scale as f64))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{pretty_f64, pretty_integer};

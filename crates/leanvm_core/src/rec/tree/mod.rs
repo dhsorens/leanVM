@@ -26,20 +26,17 @@
 //!   root's verifier needs the set alone. What a claim means is the leaf program's (`multiset`).
 //!
 //! A claim-set tree has a node circuit for each arity from two to its largest, all of one height, or two tiers each
-//! at heights of its own ([`Tier`]): small proofs then never pay for the largest node's union and children.
+//! at heights of its own (a small tier): small proofs then never pay for the largest node's union and children.
 
 use crate::commitment::Rate;
-use crate::cpu::{Announcement, DecodeError, Lookup, Output, Program, Proof, ProofKind, ProvenRun, Stats, VerifyError};
-use crate::envelope::Envelope;
+use crate::cpu::{Lookup, Output, Program, Proof, ProvenRun, VerifyError};
 use crate::rec::circuit::{Circuit, Finished, chain};
 use crate::rec::fixed::FixedColumns;
-use crate::rec::layout::RecLayout;
-use crate::rec::table::PerRecTable;
+use crate::rec::proof::CircuitKey;
+use crate::rec::table::{PerRecTable, Table};
 use crate::rec::transcript::ProofSource;
-use crate::rec::verifier::ProofShape;
-use crate::tables::{CircuitId, N_TABLES, PerTable};
+use crate::tables::CircuitId;
 use design::{ChildWitness, Design, LARGE, LeafWitness, Level, NodeInputs, NodeRows, SMALL};
-use fiat_shamir::{FromNarg, ProofTranscript};
 use pcs::merkle::Openings;
 use primitives::field::{F64, F192};
 use primitives::multilinear::{eq_table, mle_eval_par};
@@ -49,40 +46,26 @@ use thiserror::Error;
 use tracing::info_span;
 use union::{FillError, UnionFill};
 
-mod claims;
 mod design;
 
 mod multiset;
+mod proof;
 mod reduce;
+mod shape;
 mod statement;
-mod stats;
 
 mod union;
 
 pub use crate::rec::circuit::Unsatisfied;
 pub use crate::tables::Part;
-pub use claims::DensePoly;
 pub use multiset::{Capacity, Claim, ClaimGroup, ClaimSet, ClaimSetError};
+pub use proof::TreeProof;
+pub use reduce::DensePoly;
+pub use shape::{ClaimShape, LeafShape, Tier, TreeShape};
 pub use statement::Kind;
-pub use stats::{CircuitStats, TableStats};
 
 /// The most rounds the search for the nodes' heights takes: each round at least doubles a table.
 const MAX_ROUNDS: usize = 8;
-
-/// The shape every leaf proof of a tree shares.
-///
-/// It is each table's height and the commitment's rate, as a proof announces them.
-///
-/// A tree's circuits are built from it, so they verify leaves of that shape only.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LeafShape {
-    /// Each table's base-two logarithm of rows.
-    taus: PerTable<usize>,
-    /// The commitment's rate.
-    rate: Rate,
-    /// The leaf proofs' kind.
-    kind: ProofKind,
-}
 
 /// One leaf of a tree: a proof of a run, and the output it proves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,44 +76,28 @@ pub struct Leaf<'a> {
     output: Output,
 }
 
-/// How a tree is shaped.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TreeShape {
-    /// The shape every leaf proof shares.
-    pub leaf: LeafShape,
-    /// The leaf proofs a first-level node verifies, at least one.
-    pub arity_0: usize,
-    /// The tree proofs a higher node verifies, at least two: the only arity of a tree of outputs, the largest of a
-    /// claim-set tree.
-    pub arity: usize,
-    /// The commitment rate of every tree proof.
-    pub rate: Rate,
-    /// A claim-set tree's capacities; none for a tree of outputs.
-    pub claims: Option<ClaimShape>,
+/// What one of a tree's circuits costs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CircuitStats {
+    /// Each table of the recursion machine, in the machine's order.
+    pub tables: Vec<TableStats>,
+    /// The words a proof of the circuit commits.
+    pub committed: usize,
 }
 
-/// The capacities of a claim-set tree.
+/// One table of a circuit: its rows, and the height they are padded to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ClaimShape {
-    /// The capacity of the tree's largest nodes and of a root's set: a node's children's sets together and its own set
-    /// stay within it.
-    pub capacity: Capacity,
-    /// The small tier: nodes of at most its arity, whose sets stay within its capacity, at heights of their own. With
-    /// none, every circuit is at the largest node's heights.
-    pub small: Option<Tier>,
-}
-
-/// A claim-set tree's small tier: its first level, its nodes, and the wrap of its large proofs.
-///
-/// Its circuits have heights of their own, which its nodes' few children and small unions fix, so a proof of a small
-/// set never pays for the tree's largest node. The large tier's nodes verify small proofs, and a large proof is
-/// combined further once wrapped: one small proof verifying it and stating its set.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Tier {
-    /// The most children its nodes verify, at least two and at most the tree's arity.
-    pub arity: usize,
-    /// The capacity of its nodes' unions and of its first level's, within the tree's.
-    pub capacity: Capacity,
+#[non_exhaustive]
+pub struct TableStats {
+    /// The table's name.
+    pub name: &'static str,
+    /// The rows the circuit puts in the table.
+    pub rows: usize,
+    /// The base-two logarithm of the table's height.
+    ///
+    /// The height is a power of two, at least the rows.
+    pub height_log: usize,
 }
 
 /// An aggregation tree over proofs of one program.
@@ -143,29 +110,10 @@ pub struct Tree<'p> {
     shape: TreeShape,
     /// What fixes the circuits.
     design: Design<'p>,
-    /// Each kind's circuit, by its index: the first level's first.
-    circuits: Vec<Circuit>,
-    /// Each kind's circuit's fixed columns, by its index.
-    columns: Vec<FixedColumns>,
+    /// Each circuit's key, by its position: the first level's first.
+    keys: Vec<CircuitKey>,
     /// The dense polynomials the root's claims are settled against.
     tables: DenseTables,
-}
-
-/// A proof made by one node of a tree, the root's included.
-///
-/// A first-level node's proof covers leaf proofs.
-///
-/// A higher node's proof covers tree proofs.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TreeProof {
-    /// The kind of the circuit that made it, its statement's first word: its index within its tier, the tier above.
-    circuit: usize,
-    /// Its statement's words.
-    words: Vec<F192>,
-    /// The recursion proof.
-    proof: ProofTranscript,
-    /// The rate it is proven at.
-    rate: Rate,
 }
 
 /// A leaf of a claim-set tree: a leaf proof, and the claim set whose digest's hash its output is.
@@ -336,107 +284,6 @@ pub enum TreeError {
     Claims,
 }
 
-impl LeafShape {
-    /// The shape of proofs with these table heights at this rate.
-    pub(crate) const fn new(taus: PerTable<usize>, rate: Rate, kind: ProofKind) -> Self {
-        Self { taus, rate, kind }
-    }
-
-    /// The same shape, of zero-knowledge proofs.
-    #[must_use]
-    pub const fn zero_knowledge(self) -> Self {
-        Self {
-            kind: ProofKind::ZeroKnowledge,
-            ..self
-        }
-    }
-
-    /// Whether the leaf proofs are zero knowledge.
-    #[must_use]
-    pub fn is_zero_knowledge(&self) -> bool {
-        self.kind == ProofKind::ZeroKnowledge
-    }
-
-    /// The shape a proof announces.
-    ///
-    /// # Errors
-    ///
-    /// A proof whose announcement is not valid.
-    pub fn of(proof: &Proof) -> Result<Self, DecodeError> {
-        Self::announced(proof).ok_or(DecodeError::Malformed)
-    }
-
-    /// The shape a proof of a run would announce, from the run's measured cost.
-    ///
-    /// So a tree's key is built before any leaf is proven.
-    #[must_use]
-    pub fn measured(stats: &Stats, rate: Rate) -> Self {
-        // Every proven table height is a power of two, so its logarithm is exact.
-        Self::new(stats.counts.map(|rows| rows.ilog2() as usize), rate, ProofKind::Plain)
-    }
-
-    /// The shape a proof's first scalars announce, if they are a valid announcement.
-    ///
-    /// A zero-knowledge proof announces its heights and rate alone: its final clock is hidden.
-    fn announced(proof: &Proof) -> Option<Self> {
-        let mut narg = proof.0.narg.as_slice();
-        if proof.is_zero_knowledge() {
-            let scalars: [F192; N_TABLES + 1] = std::array::from_fn(|_| F192::from_narg(&mut narg).unwrap_or_default());
-            let (taus, rate) = Announcement::decode_shape(&scalars).ok()?;
-            return Some(Self::new(taus, rate, ProofKind::ZeroKnowledge));
-        }
-        let scalars: [F192; Announcement::LEN] =
-            std::array::from_fn(|_| F192::from_narg(&mut narg).unwrap_or_default());
-        let announcement = Announcement::decode(&scalars).ok()?;
-        Some(Self::new(announcement.taus, announcement.rate, ProofKind::Plain))
-    }
-}
-
-impl TreeShape {
-    /// The kind of the root over this many leaves: a first-level node over `n_0`, a node over `n_0 n^d`.
-    ///
-    /// # Errors
-    ///
-    /// A number of leaves no tree of these arities has.
-    pub fn root_kind(&self, leaves: usize) -> Result<Kind, TreeError> {
-        let Self { arity_0, arity, .. } = *self;
-        let count = TreeError::LeafCount { leaves, arity_0, arity };
-        if leaves == 0 || arity < 2 || !leaves.is_multiple_of(arity_0) {
-            return Err(count);
-        }
-        let mut nodes = leaves / arity_0;
-        while nodes > 1 && nodes.is_multiple_of(arity) {
-            nodes /= arity;
-        }
-        match (nodes, leaves == arity_0) {
-            (1, true) => Ok(Kind::First),
-            (1, false) => Ok(Kind::Node),
-            _ => Err(count),
-        }
-    }
-}
-
-impl ClaimShape {
-    /// One tier at the tree's capacity: every circuit at the largest node's heights.
-    #[must_use]
-    pub const fn new(capacity: Capacity) -> Self {
-        Self { capacity, small: None }
-    }
-
-    /// The capacity of a tier's unions.
-    pub(crate) const fn tier_capacity(&self, tier: usize) -> Capacity {
-        match (tier, self.small) {
-            (design::SMALL, Some(small)) => small.capacity,
-            _ => self.capacity,
-        }
-    }
-
-    /// The tiers it has.
-    const fn tiers(&self) -> usize {
-        if self.small.is_some() { 2 } else { 1 }
-    }
-}
-
 impl<'a> Leaf<'a> {
     /// The leaf of a proof and the output it proves.
     #[must_use]
@@ -448,74 +295,6 @@ impl<'a> Leaf<'a> {
 impl<'a> From<&'a ProvenRun> for Leaf<'a> {
     fn from(run: &'a ProvenRun) -> Self {
         Self::new(&run.proof, run.output)
-    }
-}
-
-impl TreeProof {
-    /// The header of a tree proof's bytes: the magic `LVMT`, then the tree protocol's version.
-    ///
-    /// The version is bumped by every change to what a tree proof says.
-    const ENVELOPE: Envelope = Envelope::new(*b"LVMT", 19);
-
-    /// The kind of node that made the proof.
-    #[must_use]
-    pub const fn kind(&self) -> Kind {
-        if self.circuit == 0 { Kind::First } else { Kind::Node }
-    }
-
-    /// The proof's bytes.
-    #[must_use]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        Self::ENVELOPE.seal(&self.body())
-    }
-
-    /// The tree proof these bytes encode.
-    ///
-    /// # Errors
-    ///
-    /// - Bytes that are no tree proof.
-    /// - A tree proof of another protocol version.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        // The header first: a foreign version is refused before its body is read.
-        let body = Self::ENVELOPE.open(bytes)?;
-        Self::from_body(body).ok_or(DecodeError::Malformed)
-    }
-
-    /// The body behind the header: its rate, its statement's words, then the recursion proof.
-    ///
-    /// ```text
-    /// | log_inv_rate: u8 | n_words: u32 | words: 24 bytes each | proof |
-    /// ```
-    fn body(&self) -> Vec<u8> {
-        let n_words = u32::try_from(self.words.len()).expect("a statement of a few hundred words");
-        let mut bytes = vec![self.rate.log_inv_rate()];
-        bytes.extend(n_words.to_le_bytes());
-        for w in &self.words {
-            bytes.extend(w.to_le_bytes());
-        }
-        bytes.extend(self.proof.to_bytes());
-        bytes
-    }
-
-    /// The tree proof a body encodes, if it encodes one and nothing more.
-    fn from_body(bytes: &[u8]) -> Option<Self> {
-        let (&rate, rest) = bytes.split_first()?;
-        let (n_words, rest) = rest.split_first_chunk::<4>()?;
-        let n_words = usize::try_from(u32::from_le_bytes(*n_words)).ok()?;
-        let (words, proof) = rest.split_at_checked(n_words.checked_mul(24)?)?;
-        let words: Vec<F192> = (words.as_chunks::<24>().0.iter())
-            .map(|&w| F192::from_le_bytes(w))
-            .collect();
-        let first = words.first()?;
-        if (first.c1, first.c2) != (0, 0) {
-            return None;
-        }
-        Some(Self {
-            circuit: usize::try_from(first.c0).ok()?,
-            words,
-            proof: ProofTranscript::from_bytes(proof)?,
-            rate: Rate::new(rate).ok()?,
-        })
     }
 }
 
@@ -539,40 +318,19 @@ impl<'p> Tree<'p> {
     /// - A leaf shape no proof of the program has.
     /// - Circuits that fit no commitment.
     pub fn new(program: &'p Program, shape: TreeShape) -> Result<Self, TreeError> {
-        let TreeShape {
-            leaf: leaves,
-            arity_0,
-            arity,
-            rate,
-            claims,
-        } = shape;
-        if arity_0 == 0 || arity < 2 {
-            return Err(TreeError::Arity { arity_0, arity });
-        }
-        if let Some(ClaimShape {
-            capacity: large,
-            small: Some(Tier { arity: a, capacity }),
-        }) = claims
-            && (!(2..=arity).contains(&a) || capacity.claims > large.claims || capacity.groups > large.groups)
-        {
-            return Err(TreeError::SmallTier { arity: a, capacity });
-        }
-        let tiers = claims.map_or(1, |c| c.tiers());
-        let leaf = || {
-            ProofShape::new(program, leaves.taus, leaves.rate, leaves.kind).map_err(|e| TreeError::LeafShape(e.into()))
-        };
-        let design = |taus: &[PerRecTable<usize>]| Design::new(leaf()?, arity_0, arity, rate, claims, taus);
-        let (design, circuits) = Self::converge(tiers, design)?;
-        let columns: Vec<FixedColumns> = (circuits.iter().zip(&design.places))
-            .map(|(c, p)| FixedColumns::of(c, &design.tiers[p.tier].taus))
-            .collect();
+        shape.check()?;
+        let tiers = shape.claims.map_or(1, |c| c.tiers());
+        let (design, circuits) = Self::converge(tiers, |taus| Design::new(program, &shape, taus))?;
+        let keys: Vec<CircuitKey> = (circuits.into_iter().map(CircuitKey::new))
+            .collect::<Result<_, _>>()
+            .map_err(|_| TreeError::TooLarge)?;
         // Each tier's fixed polynomial stacks its circuits' columns; a tree of one tier has no wide one.
         let fixed = |tier: usize| {
             design.tiers.get(tier).map_or_else(
                 || vec![F64::ZERO],
                 |t| {
-                    t.fixed
-                        .polynomial(&columns[t.places.clone()].iter().collect::<Vec<_>>())
+                    let columns: Vec<&FixedColumns> = keys[t.places.clone()].iter().map(CircuitKey::fixed).collect();
+                    t.fixed.polynomial(&columns)
                 },
             )
         };
@@ -583,8 +341,7 @@ impl<'p> Tree<'p> {
         Ok(Self {
             shape,
             design,
-            circuits,
-            columns,
+            keys,
             tables,
         })
     }
@@ -614,14 +371,8 @@ impl<'p> Tree<'p> {
                 .collect();
             if next == taus {
                 let circuits = (built.into_iter().zip(&d.places))
-                    .map(|(mut c, p)| {
-                        c.floor = taus[p.tier];
-                        c
-                    })
+                    .map(|(c, p)| c.with_floor(taus[p.tier]))
                     .collect();
-                for &t in &taus {
-                    RecLayout::from_taus(t).map_err(|_| TreeError::TooLarge)?;
-                }
                 return Ok((d, circuits));
             }
             taus = next;
@@ -631,12 +382,22 @@ impl<'p> Tree<'p> {
 
     /// The circuit at this position.
     pub(crate) fn circuit(&self, position: usize) -> &Circuit {
-        &self.circuits[position]
+        self.keys[position].circuit()
     }
 
     /// The capacity of a claim-set tree's largest nodes and roots, or why this tree has none.
     fn capacity(&self) -> Result<Capacity, TreeError> {
         (self.design.claims.map(|c| c.capacity)).ok_or(TreeError::Semantics { claims: false })
+    }
+
+    /// Nothing, if a proof is at the rate of the tree's proofs.
+    fn check_rate(&self, p: &TreeProof) -> Result<(), TreeError> {
+        let expected = self.design.rate;
+        if p.rate == expected {
+            Ok(())
+        } else {
+            Err(TreeError::Rate { expected, got: p.rate })
+        }
     }
 
     /// Nothing, if this is a tree of outputs.
@@ -669,8 +430,8 @@ impl<'p> Tree<'p> {
             tables: &self.tables,
             union: None,
         };
-        let rows = info_span!("Build circuit").in_scope(|| self.design.first(&inputs));
-        self.prove_rows(rows, 0)
+        let rows = info_span!("Build circuit").in_scope(|| self.design.first_rows(&inputs));
+        self.prove_rows(rows)
     }
 
     /// The first level's witnesses of its leaves, each verified natively; `claims` gives a leaf's set's digest.
@@ -686,7 +447,7 @@ impl<'p> Tree<'p> {
                 got: leaves.len(),
             });
         }
-        let shape = LeafShape::new(*d.leaf.taus(), d.leaf.rate(), d.leaf.kind());
+        let shape = d.leaf.shape();
         let program = d.leaf.program();
         (leaves.iter().enumerate())
             .map(|(index, &Leaf { proof, output })| {
@@ -726,7 +487,7 @@ impl<'p> Tree<'p> {
                     statement,
                     proof: &c.proof,
                     openings,
-                    columns: &self.columns[position],
+                    columns: self.keys[position].fixed(),
                 })
             })
             .collect()
@@ -748,17 +509,15 @@ impl<'p> Tree<'p> {
         }
         let children: Vec<&TreeProof> = children.iter().collect();
         children.iter().try_for_each(|c| self.known(c).map(drop))?;
-        let statements: Vec<TreeStatement> = (children.iter())
-            .map(|c| TreeStatement::new(d.statement, c.words.clone()))
-            .collect();
+        let statements: Vec<TreeStatement> = (children.iter()).map(|c| c.statement(d.statement)).collect();
         let items = self.child_witnesses(SMALL, &children, &statements)?;
         let inputs = NodeInputs::Prove {
             items: &items,
             tables: &self.tables,
             union: None,
         };
-        let rows = info_span!("Build circuit").in_scope(|| d.node(&inputs, 1));
-        self.prove_rows(rows, 1)
+        let rows = info_span!("Build circuit").in_scope(|| d.node_rows(&inputs, 1));
+        self.prove_rows(rows)
     }
 
     /// Prove a first-level node of a claim-set tree over its leaves, in order, declaring `declare`, by default the
@@ -794,8 +553,8 @@ impl<'p> Tree<'p> {
             tables: &self.tables,
             union: Some(&union),
         };
-        let rows = info_span!("Build circuit").in_scope(|| self.design.first(&inputs));
-        let proof = self.prove_rows(rows, 0)?;
+        let rows = info_span!("Build circuit").in_scope(|| self.design.first_rows(&inputs));
+        let proof = self.prove_rows(rows)?;
         Ok(Aggregate { proof, claims })
     }
 
@@ -842,9 +601,7 @@ impl<'p> Tree<'p> {
             .map(|(&c, w)| w.as_ref().unwrap_or(c))
             .collect();
         let proofs: Vec<&TreeProof> = children.iter().map(|c| &c.proof).collect();
-        let statements: Vec<TreeStatement> = (proofs.iter())
-            .map(|c| TreeStatement::new(d.statement, c.words.clone()))
-            .collect();
+        let statements: Vec<TreeStatement> = (proofs.iter()).map(|c| c.statement(d.statement)).collect();
         let items = self.child_witnesses(SMALL, &proofs, &statements)?;
         if let Some(index) = (statements.iter().zip(&children)).position(|(s, c)| s.digest_words() != c.claims.digest())
         {
@@ -874,8 +631,8 @@ impl<'p> Tree<'p> {
                 tables: &self.tables,
                 union: Some(&union),
             };
-            let rows = info_span!("Build circuit").in_scope(|| d.node(&inputs, position));
-            let proof = self.prove_rows(rows, position)?;
+            let rows = info_span!("Build circuit").in_scope(|| d.node_rows(&inputs, position));
+            let proof = self.prove_rows(rows)?;
             return Ok(Aggregate { proof, claims });
         }
         Err(TreeError::Capacity)
@@ -885,7 +642,7 @@ impl<'p> Tree<'p> {
     fn wrap(&self, index: usize, child: &Aggregate) -> Result<Aggregate, TreeError> {
         let d = &self.design;
         let position = (d.place(SMALL, Level::Wrap)).expect("a tree of two tiers wraps");
-        let statements = [TreeStatement::new(d.statement, child.proof.words.clone())];
+        let statements = [child.proof.statement(d.statement)];
         let items = (self.child_witnesses(LARGE, &[&child.proof], &statements)).map_err(|e| match e {
             TreeError::Child { error, .. } => TreeError::Child { index, error },
             e => e,
@@ -898,8 +655,8 @@ impl<'p> Tree<'p> {
             tables: &self.tables,
             union: None,
         };
-        let rows = info_span!("Build circuit").in_scope(|| d.node(&inputs, position));
-        let proof = self.prove_rows(rows, position)?;
+        let rows = info_span!("Build circuit").in_scope(|| d.node_rows(&inputs, position));
+        let proof = self.prove_rows(rows)?;
         Ok(Aggregate {
             proof,
             claims: child.claims.clone(),
@@ -974,12 +731,7 @@ impl<'p> Tree<'p> {
     pub fn verify(&self, root: &TreeProof, outputs: &[Output]) -> Result<(), TreeError> {
         self.outputs()?;
         let d = &self.design;
-        if root.rate != d.rate {
-            return Err(TreeError::Rate {
-                expected: d.rate,
-                got: root.rate,
-            });
-        }
+        self.check_rate(root)?;
         let expected = self.shape.root_kind(outputs.len())?;
         if root.kind() != expected {
             return Err(TreeError::Kind {
@@ -990,7 +742,7 @@ impl<'p> Tree<'p> {
         }
         let position = self.known(root)?;
         self.read(root, position).map_err(TreeError::Root)?;
-        let statement = TreeStatement::new(d.statement, root.words.clone());
+        let statement = root.statement(d.statement);
         if statement.digest_words() != self.digest(outputs) {
             return Err(TreeError::Outputs);
         }
@@ -1010,16 +762,11 @@ impl<'p> Tree<'p> {
     pub fn verify_claims(&self, root: &TreeProof, claims: &ClaimSet) -> Result<(), TreeError> {
         let capacity = self.capacity()?;
         let d = &self.design;
-        if root.rate != d.rate {
-            return Err(TreeError::Rate {
-                expected: d.rate,
-                got: root.rate,
-            });
-        }
+        self.check_rate(root)?;
         let position = self.known(root)?;
         claims.check(capacity).map_err(TreeError::ClaimSet)?;
         self.read(root, position).map_err(TreeError::Root)?;
-        let statement = TreeStatement::new(d.statement, root.words.clone());
+        let statement = root.statement(d.statement);
         if statement.digest_words() != claims.digest() {
             return Err(TreeError::Claims);
         }
@@ -1041,40 +788,24 @@ impl<'p> Tree<'p> {
     ///
     /// The proof is of the tree's circuit at `position`.
     fn read(&self, p: &TreeProof, position: usize) -> Result<Vec<Openings>, VerifyError> {
-        let limbs: Vec<[u64; 4]> = p.words.iter().map(|w| [w.c0, w.c1, w.c2, 0]).collect();
-        self.circuit(position)
-            .verify_with(
-                &limbs,
-                &self.design.session,
-                self.design.rate,
-                &p.proof,
-                &self.columns[position],
-            )
+        self.keys[position]
+            .verify(&p.limbs(), &self.design.session(), self.design.rate, &p.proof)
             .map_err(Into::into)
     }
 
     /// Prove the rows of the circuit at `position`: its reduction, then its recursion proof.
-    fn prove_rows(&self, rows: NodeRows, position: usize) -> Result<TreeProof, TreeError> {
+    fn prove_rows(&self, rows: NodeRows) -> Result<TreeProof, TreeError> {
         let d = &self.design;
-        let reduction = rows.claim_values().prove(&d.session, &d.vars, &self.tables);
+        let position = rows.position();
+        let reduction = rows.claim_values().prove(&d.session(), &d.vars, &self.tables);
         let Finished {
             assignment, failures, ..
         } = info_span!("Reduce in rows").in_scope(|| rows.reduce(d, ProofSource::Proof(&reduction, &[])));
         if let Some(first) = failures.into_iter().next() {
             return Err(TreeError::Unsatisfied(first));
         }
-        let proof = (self.circuit(position))
-            .prove_with(&assignment, &d.session, d.rate, Some(&self.columns[position]))
-            .map_err(|_| TreeError::TooLarge)?;
-        let words = (assignment.statement().iter())
-            .map(|l| F192::new(l[0], l[1], l[2]))
-            .collect();
-        Ok(TreeProof {
-            circuit: d.code(position),
-            words,
-            proof,
-            rate: d.rate,
-        })
+        let proof = self.keys[position].prove(&assignment, &d.session(), d.rate);
+        Ok(TreeProof::new(d.code(position), &assignment, proof, d.rate))
     }
 
     /// Evaluate every claim a root's statement carries.
@@ -1109,23 +840,49 @@ impl<'p> Tree<'p> {
                 }))
             })
     }
+
+    /// What the circuit of one kind of node costs: of a claim-set tree's nodes, the one of the largest arity.
+    #[must_use]
+    pub fn stats(&self, kind: Kind) -> CircuitStats {
+        self.circuit_stats(match kind {
+            Kind::First => 0,
+            Kind::Node => self.design.places.len() - 1,
+        })
+    }
+
+    /// What the circuit at this position costs.
+    fn circuit_stats(&self, position: usize) -> CircuitStats {
+        // The circuit's rows per table, and the padded heights it is proven at.
+        let circuit = self.circuit(position);
+        let (rows, heights) = (circuit.row_counts(), circuit.heights());
+
+        // One entry per table of the recursion machine, in its order.
+        let tables = (Table::ALL.iter())
+            .map(|&table| TableStats {
+                name: table.name(),
+                rows: rows[table],
+                height_log: heights[table],
+            })
+            .collect();
+
+        // Invariant: building the tree refused any circuit that fits no commitment.
+        let committed = circuit.committed_words().expect("a tree's circuits fit one commitment");
+        CircuitStats { tables, committed }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cpu::Prover;
+    use crate::cpu::{DecodeError, Prover};
     use crate::rec::circuit::{Assignment, Builder, Kw};
-    use crate::rec::tree::claims::NodeClaims;
     use crate::rec::tree::design::NodeRows;
-    use crate::rec::tree::reduce::{self, DenseProver, DenseVars, MatrixProver, MatrixReduced};
-    use crate::rec::tree::statement::{Section, digest_halves_rows};
+    use crate::rec::tree::reduce::tests::{Forge, forged_reduction};
+    use crate::rec::tree::statement::Section;
     use crate::rv::Region;
     use crate::rv::asm::*;
     use crate::tables::TableId;
-    use fiat_shamir::arith::{Arith, Native};
-    use fiat_shamir::{LengthPrefixed, ProofTranscript, ProverState, SessionId};
-
+    use fiat_shamir::ProofTranscript;
     use std::sync::OnceLock;
     use zk::Randomness;
 
@@ -1337,7 +1094,7 @@ mod tests {
     // The reduction an honest prover proves, as its rows read it.
     fn honest_reduction(f: &Fixture, rows: &NodeRows) -> ProofTranscript {
         rows.claim_values()
-            .prove(&f.tree.design.session, &f.tree.design.vars, &f.tree.tables)
+            .prove(&f.tree.design.session(), &f.tree.design.vars, &f.tree.tables)
     }
 
     // The circuit a prover's rows build, at the nodes' heights.
@@ -1363,7 +1120,7 @@ mod tests {
                 set: [0; 4],
             })
             .collect();
-        let rows = d.first(&NodeInputs::Prove {
+        let rows = d.first_rows(&NodeInputs::Prove {
             items: &leaves,
             tables: &f.tree.tables,
             union: None,
@@ -1373,19 +1130,16 @@ mod tests {
             "the leaves build another circuit"
         );
 
-        let statements = f
-            .firsts
-            .each_ref()
-            .map(|p| TreeStatement::new(d.statement, p.words.clone()));
+        let statements = f.firsts.each_ref().map(|p| p.statement(d.statement));
         let items: Vec<ChildWitness<'_>> = (f.firsts.iter().zip(&statements))
             .map(|(p, statement)| ChildWitness {
                 statement,
                 proof: &p.proof,
                 openings: f.tree.read(p, 0).expect("an honest child"),
-                columns: &f.tree.columns[0],
+                columns: f.tree.keys[0].fixed(),
             })
             .collect();
-        let rows = d.node(
+        let rows = d.node_rows(
             &NodeInputs::Prove {
                 items: &items,
                 tables: &f.tree.tables,
@@ -1405,14 +1159,14 @@ mod tests {
         let items: Vec<[Kw; 4]> = outputs.iter().map(|o| o.map(|w| b.free_k(w))).collect();
         let digest = Kind::First.digest_rows(&mut b, &items);
         let mut words = vec![b.e_const(F192::ZERO)];
-        words.extend(digest_halves_rows(&mut b, digest));
+        words.extend(TreeStatement::digest_halves(&mut b, digest));
         words.extend(
             honest.words[tree.design.statement.range(Section::Digest).end..]
                 .iter()
                 .map(|&w| b.free_e(w)),
         );
         for w in words {
-            b.expose_e(w);
+            b.expose(w);
         }
         let Finished {
             mut circuit,
@@ -1435,32 +1189,33 @@ mod tests {
         let words: Vec<F192> = (assignment.statement().iter())
             .map(|l| F192::new(l[0], l[1], l[2]))
             .collect();
+        let fake = CircuitKey::new(fake).expect("the fake fits");
         let child = TreeProof {
             circuit: 0,
             words,
-            proof: fake.prove(&assignment, &d.session, d.rate).expect("the fake fits"),
+            proof: fake.prove(&assignment, &d.session(), d.rate),
             rate: d.rate,
         };
         assert!(
             f.tree.read(&child, 0).is_err(),
             "natively, the fake is no first-level node"
         );
-        let limbs: Vec<[u64; 4]> = child.words.iter().map(|w| [w.c0, w.c1, w.c2, 0]).collect();
+        let limbs = child.limbs();
         let openings = fake
-            .verify(&limbs, &d.session, d.rate, &child.proof)
+            .verify(&limbs, &d.session(), d.rate, &child.proof)
             .expect("the fake proves its own circuit");
 
         // The prover hands the rows the fake's fixed columns, and its fixed polynomial the fake's half.
-        let columns = FixedColumns::of(&fake, &d.tiers[SMALL].taus);
+        let columns = fake.fixed();
         let mut tables = f.tree.tables.clone();
-        tables.0[DensePoly::Fixed as usize] = d.tiers[SMALL].fixed.polynomial(&[&columns, &f.tree.columns[1]]);
+        tables.0[DensePoly::Fixed as usize] = d.tiers[SMALL].fixed.polynomial(&[columns, f.tree.keys[1].fixed()]);
         let statement = TreeStatement::new(d.statement, child.words);
         let items: Vec<ChildWitness<'_>> = (0..2)
             .map(|_| ChildWitness {
                 statement: &statement,
                 proof: &child.proof,
                 openings: openings.clone(),
-                columns: &columns,
+                columns,
             })
             .collect();
         let inputs = |tables| NodeInputs::Prove {
@@ -1475,7 +1230,7 @@ mod tests {
             .collect();
 
         // An honest reduction over the tree's polynomials fails on the fake's hints.
-        let honest = f.tree.prove_rows(d.node(&inputs(&f.tree.tables), 1), 1);
+        let honest = f.tree.prove_rows(d.node_rows(&inputs(&f.tree.tables), 1));
         assert!(
             matches!(&honest, Err(TreeError::Unsatisfied(check)) if check.scope()[0] == "reduction"),
             "{:?}",
@@ -1483,100 +1238,23 @@ mod tests {
         );
 
         // Reduced over the forged polynomial, every row holds and the root's proof verifies.
-        let rows = d.node(&inputs(&tables), 1);
-        let reduction = rows.claim_values().prove(&d.session, &d.vars, &tables);
+        let rows = d.node_rows(&inputs(&tables), 1);
+        let reduction = rows.claim_values().prove(&d.session(), &d.vars, &tables);
         let Finished {
             assignment, failures, ..
         } = rows.reduce(d, ProofSource::Proof(&reduction, &[]));
         assert!(failures.is_empty(), "{failures:?}");
-        let root = TreeProof {
-            circuit: 1,
-            words: (assignment.statement().iter())
-                .map(|l| F192::new(l[0], l[1], l[2]))
-                .collect(),
-            proof: (f.tree.circuit(1).prove(&assignment, &d.session, d.rate)).expect("the node fits"),
-            rate: d.rate,
-        };
+        let root = TreeProof::new(
+            1,
+            &assignment,
+            f.tree.keys[1].prove(&assignment, &d.session(), d.rate),
+            d.rate,
+        );
         f.tree.read(&root, 1).expect("the root's recursion proof verifies");
         assert_eq!(
             f.tree.verify(&root, &outputs),
             Err(TreeError::Claim(FalseClaim::Dense(DensePoly::Fixed)))
         );
-    }
-
-    // Which of a reduction's outputs a forging prover moves along its final identity.
-    #[derive(Clone, Copy, Debug)]
-    enum Forge {
-        Dense,
-        Matrix,
-    }
-
-    // Move the first two values against each other along `sum_i weights_i values_i`, which stays as it was.
-    fn shift(values: &mut [F192], weights: &[F192]) {
-        let delta = F192::new(1, 2, 3);
-        values[0] += delta;
-        values[1] += delta * weights[0] * weights[1].inv();
-    }
-
-    // The honest reduction of `claims`, its dense or its matrix outputs moved along their final identity.
-    fn forged_reduction(
-        tree: &SessionId,
-        vars: &DenseVars,
-        tables: &DenseTables,
-        claims: &NodeClaims<F192>,
-        forge: Forge,
-    ) -> ProofTranscript {
-        let mut ps = ProverState::new(&reduce::session(tree), &LengthPrefixed(&claims.bound));
-
-        let theta = ps.verifier_message();
-        let mut dense = DenseProver::new(vars, tables, &claims.dense, theta);
-        let point: Vec<F192> = (0..dense.rounds())
-            .map(|i| {
-                ps.prover_messages(&dense.message());
-                let r = ps.verifier_message();
-                dense.bind(i, r);
-                r
-            })
-            .collect();
-        let mut values = dense.finals();
-        if matches!(forge, Forge::Dense) {
-            let n_terms = claims.dense.iter().map(|c| c.terms.len()).sum();
-            let powers = Native.powers(theta, n_terms);
-            let weights: Vec<F192> = (vars.final_weights(&mut Native, &claims.dense, &powers, &point))
-                .into_iter()
-                .flatten()
-                .collect();
-            shift(&mut values, &weights);
-        }
-        ps.prover_messages(&values);
-
-        let theta = ps.verifier_message();
-        let mut rows = MatrixProver::new(&claims.matrices, theta);
-        let r: Vec<F192> = (0..CircuitId::MAX_K_LOG)
-            .map(|i| {
-                ps.prover_messages(&rows.message());
-                let x = ps.verifier_message();
-                rows.bind(i, x);
-                x
-            })
-            .collect();
-        let mut cols = rows.columns(&claims.matrices, &r);
-        let s: Vec<F192> = (0..CircuitId::MAX_K_LOG)
-            .map(|i| {
-                ps.prover_messages(&cols.message());
-                let x = ps.verifier_message();
-                cols.bind(i, x);
-                x
-            })
-            .collect();
-        let mut values = cols.finals();
-        if matches!(forge, Forge::Matrix) {
-            let powers = Native.powers(theta, claims.matrices.len());
-            let weights = MatrixReduced::final_weights(&mut Native, &claims.matrices, &powers, &r, &s);
-            shift(&mut values, weights.as_flattened());
-        }
-        ps.prover_messages(&values);
-        ps.into_proof()
     }
 
     // A first-level node whose reduction a cheating prover forged: its rows hold, its claims are false.
@@ -1590,24 +1268,22 @@ mod tests {
                 set: [0; 4],
             })
             .collect();
-        let rows = d.first(&NodeInputs::Prove {
+        let rows = d.first_rows(&NodeInputs::Prove {
             items: &items,
             tables: &f.tree.tables,
             union: None,
         });
-        let reduction = forged_reduction(&d.session, &d.vars, &f.tree.tables, &rows.claim_values(), forge);
+        let reduction = forged_reduction(&d.session(), &d.vars, &f.tree.tables, &rows.claim_values(), forge);
         let Finished {
             assignment, failures, ..
         } = rows.reduce(d, ProofSource::Proof(&reduction, &[]));
         assert!(failures.is_empty(), "{forge:?}: {failures:?}");
-        TreeProof {
-            circuit: 0,
-            words: (assignment.statement().iter())
-                .map(|l| F192::new(l[0], l[1], l[2]))
-                .collect(),
-            proof: (f.tree.circuit(0).prove(&assignment, &d.session, d.rate)).expect("the node fits"),
-            rate: d.rate,
-        }
+        TreeProof::new(
+            0,
+            &assignment,
+            f.tree.keys[0].prove(&assignment, &d.session(), d.rate),
+            d.rate,
+        )
     }
 
     // Reduced claims that satisfy every row and are false: the root refuses them, and an honest node cannot carry them.
@@ -1710,7 +1386,7 @@ mod tests {
             [0..1, 1..3, 3..24, 24..27, 27..41, 41..55, 55..97]
         );
         assert_eq!(
-            d.session_with(b"leanvm-tree-12").0,
+            d.session_under(b"leanvm-tree-12").0,
             [
                 131, 35, 57, 135, 111, 161, 159, 65, 198, 173, 203, 59, 29, 190, 76, 72, 162, 204, 82, 150, 192, 101,
                 73, 98, 94, 12, 195, 130, 18, 239, 205, 34
@@ -1766,7 +1442,7 @@ mod tests {
         use crate::rec::circuit::Builder;
         use crate::rec::tree::design::{ChildWitness, LARGE, Level, NodeInputs, Place, SMALL};
         use crate::rec::tree::statement::Section;
-        use crate::rec::tree::union::UnionFill;
+        use crate::rec::tree::union::tests::{absent_at, unbacked};
         use crate::rec::tree::*;
         use crate::rv::Region;
         use crate::rv::asm::*;
@@ -1895,7 +1571,8 @@ mod tests {
             let nodes = [Level::First, Level::Node(2), Level::Node(3)];
             let places: Vec<Place> = nodes.map(|level| Place { tier: SMALL, level }).into();
             assert_eq!(f.tree.design.places, places);
-            assert!(f.tree.node_stats(3).is_some() && f.tree.node_stats(4).is_none());
+            let d = &f.tree.design;
+            assert!(d.place(SMALL, Level::Node(3)).is_some() && d.place(SMALL, Level::Node(4)).is_none());
         }
 
         #[test]
@@ -1995,21 +1672,19 @@ mod tests {
             let mut declared = f.pair.claims.clone();
             declared.groups[0].members.push(member(99));
             let proofs = [&f.firsts[0].proof, &f.firsts[1].proof];
-            let statements: Vec<TreeStatement> = (proofs.iter())
-                .map(|p| TreeStatement::new(d.statement, p.words.clone()))
-                .collect();
+            let statements: Vec<TreeStatement> = (proofs.iter()).map(|p| p.statement(d.statement)).collect();
             let items = f
                 .tree
                 .child_witnesses(SMALL, &proofs, &statements)
                 .expect("honest children");
             let shape = d.union_shape(kind).expect("a claim-set tree");
-            let fill = UnionFill::unbacked(&shape, &[&f.firsts[0].claims, &f.firsts[1].claims], &declared);
+            let fill = unbacked(&shape, &[&f.firsts[0].claims, &f.firsts[1].claims], &declared);
             let inputs = NodeInputs::Prove {
                 items: &items,
                 tables: &f.tree.tables,
                 union: Some(&fill),
             };
-            let forged = f.tree.prove_rows(d.node(&inputs, kind), kind);
+            let forged = f.tree.prove_rows(d.node_rows(&inputs, kind));
             assert!(
                 matches!(&forged, Err(TreeError::Unsatisfied(check)) if check.scope().iter().any(|s| s == "coverage")),
                 "{forged:?}"
@@ -2219,6 +1894,11 @@ mod tests {
             pair: Aggregate,
         }
 
+        // Whether a proof is of a claim-set tree's large tier.
+        fn is_large(tree: &Tree<'_>, proof: &TreeProof) -> bool {
+            tree.known(proof).is_ok_and(|p| tree.design.places[p].tier == LARGE)
+        }
+
         fn tiered_tree() -> Tree<'static> {
             let leaf = LeafShape::of(&fixture().leaves[0].0).expect("a canonical announcement");
             let claims = ClaimShape {
@@ -2262,8 +1942,9 @@ mod tests {
                     large(Level::Node(3)),
                 ]
             );
-            assert!(t.tree.small_node_stats(3).is_none() && t.tree.wrap_stats().is_some());
-            assert!(t.tree.node_stats(3).is_some() && t.tree.node_stats(2).is_none());
+            let d = &t.tree.design;
+            assert!(d.place(SMALL, Level::Node(3)).is_none() && d.place(SMALL, Level::Wrap).is_some());
+            assert!(d.place(LARGE, Level::Node(3)).is_some() && d.place(LARGE, Level::Node(2)).is_none());
             // Each tier's circuits are at its own heights.
             for (p, place) in d.places.iter().enumerate() {
                 assert_eq!(t.tree.circuit(p).heights(), d.tiers[place.tier].taus, "{place:?}");
@@ -2278,23 +1959,23 @@ mod tests {
         fn small_unions_stay_small_and_large_proofs_are_wrapped_to_combine() {
             let (t, f) = (tiered(), fixture());
             for first in &t.firsts {
-                assert!(!t.tree.is_large(&first.proof));
+                assert!(!is_large(&t.tree, &first.proof));
                 (t.tree)
                     .verify_claims(&first.proof, &first.claims)
                     .expect("a small root");
             }
-            assert!(t.tree.is_large(&t.pair.proof));
+            assert!(is_large(&t.tree, &t.pair.proof));
             assert_eq!(t.pair.claims, union(&[&f.sets[0], &f.sets[1]]));
             (t.tree)
                 .verify_claims(&t.pair.proof, &t.pair.claims)
                 .expect("a large root");
             let twice = (t.tree.aggregate(&[&t.firsts[2], &t.firsts[2]], None)).expect("duplicates");
-            assert!(!t.tree.is_large(&twice.proof));
+            assert!(!is_large(&t.tree, &twice.proof));
             assert_eq!(twice.claims, t.firsts[2].claims);
 
             // Three children, one large: wrapped, then the large tier's node of three.
             let all = (t.tree.aggregate(&[&t.pair, &t.firsts[2], &t.firsts[0]], None)).expect("a large child");
-            assert!(t.tree.is_large(&all.proof));
+            assert!(is_large(&t.tree, &all.proof));
             assert_eq!(all.claims, union(&[&f.sets[0], &f.sets[1], &f.sets[2]]));
             (t.tree)
                 .verify_claims(&all.proof, &all.claims)
@@ -2303,7 +1984,7 @@ mod tests {
             // The large pair narrowed to what the small tier holds: wrapped, then a small node; and not widened again.
             let part = set(vec![group(1, 9, &[1, 3, 4])]);
             let narrowed = (t.tree.aggregate(&[&t.pair], Some(&part))).expect("a covered declaration");
-            assert!(!t.tree.is_large(&narrowed.proof));
+            assert!(!is_large(&t.tree, &narrowed.proof));
             t.tree.verify_claims(&narrowed.proof, &part).expect("a narrowed root");
             assert!(matches!(
                 t.tree.aggregate(&[&narrowed], Some(&t.pair.claims)),
@@ -2331,7 +2012,7 @@ mod tests {
                 Err(TreeError::ChildClaims { index: 1 })
             );
             // A large proof is no child of a node's rows, which verify small ones.
-            let honest = [TreeStatement::new(d.statement, t.pair.proof.words.clone())];
+            let honest = [t.pair.proof.statement(d.statement)];
             assert_eq!(
                 (t.tree.child_witnesses(SMALL, &[&t.pair.proof], &honest)).err(),
                 Some(TreeError::Circuit(t.pair.proof.circuit))
@@ -2355,7 +2036,7 @@ mod tests {
                 tables: &t.tree.tables,
                 union: None,
             };
-            let wrapped = t.tree.prove_rows(d.node(&inputs, position), position);
+            let wrapped = t.tree.prove_rows(d.node_rows(&inputs, position));
             assert!(matches!(wrapped, Err(TreeError::Unsatisfied(_))), "{wrapped:?}");
         }
 
@@ -2380,13 +2061,13 @@ mod tests {
             // A lone child whose set is past the small tier's (a large proof, wrapped) is taken by the large node, the rest of
             // its places absent.
             let lone = (t.tree.aggregate(&[&t.pair], None)).expect("a lone child");
-            assert!(t.tree.is_large(&lone.proof));
+            assert!(is_large(&t.tree, &lone.proof));
             assert_eq!(lone.claims, t.pair.claims);
             (t.tree)
                 .verify_claims(&lone.proof, &lone.claims)
                 .expect("a large root of one child");
             let big = (t.tree.aggregate(&[&first, &t.pair], None)).expect("nine claims within the tree's capacity");
-            assert!(t.tree.is_large(&big.proof));
+            assert!(is_large(&t.tree, &big.proof));
             assert_eq!(t.tree.aggregate(&[&big, &t.firsts[2]], None), Err(TreeError::Capacity));
         }
 
@@ -2460,7 +2141,7 @@ mod tests {
                     small: Some(small),
                 };
                 let other = Tree::new(program(), shape(leaf, Some(claims))).expect("a tree of two tiers");
-                assert_ne!(other.design.session, t.tree.design.session, "{small:?}");
+                assert_ne!(other.design.session(), t.tree.design.session(), "{small:?}");
                 for ours in [&t.firsts[0], &t.pair] {
                     assert!(
                         matches!(
@@ -2489,9 +2170,7 @@ mod tests {
             } else {
                 SMALL
             };
-            let statements: Vec<TreeStatement> = (proofs.iter())
-                .map(|p| TreeStatement::new(d.statement, p.words.clone()))
-                .collect();
+            let statements: Vec<TreeStatement> = (proofs.iter()).map(|p| p.statement(d.statement)).collect();
             let honest = (t.tree.child_witnesses(tier, proofs, &statements)).expect("honest children");
             let mut words = proofs[0].words.clone();
             words[d.statement.range(Section::Kind).start] = F192::new(kind as u64, 0, 0);
@@ -2510,7 +2189,7 @@ mod tests {
                 tables: &t.tree.tables,
                 union: union.as_ref(),
             };
-            let rows = t.tree.prove_rows(d.node(&inputs, position), position);
+            let rows = t.tree.prove_rows(d.node_rows(&inputs, position));
             assert!(
                 matches!(&rows, Err(TreeError::Unsatisfied(check)) if check.scope().iter().any(|s| s == "child 0 kind")),
                 "{:?} over kind {kind}: {rows:?}",
@@ -2553,21 +2232,19 @@ mod tests {
             let d = &t.tree.design;
             let large = d.place(LARGE, Level::Node(3)).expect("the large node");
             let proofs = [&t.firsts[0].proof, &t.firsts[1].proof, &t.firsts[0].proof];
-            let statements: Vec<TreeStatement> = (proofs.iter())
-                .map(|p| TreeStatement::new(d.statement, p.words.clone()))
-                .collect();
+            let statements: Vec<TreeStatement> = (proofs.iter()).map(|p| p.statement(d.statement)).collect();
             let items = (t.tree.child_witnesses(SMALL, &proofs, &statements)).expect("honest children");
             let (fill, _) = (t.tree)
                 .fill(large, &[&t.firsts[0].claims, &t.firsts[1].claims], None)
                 .expect("the pair's union");
             // The second child's run left as it was, its set read as the empty set's.
-            let dropped = fill.absent_at(1);
+            let dropped = absent_at(fill, 1);
             let inputs = NodeInputs::Prove {
                 items: &items,
                 tables: &t.tree.tables,
                 union: Some(&dropped),
             };
-            let forged = t.tree.prove_rows(d.node(&inputs, large), large);
+            let forged = t.tree.prove_rows(d.node_rows(&inputs, large));
             assert!(
                 matches!(&forged, Err(TreeError::Unsatisfied(check)) if check.scope().iter().any(|s| s == "children's pool")),
                 "{forged:?}"
@@ -2598,7 +2275,7 @@ mod tests {
                 claims[wide - rest] = wide_value;
                 words.extend(claims.iter().map(|&w| b.free_e(w)));
                 for w in words {
-                    b.expose_e(w);
+                    b.expose(w);
                 }
                 let Finished {
                     mut circuit,
@@ -2609,7 +2286,7 @@ mod tests {
                 circuit.floor = taus;
                 (circuit, assignment)
             };
-            let columns = FixedColumns::of(&fake(F192::ZERO).0, &taus);
+            let columns = FixedColumns::new(&fake(F192::ZERO).0);
             let mut tables = t.tree.tables.clone();
             tables.0[DensePoly::Wide as usize] = d.tiers[LARGE].fixed.polynomial(&[&columns]);
             let point = &t.pair.proof.words[d.statement.range(Section::DensePoint)];
@@ -2619,22 +2296,21 @@ mod tests {
             );
             let (circuit, assignment) = fake(value);
             assert_eq!(circuit.heights(), taus, "the fake has the large tier's heights");
-            let child = TreeProof {
-                circuit: d.code(large),
-                words: (assignment.statement().iter())
-                    .map(|l| F192::new(l[0], l[1], l[2]))
-                    .collect(),
-                proof: (circuit.prove(&assignment, &d.session, d.rate)).expect("the fake fits"),
-                rate: d.rate,
-            };
+            let circuit = CircuitKey::new(circuit).expect("the fake fits");
+            let child = TreeProof::new(
+                d.code(large),
+                &assignment,
+                circuit.prove(&assignment, &d.session(), d.rate),
+                d.rate,
+            );
             assert!(
                 t.tree.read(&child, large).is_err(),
                 "natively, the fake is no large node"
             );
-            let limbs: Vec<[u64; 4]> = child.words.iter().map(|w| [w.c0, w.c1, w.c2, 0]).collect();
+            let limbs = child.limbs();
             let openings =
-                (circuit.verify(&limbs, &d.session, d.rate, &child.proof)).expect("the fake proves its own circuit");
-            let statement = TreeStatement::new(d.statement, child.words.clone());
+                (circuit.verify(&limbs, &d.session(), d.rate, &child.proof)).expect("the fake proves its own circuit");
+            let statement = child.statement(d.statement);
             let items = [ChildWitness {
                 statement: &statement,
                 proof: &child.proof,
@@ -2648,27 +2324,25 @@ mod tests {
             };
 
             // An honest reduction over the tree's polynomials fails on the fake's hints.
-            let honest = t.tree.prove_rows(d.node(&inputs(&t.tree.tables), wrap), wrap);
+            let honest = t.tree.prove_rows(d.node_rows(&inputs(&t.tree.tables), wrap));
             assert!(
                 matches!(&honest, Err(TreeError::Unsatisfied(check)) if check.scope()[0] == "reduction"),
                 "{honest:?}"
             );
 
             // Reduced over the forged polynomial, every row holds and the wrap's proof verifies, stating the forged set.
-            let rows = d.node(&inputs(&tables), wrap);
-            let reduction = rows.claim_values().prove(&d.session, &d.vars, &tables);
+            let rows = d.node_rows(&inputs(&tables), wrap);
+            let reduction = rows.claim_values().prove(&d.session(), &d.vars, &tables);
             let Finished {
                 assignment, failures, ..
             } = rows.reduce(d, ProofSource::Proof(&reduction, &[]));
             assert!(failures.is_empty(), "{failures:?}");
-            let root = TreeProof {
-                circuit: d.code(wrap),
-                words: (assignment.statement().iter())
-                    .map(|l| F192::new(l[0], l[1], l[2]))
-                    .collect(),
-                proof: (t.tree.circuit(wrap).prove(&assignment, &d.session, d.rate)).expect("the wrap fits"),
-                rate: d.rate,
-            };
+            let root = TreeProof::new(
+                d.code(wrap),
+                &assignment,
+                t.tree.keys[wrap].prove(&assignment, &d.session(), d.rate),
+                d.rate,
+            );
             t.tree.read(&root, wrap).expect("the wrap's recursion proof verifies");
             assert_eq!(
                 t.tree.verify_claims(&root, &forged_set),
@@ -2723,7 +2397,7 @@ mod tests {
                 [0..1, 1..3, 3..26, 26..29, 29..43, 43..57, 57..99]
             );
             assert_eq!(
-                d.session_with(b"leanvm-tree-12").0,
+                d.session_under(b"leanvm-tree-12").0,
                 [
                     63, 98, 217, 38, 13, 142, 156, 140, 68, 244, 21, 118, 140, 239, 62, 3, 236, 119, 216, 49, 83, 51,
                     42, 33, 6, 32, 202, 209, 96, 204, 87, 245

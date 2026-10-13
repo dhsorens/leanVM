@@ -61,10 +61,10 @@ impl SlotKey {
         F64(self.0)
     }
 
-    /// A slot's keys down its rows, as a column: the key at row `z` is row zero's XOR `z`.
-    const fn column(table: Table, slot: usize) -> Coord {
+    /// The keys of this key's slot down its rows, as a column: the key at row `z` is row zero's XOR `z`.
+    const fn column(self) -> Coord {
         Coord::IntIndex {
-            base: Self::new(table, slot, 0).to_f64(),
+            base: F64(self.0 & !(u32::MAX as u64)),
             shift: 0,
         }
     }
@@ -102,7 +102,8 @@ impl BusBlocks {
                 owned => Block::table(owned as usize, tau, coords),
             }
         };
-        self.pull.push(block(SlotKey::column(table, slot), limbs.clone()));
+        self.pull
+            .push(block(SlotKey::new(table, slot, 0).column(), limbs.clone()));
         self.push.push(block(Coord::Public(next), limbs));
     }
 
@@ -180,6 +181,6 @@ impl<A: Arith> Residual<A> for TableResidual<'_, A::E> {
 impl Summand for TableSummand {
     #[inline(always)]
     fn eval<V: Subfield>(&self, cols: &[V], quadratic: bool) -> F192 {
-        V::reduce(self.0.eval_unreduced(cols, quadratic))
+        self.0.eval_unreduced(cols, quadratic).reduce()
     }
 }

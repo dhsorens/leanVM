@@ -2,10 +2,12 @@
 //! The base field `K = GF(2)[x] / (x^64 + x^4 + x^3 + x + 1)`, in which `x` has order `2^64 - 1`.
 //!
 //! A product is one carry-less 64x64 multiplication followed by a reduction.
-//! The reduction folds the high word back with shifts and XORs ([`reduce`]), except in the scalar products
-//! (`x86_64::mul`, `aarch64::mul_shift_tail`), which fold it with two more carry-less multiplications by `0x1B`
-//! and so never leave the vector register.
+//!
+//! - The reduction folds the high word back with shifts and XORs.
+//! - The scalar product folds it with two more carry-less multiplications by `0x1B` instead.
+//! - That product so never leaves the vector register.
 
+use core::iter::Sum;
 use core::ops::{Add, AddAssign, Mul, MulAssign};
 use serde::{Deserialize, Serialize};
 
@@ -103,7 +105,7 @@ impl F64 {
     }
 }
 
-#[allow(clippy::suspicious_arithmetic_impl)]
+#[expect(clippy::suspicious_arithmetic_impl, reason = "addition in characteristic 2 is XOR")]
 impl Add for F64 {
     type Output = Self;
     #[inline]
@@ -112,7 +114,14 @@ impl Add for F64 {
     }
 }
 
-#[allow(clippy::suspicious_op_assign_impl)]
+impl Sum for F64 {
+    #[inline]
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::ZERO, Add::add)
+    }
+}
+
+#[expect(clippy::suspicious_op_assign_impl, reason = "addition in characteristic 2 is XOR")]
 impl AddAssign for F64 {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
@@ -127,7 +136,7 @@ impl Mul for F64 {
         #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
         {
             // SAFETY: aes target feature is enabled at compile time.
-            unsafe { aarch64::mul_shift_tail(self, rhs) }
+            unsafe { aarch64::mul_pmull(self, rhs) }
         }
         #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
         {
@@ -184,8 +193,11 @@ pub fn mul_wide(a: u64, b: u64) -> u128 {
 }
 
 /// The carry-less square of a 64-bit polynomial: bit `i` moves to bit `2i`.
+///
+/// On aarch64 with PMULL a square is a product instead, which stays in the vector register.
+#[cfg(not(all(target_arch = "aarch64", target_feature = "aes")))]
 #[inline]
-pub fn square_wide(a: u64) -> u128 {
+pub(crate) fn square_wide(a: u64) -> u128 {
     #[cfg(all(target_arch = "x86_64", target_feature = "bmi2"))]
     {
         // SAFETY: bmi2 is enabled at compile time.
@@ -294,18 +306,18 @@ pub mod aarch64 {
         }
     }
 
-    /// The default `Mul` kernel on aarch64. 3-PMULL multiply: product, then two
-    /// PMULL-by-0x1B folds, the second taking the first's ≤4-bit overflow
-    /// exactly (`ov·0x1B` fits in 8 bits). The shift-XOR tail this replaced was
-    /// chosen on the premise that the vector pipes were PMULL-saturated and the
-    /// scalar ports free; PMULL retires at about the rate `eor` does here, so
-    /// the extra product costs less than the lane extraction it removes.
+    /// One field product in three PMULLs: the product, then two folds of its high word by `0x1B`.
+    ///
+    /// The second fold takes the first's overflow exactly, since four bits times `0x1B` fit in eight.
+    ///
+    /// A shift-XOR fold would move the high word to integer registers and back, which costs more here.
     ///
     /// # Safety
-    /// Requires the `aes` target feature; see [`pmull`].
+    ///
+    /// Requires the `aes` target feature.
     #[inline]
     #[target_feature(enable = "aes")]
-    pub unsafe fn mul_shift_tail(a: F64, b: F64) -> F64 {
+    pub(crate) unsafe fn mul_pmull(a: F64, b: F64) -> F64 {
         // SAFETY: function carries the aes target feature.
         unsafe {
             let r = vdupq_n_u64(R64);
@@ -319,7 +331,7 @@ pub mod aarch64 {
 
 /// The x86-64 products.
 #[cfg(target_arch = "x86_64")]
-pub mod x86_64 {
+mod x86_64 {
     use super::R64;
     use core::arch::x86_64::*;
 
@@ -367,6 +379,7 @@ pub mod x86_64 {
     /// # Safety
     ///
     /// Requires the `bmi2` target feature.
+    #[cfg(target_feature = "bmi2")]
     #[inline]
     #[target_feature(enable = "bmi2")]
     pub unsafe fn spread(a: u64) -> u128 {
@@ -445,8 +458,10 @@ mod tests {
             assert_eq!(reduce(software::clmul(a, b)), want);
             // The widening product is the carry-less product on every backend.
             assert_eq!(mul_wide(a, b), software::clmul(a, b));
-            // The bit spread is the carry-less square, and squaring is the self-product.
+            // The bit spread is the carry-less square, where a square uses it.
+            #[cfg(not(all(target_arch = "aarch64", target_feature = "aes")))]
             assert_eq!(square_wide(a), software::clmul(a, a));
+            // Squaring is the self-product.
             assert_eq!(F64(a).square(), F64(reference_mul(a, a)));
         }
     }
@@ -462,7 +477,7 @@ mod tests {
         for (a, b) in random.chain(corners) {
             // SAFETY: aes target feature is enabled at compile time.
             unsafe {
-                assert_eq!(aarch64::mul_shift_tail(F64(a), F64(b)).0, reference_mul(a, b));
+                assert_eq!(aarch64::mul_pmull(F64(a), F64(b)).0, reference_mul(a, b));
                 // The pair reduction takes two wide products and returns both reduced, in lane order:
                 //
                 //     [a * b, b * b]  ->  lane 0 = a * b,  lane 1 = b * b

@@ -33,10 +33,10 @@
 //! are no rounds in which no table has joined.
 
 use crate::PAR_THRESHOLD;
-use fiat_shamir::arith::RoundPolynomial;
+use fiat_shamir::arith::RoundWeight;
 use fiat_shamir::arith::{Arith, Verifier};
 use fiat_shamir::{ProverState, TranscriptError, VerifierState};
-use parallel::Chunks;
+use parallel::ChunkView;
 use primitives::field::{F64, F192, F192Unreduced, Subfield, padded_width};
 use primitives::multilinear::{SplitEq, eq_table, poly_eval, shrink_eq_high};
 use std::ops::Deref;
@@ -169,7 +169,7 @@ impl BitColumns {
             return Vec::new();
         }
         let eq = SplitEq::with_high_vars(point, point.len() / 2);
-        let low = eq.low_log();
+        let low = eq.low_log;
         self.fields
             .iter()
             .flat_map(|f| {
@@ -462,7 +462,7 @@ fn prove_with<S: Summand>(
         }
         // Bind the current message before sampling the challenge used by its fold.
         let h = round_polynomial(msg, zeta[m], claim, u);
-        RoundPolynomial { coeffs: h }.send(ps, false);
+        ps.send_round(&h, RoundWeight::Plain);
         let rk = ps.verifier_message();
         claim = poly_eval(&h, rk);
         chi[m] = rk;
@@ -557,8 +557,8 @@ fn fold_columns_and_message<T: Subfield + Into<F192>, C: Deref<Target = [T]> + S
     }
     let width = padded_width(ncols);
     let (lo, hi) = out.split_at_mut(pairs * ncols);
-    let lo = Chunks::new(lo, BLOCK * ncols);
-    let hi = Chunks::new(hi, BLOCK * ncols);
+    let lo = ChunkView::new(lo, BLOCK * ncols);
+    let hi = ChunkView::new(hi, BLOCK * ncols);
     let message = folded_message(ncols, eqr, summand, at_one, |start, rows, a, b| {
         for (c, col) in cols.iter().enumerate() {
             let at = |offset: usize| &col[start + offset..start + offset + rows];
@@ -607,7 +607,7 @@ fn fold_rows_and_message(
     let (left, right) = table.split_at_mut(half * ncols);
     let (q0, q1) = left.split_at_mut(pairs * ncols);
     let (q2, q3) = right.split_at_mut(pairs * ncols);
-    let [q0, q1, q2, q3] = [q0, q1, q2, q3].map(|q| Chunks::new(q, BLOCK * ncols));
+    let [q0, q1, q2, q3] = [q0, q1, q2, q3].map(|q| ChunkView::new(q, BLOCK * ncols));
     let message = folded_message(ncols, eqr, summand, at_one, |start, rows, a, b| {
         let k = start / BLOCK;
         // SAFETY: the task folding rows `start..` owns block `k` of every quarter.
@@ -710,7 +710,7 @@ pub fn verify<V: Verifier, S: Residual<V>>(
     for j in 0..n {
         let m = n - 1 - j;
         // The running claim fixes the linear coefficient.
-        let h = RoundPolynomial::read(v, 4, claim, None)?.coeffs;
+        let h = v.read_round(4, claim, None)?;
         let rk = v.verifier_message();
         chi[m] = rk;
         claim = v.poly_eval(&h, rk);
@@ -751,7 +751,7 @@ mod rows {
 
     use super::Summand;
     use crate::PAR_THRESHOLD;
-    use parallel::Chunks;
+    use parallel::ChunkView;
     use primitives::field::{F192, F192Unreduced, Subfield};
     use std::mem::MaybeUninit;
     use std::ops::Deref;
@@ -853,8 +853,8 @@ mod rows {
         let pairs = half / 2;
         let interp = |a: T, b: T| a.into() + (a + b).mul_e(rk);
         let (lo, hi) = out.split_at_mut(pairs * ncols);
-        let lo = Chunks::new(lo, ncols);
-        let hi = Chunks::new(hi, ncols);
+        let lo = ChunkView::new(lo, ncols);
+        let hi = ChunkView::new(hi, ncols);
         folded_message(ncols, eqr, summand, at_one, |i, a, b| {
             for (c, col) in cols.iter().enumerate() {
                 a[c] = interp(col[i], col[i + half]);
@@ -883,10 +883,10 @@ mod rows {
         let (left, right) = table.split_at_mut(half * ncols);
         let (q0, q1) = left.split_at_mut(pairs * ncols);
         let (q2, q3) = right.split_at_mut(pairs * ncols);
-        let q0 = Chunks::new(q0, ncols);
-        let q1 = Chunks::new(q1, ncols);
-        let q2 = Chunks::new(q2, ncols);
-        let q3 = Chunks::new(q3, ncols);
+        let q0 = ChunkView::new(q0, ncols);
+        let q1 = ChunkView::new(q1, ncols);
+        let q2 = ChunkView::new(q2, ncols);
+        let q3 = ChunkView::new(q3, ncols);
         folded_message(ncols, eqr, summand, at_one, |i, a, b| {
             // SAFETY: task i exclusively borrows row i in each disjoint quarter exactly once.
             let (lo, hi, upper_lo, upper_hi) = unsafe { (q0.get(i), q1.get(i), q2.get(i), q3.get(i)) };
@@ -905,7 +905,6 @@ mod rows {
 mod tests {
     use super::*;
     use fiat_shamir::{ProofTranscript, SessionId};
-    use primitives::field::powers;
     use primitives::multilinear::{fold_high_inplace, fold_high_k, mle_eval};
     use primitives::test_util::Rng;
     use proptest::prelude::*;
@@ -972,7 +971,7 @@ mod tests {
             shrink_eq_high(&mut eqr);
             let h = round_polynomial(msg, zeta[m], claim, u);
             // Bind the message before drawing the challenge for its fold.
-            RoundPolynomial { coeffs: h }.send(ps, false);
+            ps.send_round(&h, RoundWeight::Plain);
             let rk = ps.verifier_message();
             claim = poly_eval(&h, rk);
             chi[m] = rk;
@@ -986,8 +985,8 @@ mod tests {
                 // This independent oracle folds every column in a separate pass.
                 if let Some(table) = &mut folded[t] {
                     if m >= PAR_THRESHOLD.trailing_zeros() as usize {
-                        let cols = Chunks::new(table, 1);
-                        parallel::for_each(cols.count(), |ci| {
+                        let cols = ChunkView::new(table, 1);
+                        parallel::for_each(cols.len(), |ci| {
                             // SAFETY: each task exclusively folds one owned column for the whole dispatch.
                             let col = unsafe { &mut cols.get(ci)[0] };
                             fold_high_inplace(col, rk);
@@ -1040,7 +1039,7 @@ mod tests {
     fn round_coefficients_match_full_evaluations() {
         fn check<T: Subfield + Into<F192>>(cols: &[Vec<T>]) {
             let synth = Synth {
-                pows: powers(F192::new(3, 5, 7), 3),
+                pows: F192::new(3, 5, 7).powers(3),
                 attached: true,
                 constant: F192::ONE,
             };
@@ -1088,7 +1087,7 @@ mod tests {
     /// Each table takes the next `n` of `η`'s powers, `n` its identities.
     fn airs_for(taus: &[usize], attached: bool, xi: F192) -> Vec<Air<Synth>> {
         let n = if attached { 3 } else { 2 };
-        let pows = powers(xi, n * taus.len());
+        let pows = xi.powers(n * taus.len());
         taus.iter()
             .enumerate()
             .map(|(t, &tau)| Air {
@@ -1286,7 +1285,7 @@ mod tests {
         let taus = [5usize, 3, 5, 0, 1];
         let cols: Vec<Vec<Vec<F64>>> = taus.iter().enumerate().map(|(i, &t)| good_table(t, i as u64)).collect();
         let (xi, zeta) = xi_zeta(&taus);
-        let pows = powers(xi, 3 * taus.len());
+        let pows = xi.powers(3 * taus.len());
         // σ_t = η^{offset_t + 2} · col_1(ζ[..τ_t]): the attached identity is `vals[1]`,
         // so its eq-weighted sum over the table's cube is that column's evaluation.
         let sigmas: Vec<F192> = taus

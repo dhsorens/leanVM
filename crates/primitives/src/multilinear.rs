@@ -9,8 +9,9 @@
 //!
 //! So the first fold of a committed table also lifts it into `E`.
 
-use crate::field::{F64, F192, Weights8, dot_base, mul_base8, mul4};
+use crate::field::{F64, F192, Weights8, dot_base};
 use std::mem::MaybeUninit;
+use std::ops::Add;
 
 /// Multilinear interpolation in one variable over `E`: `lo + t·(lo+hi)`, the
 /// char-2 form of `(1−t)·lo + t·hi`.
@@ -70,14 +71,14 @@ pub fn fill_eq_table_uninit(r: &[F192], seed: F192, out: &mut [MaybeUninit<F192>
     if out.len() < EQ_PAR_LEN {
         return fill_eq_doubling(r, seed, out);
     }
-    let (r_low, r_high) = r.split_at(EQ_LOW_VARS);
+    let (r_low, r_high) = r.split_at(L1_EQ_VARS);
     let low = eq_table(r_low);
     let high = eq_table_seeded(r_high, seed);
     let rows = parallel::recommended_chunk_size(high.len());
     parallel::chunks_mut(out, rows * low.len(), |c, chunk| {
         for (row, &w) in chunk.chunks_exact_mut(low.len()).zip(&high[c * rows..]) {
             for (dst, src) in row.as_chunks_mut::<4>().0.iter_mut().zip(low.as_chunks::<4>().0) {
-                let p = mul4([w; 4], *src);
+                let p = F192::mul4([w; 4], *src);
                 dst.iter_mut().zip(p).for_each(|(d, p)| _ = d.write(p));
             }
         }
@@ -87,8 +88,8 @@ pub fn fill_eq_table_uninit(r: &[F192], seed: F192, out: &mut [MaybeUninit<F192>
 /// Tables below this size are built on the calling thread, so a pool task may build them.
 pub const EQ_PAR_LEN: usize = 1 << 16;
 
-/// The variables of the L1-resident factor of a large `eq` table.
-const EQ_LOW_VARS: usize = 10;
+/// The variables of an `eq` factor small enough to stay in L1.
+const L1_EQ_VARS: usize = 10;
 
 /// The level-by-level `eq` build: each level writes the high half from the low half, then rewrites the low half.
 ///
@@ -103,7 +104,7 @@ fn fill_eq_doubling(r: &[F192], seed: F192, out: &mut [MaybeUninit<F192>]) {
         let (lo4, lo_tail) = lo.as_chunks_mut::<4>();
         let (hi4, hi_tail) = hi.as_chunks_mut::<4>();
         for (l, h) in lo4.iter_mut().zip(hi4) {
-            let p = mul4([rk; 4], *l);
+            let p = F192::mul4([rk; 4], *l);
             for k in 0..4 {
                 h[k].write(p[k]);
                 l[k] += p[k];
@@ -132,7 +133,7 @@ fn fold_low_k(table: &[F64], chi: F192) -> Vec<F192> {
 
 /// Bind the highest variable of a `K`-table and lift the result into `E`.
 ///
-/// Eight entries share one batched mixed product ([`mul_base8`]).
+/// Eight entries share one batched mixed product.
 pub fn fold_high_k(table: &[F64], chi: F192) -> Vec<F192> {
     debug_assert_eq!(table.len() % 2, 0);
     let (lo, hi) = table.split_at(table.len() / 2);
@@ -140,7 +141,7 @@ pub fn fold_high_k(table: &[F64], chi: F192) -> Vec<F192> {
     let (out8, out_tail) = out.spare_capacity_mut()[..lo.len()].as_chunks_mut::<8>();
     let ((lo8, lo_tail), (hi8, hi_tail)) = (lo.as_chunks::<8>(), hi.as_chunks::<8>());
     for ((o, l), h) in out8.iter_mut().zip(lo8).zip(hi8) {
-        let p = mul_base8(chi, std::array::from_fn(|i| l[i] + h[i]));
+        let p = F192::mul_base8(chi, std::array::from_fn(|i| l[i] + h[i]));
         for i in 0..8 {
             o[i].write(F192::from(l[i]) + p[i]);
         }
@@ -188,7 +189,7 @@ pub fn fold_low_inplace(table: &mut Vec<F192>, chi: F192) {
 fn interp_into(lo: &mut [F192], hi: &[F192], chi: F192) {
     let ((lo4, lo_tail), (hi4, hi_tail)) = (lo.as_chunks_mut::<4>(), hi.as_chunks::<4>());
     for (l, h) in lo4.iter_mut().zip(hi4) {
-        let p = mul4([chi; 4], std::array::from_fn(|i| l[i] + h[i]));
+        let p = F192::mul4([chi; 4], std::array::from_fn(|i| l[i] + h[i]));
         for i in 0..4 {
             l[i] += p[i];
         }
@@ -237,7 +238,7 @@ pub fn mle_eval(table: &[F64], point: &[F192]) -> F192 {
             Some((&p0, rest)) => fold_ladder(fold_low_k(table, p0), rest),
         };
     }
-    let low_vars = point.len().min(MLE_LOW_VARS);
+    let low_vars = point.len().min(L1_EQ_VARS);
     let low = packed_eq(&point[..low_vars]);
     let rows = table
         .chunks_exact(1 << low_vars)
@@ -253,15 +254,12 @@ pub fn mle_eval_par(table: &[F64], point: &[F192]) -> F192 {
     if table.len() < PAR_THRESHOLD {
         return mle_eval(table, point);
     }
-    let low_vars = point.len().min(MLE_LOW_VARS);
+    let low_vars = point.len().min(L1_EQ_VARS);
     let low = packed_eq(&point[..low_vars]);
     let high = eq_table(&point[low_vars..]);
     let eval = |row: usize| high[row] * dot_base(&low, &table[row << low_vars..(row + 1) << low_vars]).reduce();
-    parallel::map_reduce(high.len(), || F192::ZERO, eval, |a, b| a + b)
+    parallel::map_reduce(high.len(), || F192::ZERO, eval, Add::add)
 }
-
-/// The variables of the L1-resident low `eq` table of an MLE evaluation.
-const MLE_LOW_VARS: usize = 10;
 
 /// `eq(r, .)` packed eight weights at a time for [`dot_base`]. Needs `r.len() >= 3`.
 fn packed_eq(r: &[F192]) -> Vec<Weights8> {
@@ -284,14 +282,14 @@ fn fold_ladder(mut cur: Vec<F192>, point: &[F192]) -> F192 {
 #[inline]
 pub fn inner_product(a: &[F192], b: &[F192]) -> F192 {
     assert_eq!(a.len(), b.len());
-    a.iter().zip(b).fold(F192::ZERO, |acc, (&x, &y)| acc + x * y)
+    a.iter().zip(b).map(|(&x, &y)| x * y).sum()
 }
 
 /// The mixed inner product `sum_i e_i * k_i`, with `k` in `K` and `e` in `E`.
 #[inline]
 pub fn inner_product_base(k: &[F64], e: &[F192]) -> F192 {
     assert_eq!(k.len(), e.len());
-    k.iter().zip(e).fold(F192::ZERO, |acc, (&k, &e)| acc + e.mul_base(k))
+    k.iter().zip(e).map(|(&k, &e)| e.mul_base(k)).sum()
 }
 
 /// The table `eq(r, .)` as two smaller tables, `eq(r, x) = low[x mod 2^L] * high[x >> L]`.
@@ -305,8 +303,8 @@ pub struct SplitEq {
     pub low: Vec<F192>,
     /// The table over the remaining variables.
     pub high: Vec<F192>,
-    /// `L`.
-    low_log: usize,
+    /// `L`, the number of low variables.
+    pub low_log: usize,
 }
 
 impl SplitEq {
@@ -326,11 +324,6 @@ impl SplitEq {
             high: eq_table(&r[low_log..]),
             low_log,
         }
-    }
-
-    /// The number of low variables `L`.
-    pub const fn low_log(&self) -> usize {
-        self.low_log
     }
 
     /// `eq(r, x)`.
@@ -392,7 +385,7 @@ mod tests {
 
         // A split with fewer variables than its cap puts them all on the capped side.
         let short = SplitEq::with_high_vars(&r[..3], 7);
-        assert_eq!((short.low_log(), short.high.len()), (0, 8));
+        assert_eq!((short.low_log, short.high.len()), (0, 8));
     }
 
     #[test]

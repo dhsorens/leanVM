@@ -9,6 +9,7 @@ use std::error::Error;
 use std::fmt::Arguments;
 use std::num::{NonZeroUsize, ParseIntError};
 use std::path::PathBuf;
+use std::time::Duration;
 use workload::Workload;
 
 /// jemalloc, or under `system-alloc` the system allocator for a heap profiler that hooks `malloc` (AGENTS.md, Profiling); counted either way.
@@ -189,7 +190,7 @@ fn main() {
     };
     if fixed_threads {
         parallel::init_with_threads(NonZeroUsize::new(16).unwrap())
-            .unwrap_or_else(|actual| refuse(format_args!("cannot configure 16 benchmark threads: {actual:?}")));
+            .unwrap_or_else(|error| refuse(format_args!("cannot configure 16 benchmark threads: {error}")));
     }
     if !matches!(cli.command, Command::Bench { .. }) || fixed_threads {
         let topology = parallel::topology();
@@ -218,7 +219,7 @@ fn main() {
     } else {
         leaf_prover
     };
-    let plan = Plan::new(cli.repeat, cli.cooldown);
+    let plan = Plan::new(cli.repeat, Duration::from_secs(cli.cooldown));
     if cli.tracing {
         bench::init_tracing();
     }

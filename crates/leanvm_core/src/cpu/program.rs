@@ -441,12 +441,12 @@ impl Program {
     /// Every challenge depends on it, and the run's output is the transcript's first message.
     #[doc(hidden)]
     pub fn session(&self) -> SessionId {
-        SessionId::new(&[Self::SESSION_TAG, &self.digest].concat())
+        SessionId::tagged(Self::SESSION_TAG, &self.digest)
     }
 
     /// The session of a zero-knowledge proof: its own protocol tag, then the program's digest.
     pub(crate) fn zk_session(&self) -> SessionId {
-        SessionId::new(&[Self::ZK_SESSION_TAG, &self.digest].concat())
+        SessionId::tagged(Self::ZK_SESSION_TAG, &self.digest)
     }
 
     /// The committed size of a run making these rows per table, each table taken at its provable height.

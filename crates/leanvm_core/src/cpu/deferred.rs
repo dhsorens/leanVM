@@ -225,7 +225,7 @@ impl Program {
                 return Err(CpuError::Flock {
                     table,
                     part,
-                    error: FlockError::Lincheck(LincheckError::SumcheckMismatch),
+                    error: FlockError::Lincheck(LincheckError::FormMismatch),
                 });
             }
         }

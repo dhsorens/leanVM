@@ -5,7 +5,7 @@ use fiat_shamir::ProverState;
 use fiat_shamir::arith::{Arith, Native};
 #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
 use primitives::field::PackedCoeffs;
-use primitives::field::{F64, F192, Subfield};
+use primitives::field::{F64, F192, F192Unreduced, Subfield};
 use primitives::multilinear::mle_eval;
 use std::collections::HashSet;
 use std::convert::Infallible;
@@ -216,18 +216,18 @@ impl BusForm {
     /// at the sumcheck point after, so a table's several forms share one reduction
     /// rather than paying one per term.
     /// `quadratic` selects only degree-two terms, for a sumcheck round coefficient.
-    pub fn eval_unreduced<T: Subfield>(&self, evals: &[T], quadratic: bool) -> T::Unreduced {
+    pub fn eval_unreduced<T: Subfield>(&self, evals: &[T], quadratic: bool) -> F192Unreduced {
         let linear = if quadratic {
-            T::lift(F192::ZERO)
+            F192Unreduced::ZERO
         } else {
-            T::dot_unreduced(&self.coeffs, evals) ^ T::lift(self.constant)
+            T::dot_unreduced(&self.coeffs, evals) ^ F192Unreduced::from(self.constant)
         };
         self.add_products(evals, linear)
     }
 
     /// `acc` plus the form's products at `evals`.
     #[inline(always)]
-    fn add_products<T: Subfield>(&self, evals: &[T], acc: T::Unreduced) -> T::Unreduced {
+    fn add_products<T: Subfield>(&self, evals: &[T], acc: F192Unreduced) -> F192Unreduced {
         (self.prods.iter()).fold(acc, |acc, &(a, b, c)| acc ^ (evals[a] * evals[b]).mul_e_unreduced(c))
     }
 
@@ -273,10 +273,10 @@ impl PackedForm {
     /// [`BusForm::eval_unreduced`], on AVX-512 its linear part one batched dot product
     /// where `evals` is a row padded to the packed width.
     #[inline(always)]
-    pub fn eval_unreduced<T: Subfield>(&self, evals: &[T], quadratic: bool) -> T::Unreduced {
+    pub fn eval_unreduced<T: Subfield>(&self, evals: &[T], quadratic: bool) -> F192Unreduced {
         #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
         if !quadratic && evals.len() == self.packed.width() {
-            let linear = T::dot_packed(&self.packed, evals) ^ T::lift(self.form.constant);
+            let linear = T::dot_packed(&self.packed, evals) ^ F192Unreduced::from(self.form.constant);
             return self.form.add_products(evals, linear);
         }
         self.form.eval_unreduced(evals, quadratic)
