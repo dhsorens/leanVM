@@ -47,16 +47,18 @@ theorem sq_iterate_sum {ι : Type*} (s : Finset ι) (f : ι → F) (k : ℕ) :
   | empty => simp [sq_iterate_zero]
   | insert a s ha ih => rw [Finset.sum_insert ha, Finset.sum_insert ha, sq_iterate_add, ih]
 
-/-- A Cantor basis. -/
-structure CantorBasis (F : Type*) [Field F] where
+/-- A Cantor basis of `n` vectors. A finite field has one only up to its degree, so the recurrence
+is asked below `n`. -/
+structure CantorBasis (F : Type*) [Field F] (n : ℕ) where
   β : ℕ → F
   zero : β 0 = 1
-  succ : ∀ k, sq (β (k + 1)) = β k
+  succ : ∀ k, k + 1 < n → sq (β (k + 1)) = β k
 
-variable (B : CantorBasis F)
+variable {n : ℕ} (B : CantorBasis F n)
 
 /-- `S` applied `k` times to a basis vector is the basis vector `k` below, or zero. -/
-theorem CantorBasis.iterate (k j : ℕ) : sq^[k] (B.β j) = if k ≤ j then B.β (j - k) else 0 := by
+theorem CantorBasis.iterate (k j : ℕ) (hj : j < n) :
+    sq^[k] (B.β j) = if k ≤ j then B.β (j - k) else 0 := by
   induction k generalizing j with
   | zero => simp
   | succ k ih =>
@@ -67,7 +69,7 @@ theorem CantorBasis.iterate (k j : ℕ) : sq^[k] (B.β j) = if k ≤ j then B.β
       rw [this, sq_iterate_zero]
       simp
     | succ j =>
-      rw [B.succ, ih]
+      rw [B.succ j hj, ih j (Nat.lt_of_succ_lt hj)]
       simp only [Nat.add_le_add_iff_right, Nat.add_sub_add_right]
 
 /-- The point of a cell: the sum of the basis vectors of its bits. -/
@@ -79,7 +81,7 @@ def CantorBasis.above {m : ℕ} (k : Fin m) (x : Fin m → Bool) : F :=
 
 /-- **The digits of a Cantor basis are triangular**: digit `k` of a cell is its bit `k` plus a
 function of its higher bits. -/
-theorem CantorBasis.digit_eq {m : ℕ} (k : Fin m) (x : Fin m → Bool) :
+theorem CantorBasis.digit_eq {m : ℕ} (hm : m ≤ n) (k : Fin m) (x : Fin m → Bool) :
     sq^[(k : ℕ)] (B.point x) = (if x k then 1 else 0) + B.above k x := by
   unfold CantorBasis.point CantorBasis.above
   rw [sq_iterate_sum]
@@ -88,7 +90,7 @@ theorem CantorBasis.digit_eq {m : ℕ} (k : Fin m) (x : Fin m → Bool) :
         + (if k < j ∧ x j = true then B.β (j - k) else 0) := by
     intro j
     by_cases hx : x j = true
-    · rw [if_pos hx, B.iterate]
+    · rw [if_pos hx, B.iterate _ _ (lt_of_lt_of_le j.2 hm)]
       rcases lt_trichotomy j k with h | h | h
       · have h1 : ¬ (k : ℕ) ≤ j := not_le.mpr h
         simp [h1, h.ne, not_lt.mpr h.le]
@@ -113,13 +115,13 @@ theorem CantorBasis.above_congr {m : ℕ} (k : Fin m) (x x' : Fin m → Bool)
   · simp [hj]
 
 /-- **The claim at the point of all ones is the sum over the cells of a Cantor basis.** -/
-theorem CantorBasis.sum_cells {m : ℕ} (c : (Fin m → Bool) → F) :
+theorem CantorBasis.sum_cells {m : ℕ} (hm : m ≤ n) (c : (Fin m → Bool) → F) :
     ∑ x : Fin m → Bool, digitsEval c (fun k => sq^[(k : ℕ)] (B.point x)) = mle c (fun _ => 1) := by
   rw [← sum_digitsEval c (fun k x => B.above k x) (fun k x x' h => B.above_congr k x x' h)]
   exact Finset.sum_congr rfl fun x _ => by
     congr 1
     funext k
-    exact B.digit_eq k x
+    exact B.digit_eq hm k x
 
 /-! ## The polynomial a table holds -/
 
@@ -162,9 +164,9 @@ theorem mle_eq_tablePoly_eval {m : ℕ} (c : (Fin m → Bool) → F) (t : F)
   exact mle_eq_digitsEval_div c _ ht
 
 /-- **The sum over the cells is the claim at the point of all ones**, for a table's polynomial. -/
-theorem sum_tablePoly {m : ℕ} (c : (Fin m → Bool) → F) :
+theorem sum_tablePoly {m : ℕ} (hm : m ≤ n) (c : (Fin m → Bool) → F) :
     ∑ x : Fin m → Bool, (tablePoly c).eval (B.point x) = mle c (fun _ => 1) := by
-  rw [← B.sum_cells c]
+  rw [← B.sum_cells hm c]
   exact Finset.sum_congr rfl fun x _ => tablePoly_eval c _
 
 /-! ## One more coordinate -/

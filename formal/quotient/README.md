@@ -20,7 +20,7 @@ A Lean 4 development over [ArkLib](https://github.com/Verified-zkEVM/ArkLib) and
 
 **The parameters exist.** `Params.ofData`, `Params.ofData_exact` (`Instance.lean`): from rows whose cells are distinct points, any permutation of the cells and any public words, the polynomials the theorems assume exist, with exact vanishing polynomials. So `Params` and `Params.Exact` are not vacuous. The other hypotheses are satisfiable on paper and not exhibited in Lean: a pair of fields `K`, `E` of degree 3, a nonzero `van` vanishing on the rows, a satisfying witness, and the sizes of the `_bits` theorems.
 
-**Tables as polynomials** (`Encoding.lean`, `Cantor.lean`). For a Cantor basis (`beta 0 = 1`, `S(beta (k+1)) = beta k`, `S(x) = x^2 + x`), with a cell's point the sum of the basis vectors of its bits and digit `k` the `k`-fold `S`:
+**Tables as polynomials** (`Encoding.lean`, `Cantor.lean`). For a Cantor basis of `n` vectors (`beta 0 = 1` and `S(beta (k+1)) = beta k` below `n`, `S(x) = x^2 + x`; a finite field has one only up to its degree, 64 for `GF(2^64)`) and tables of at most `n` variables, with a cell's point the sum of the basis vectors of its bits and digit `k` the `k`-fold `S`:
 
 - `CantorBasis.digit_eq`: digit `k` of a cell is its bit `k` plus a function of its higher bits.
 - `mle_eq_tablePoly_eval`: a multilinear claim on a table at the point `u_k = w_k(t) / (1 + w_k(t))` is the value at `t` of the table's polynomial (`tablePoly`, its entries on the products of digits) over the product of the `1 + w_k(t)`.
