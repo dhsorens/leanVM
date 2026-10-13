@@ -202,12 +202,14 @@ theorem quotient_mle {k : ℕ} (c : (Fin (k + 1 + 1 + 1 + 1) → Bool) → F) (t
 def lowChunk {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) : (Fin m → Bool) → F :=
   fun b => c (Fin.snoc (Fin.snoc b false) false)
 
-/-- A table of two more digits holds its first chunk's polynomial, plus a multiple of the
-cells' vanishing polynomial. -/
+/-- What a table of two more digits holds beyond its first chunk, over the cells' vanishing
+polynomial. -/
 noncomputable def highPart {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) : F[X] :=
   tablePoly (fun b => c (Fin.snoc (Fin.snoc b true) false))
     + (digitPoly m + 1) * tablePoly (fun b => c (Fin.snoc b true))
 
+/-- A table of two more digits holds its first chunk's polynomial, plus a multiple of the
+cells' vanishing polynomial. -/
 theorem tablePoly_low {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) :
     tablePoly c = tablePoly (lowChunk c) + digitPoly m * highPart c := by
   rw [tablePoly_snoc c, tablePoly_snoc fun b => c (Fin.snoc b false)]
@@ -227,7 +229,7 @@ noncomputable def sumPolyLow {m : ℕ} (Y : F)
     + C (Y ^ 2) * tablePoly (lowChunk (subTable c false false false true))
     + C (Y ^ 3) * tablePoly (lowChunk (subTable c false false true true))
 
-/-- The first slot is the low part plus a multiple of the cells' vanishing polynomial. -/
+/-- The rest of the first slot, over the cells' vanishing polynomial. -/
 noncomputable def sumPolyHigh {m : ℕ} (Y : F)
     (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) : F[X] :=
   highPart (subTable c false false false false)
@@ -235,6 +237,7 @@ noncomputable def sumPolyHigh {m : ℕ} (Y : F)
     + C (Y ^ 2) * highPart (subTable c false false false true)
     + C (Y ^ 3) * highPart (subTable c false false true true)
 
+/-- The first slot is the low part plus a multiple of the cells' vanishing polynomial. -/
 theorem slotPoly_low {m : ℕ} (Y : F) (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) :
     slotPoly Y c false false = sumPolyLow Y c + digitPoly m * sumPolyHigh Y c := by
   unfold slotPoly sumPolyLow sumPolyHigh
@@ -289,7 +292,7 @@ theorem sum_two_pow_fin (m : ℕ) : ∑ k : Fin m, 2 ^ (k : ℕ) < 2 ^ m := by
     have : 2 ^ (m + 1) = 2 ^ m + 2 ^ m := by ring
     omega
 
-/-- A table of `m` variables holds a polynomial of degree below `2^m`. -/
+/-- A table of `m` variables holds a polynomial of degree at most `2^m`. -/
 theorem natDegree_tablePoly_le {m : ℕ} (c : (Fin m → Bool) → F) :
     (tablePoly c).natDegree ≤ 2 ^ m := by
   unfold tablePoly
