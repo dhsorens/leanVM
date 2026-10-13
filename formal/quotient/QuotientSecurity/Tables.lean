@@ -196,4 +196,69 @@ theorem quotient_mle {k : ℕ} (c : (Fin (k + 1 + 1 + 1 + 1) → Bool) → F) (t
   field_simp
   ring
 
+/-! ## The claim at the fixed point -/
+
+/-- The first chunk of a table of two more digits. -/
+def lowChunk {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) : (Fin m → Bool) → F :=
+  fun b => c (Fin.snoc (Fin.snoc b false) false)
+
+/-- A table of two more digits holds its first chunk's polynomial, plus a multiple of the
+cells' vanishing polynomial. -/
+theorem tablePoly_low {m : ℕ} (c : (Fin (m + 1 + 1) → Bool) → F) :
+    ∃ hi : F[X], tablePoly c = tablePoly (lowChunk c) + digitPoly m * hi := by
+  refine ⟨tablePoly (fun b => c (Fin.snoc (Fin.snoc b true) false))
+    + (digitPoly m + 1) * tablePoly (fun b => c (Fin.snoc b true)), ?_⟩
+  rw [tablePoly_snoc c, tablePoly_snoc fun b => c (Fin.snoc b false)]
+  have hd : (digitPoly (m + 1) : F[X]) = digitPoly m * (digitPoly m + 1) := by
+    show (X ^ 2 + X : F[X]).comp (digitPoly m) = _
+    simp only [add_comp, pow_comp, X_comp]
+    ring
+  rw [hd]
+  unfold lowChunk
+  ring
+
+/-- The low part of the sum's polynomial: the first chunk of the first slot, over its limbs. -/
+noncomputable def sumPolyLow {m : ℕ} (Y : F)
+    (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) : F[X] :=
+  tablePoly (lowChunk (subTable c false false false false))
+    + C Y * tablePoly (lowChunk (subTable c false false true false))
+    + C (Y ^ 2) * tablePoly (lowChunk (subTable c false false false true))
+    + C (Y ^ 3) * tablePoly (lowChunk (subTable c false false true true))
+
+/-- The first slot is the low part plus a multiple of the cells' vanishing polynomial. -/
+theorem slotPoly_low {m : ℕ} (Y : F) (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) :
+    ∃ hi : F[X], slotPoly Y c false false = sumPolyLow Y c + digitPoly m * hi := by
+  obtain ⟨h0, e0⟩ := tablePoly_low (subTable c false false false false)
+  obtain ⟨h1, e1⟩ := tablePoly_low (subTable c false false true false)
+  obtain ⟨h2, e2⟩ := tablePoly_low (subTable c false false false true)
+  obtain ⟨h3, e3⟩ := tablePoly_low (subTable c false false true true)
+  refine ⟨h0 + C Y * h1 + C (Y ^ 2) * h2 + C (Y ^ 3) * h3, ?_⟩
+  unfold slotPoly sumPolyLow
+  rw [e0, e1, e2, e3]
+  ring
+
+/-- The fixed point of the second claim on the quotient table: ones on the cells' digits, zeros
+on the next four coordinates, then the extension's two. -/
+noncomputable def sumPoint (m : ℕ) (Y : F) : Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → F :=
+  Fin.snoc (Fin.snoc (Fin.snoc (Fin.snoc (Fin.snoc (Fin.snoc (fun _ => 1) 0) 0) 0) 0)
+    (Y / (1 + Y))) (Y ^ 2 / (1 + Y ^ 2))
+
+/-- **The claim at the fixed point** is the sum of the low part over the cells. -/
+theorem sum_mle {n m : ℕ} (B : CantorBasis F n) (hm : m ≤ n) (Y : F) (hY : 1 + Y ≠ 0)
+    (hY2 : 1 + Y ^ 2 ≠ 0) (c : (Fin (m + 1 + 1 + 1 + 1 + 1 + 1) → Bool) → F) :
+    mle c (sumPoint m Y)
+      = (∑ x : Fin m → Bool, (sumPolyLow Y c).eval (B.point x)) / ((1 + Y) * (1 + Y ^ 2)) := by
+  unfold sumPoint
+  simp only [mle_snoc, add_zero, zero_mul, one_mul]
+  change (1 + Y ^ 2 / (1 + Y ^ 2)) * ((1 + Y / (1 + Y)) *
+        mle (lowChunk (subTable c false false false false)) (fun _ => 1)
+      + Y / (1 + Y) * mle (lowChunk (subTable c false false true false)) (fun _ => 1))
+    + Y ^ 2 / (1 + Y ^ 2) * ((1 + Y / (1 + Y)) *
+        mle (lowChunk (subTable c false false false true)) (fun _ => 1)
+      + Y / (1 + Y) * mle (lowChunk (subTable c false false true true)) (fun _ => 1)) = _
+  rw [limbs_combine hY hY2, ← sum_tablePoly B hm, ← sum_tablePoly B hm, ← sum_tablePoly B hm,
+    ← sum_tablePoly B hm]
+  unfold sumPolyLow
+  simp only [eval_add, eval_mul, eval_C, Finset.sum_add_distrib, Finset.mul_sum]
+
 end QuotientSecurity

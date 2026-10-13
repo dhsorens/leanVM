@@ -8,6 +8,7 @@ import QuotientSecurity.Instance
 import QuotientSecurity.Circuit
 import QuotientSecurity.Witness
 import QuotientSecurity.Cantor
+import QuotientSecurity.Assembly
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -144,3 +145,23 @@ import QuotientSecurity.Cantor
 /-- info: 'QuotientSecurity.mle_snoc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.mle_snoc
+
+/-- info: 'QuotientSecurity.claims_iff_accepts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.claims_iff_accepts
+
+/-- info: 'QuotientSecurity.witness_claim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.witness_claim
+
+/-- info: 'QuotientSecurity.wiring_claim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.wiring_claim
+
+/-- info: 'QuotientSecurity.quotient_mle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.quotient_mle
+
+/-- info: 'QuotientSecurity.sum_mle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.sum_mle
