@@ -237,6 +237,23 @@ theorem zeroKnowledge (h3 : finrank K E = 3) (hE : P.Exact)
   exact ⟨probEvent_le_add_of_eq_on _ _ _ _ heq hbadReal S,
     probEvent_le_add_of_eq_on _ _ _ _ (fun o h => (heq o h).symm) hbadSim S⟩
 
+/-- The first handle of a hash input. -/
+def ZKey.handle : ZKey P H → H
+  | .first _ c₁ => c₁
+  | .second _ c₁ _ => c₁
+  | .third _ c₁ _ _ _ => c₁
+
+/-- **An oracle asked `Q` things knows at most `Q` handles.** If the oracle's state is empty
+outside a finite set of hash inputs, the handles that are not fresh are at most as many. -/
+theorem exists_handles (c₀ : (ofFn (ZAnswer P H)).QueryCache) (stmt : Fin P.words → E)
+    (keys : Finset (ZKey P H)) (hkeys : ∀ k, k ∉ keys → c₀ k = none) :
+    ∃ U : Finset H, U.card ≤ keys.card ∧ ∀ c₁, c₁ ∉ U → Fresh c₀ stmt c₁ := by
+  classical
+  refine ⟨keys.image ZKey.handle, Finset.card_image_le, fun c₁ hc => ?_⟩
+  have hnone : ∀ k : ZKey P H, k.handle = c₁ → c₀ k = none := fun k hk =>
+    hkeys k fun hmem => hc (Finset.mem_image.mpr ⟨k, hmem, hk⟩)
+  exact ⟨hnone _ rfl, fun c₂ => hnone _ rfl, fun c₂ a s => hnone _ rfl⟩
+
 /-- **128 bits.** At the protocol's sizes the challenges' part of the bound is below `2^-128`. -/
 theorem zkError_le (hq : Fintype.card E = 2 ^ 192) (hN : P.nCells = 2 ^ 22) (van : K[X])
     (hdeg : van.natDegree ≤ 2 ^ 20) : zkError P van ≤ 1 / 2 ^ 128 := by

@@ -77,3 +77,11 @@ import QuotientSecurity.Instance
 /-- info: 'QuotientSecurity.Params.card_consistent_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.Params.card_consistent_le
+
+/-- info: 'QuotientSecurity.mle_ones' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.mle_ones
+
+/-- info: 'QuotientSecurity.exists_handles' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.exists_handles
