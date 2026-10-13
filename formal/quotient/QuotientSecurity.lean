@@ -12,6 +12,7 @@ import QuotientSecurity.Assembly
 import QuotientSecurity.CantorExists
 import QuotientSecurity.Concrete
 import QuotientSecurity.PublicWeight
+import QuotientSecurity.ConcreteZK
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -236,3 +237,23 @@ import QuotientSecurity.PublicWeight
 /-- info: 'QuotientSecurity.coordPoly_point' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.coordPoly_point
+
+/-- info: 'QuotientSecurity.completeness_prob' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.completeness_prob
+
+/-- info: 'QuotientSecurity.completeness_ofCantor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.completeness_ofCantor
+
+/-- info: 'QuotientSecurity.zeroKnowledge_ofCantor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.zeroKnowledge_ofCantor
+
+/-- info: 'QuotientSecurity.zkError_ofCantor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.zkError_ofCantor
+
+/-- info: 'QuotientSecurity.exists_subfield' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.exists_subfield
