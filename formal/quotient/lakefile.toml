@@ -1,0 +1,14 @@
+name = "quotient-security"
+version = "0.1.0"
+defaultTargets = ["QuotientSecurity"]
+
+[leanOptions]
+autoImplicit = false
+
+[[require]]
+name = "Arklib"
+git = "https://github.com/Verified-zkEVM/ArkLib.git"
+rev = "db7005f84a9dbad7ff2abbbb4e8feeeac6f4dfd8"
+
+[[lean_lib]]
+name = "QuotientSecurity"
