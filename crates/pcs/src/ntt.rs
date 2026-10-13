@@ -99,17 +99,6 @@ fn span_get(basis: &[F64], idx: usize) -> F64 {
 /// Receives a finished block of codeword rows as `(first_row, rows)`, the rows row-major.
 pub(crate) type RowSink<'a> = dyn Fn(usize, &[F64]) + Sync + 'a;
 
-// An E element is exactly three K words, with no padding, so the two views line up.
-const _: () = assert!(size_of::<F192>() == 3 * size_of::<F64>());
-const _: () = assert!(align_of::<F192>() == align_of::<F64>());
-
-/// An E slice viewed as its K words: a row of `n` E lanes becomes `3n` K lanes.
-const fn ext_words(msg: &[F192]) -> &[F64] {
-    // SAFETY: an E element is three K words with no padding and the same alignment, as asserted above.
-    // So the view covers exactly the slice's memory, and any word is a valid K element.
-    unsafe { std::slice::from_raw_parts(msg.as_ptr().cast::<F64>(), 3 * msg.len()) }
-}
-
 /// A padding past the power of two `2^m` of each interleaved lane's message.
 ///
 /// Each lane then encodes `2^m + k` novel-basis coefficients, since `X_{2^m + j} = W_m X_j`:
@@ -483,12 +472,12 @@ impl AdditiveNttF64 {
     /// Panics unless `num_ntts` is a power of two, and wherever the encode over `K` panics.
     pub(crate) fn encode_rows_ext(&self, msg: &[F192], num_ntts: usize, log_inv_rate: usize, on_rows: &RowSink<'_>) {
         assert!(num_ntts.is_power_of_two());
-        self.encode_rows_with(ext_words(msg), 3 * num_ntts, log_inv_rate, on_rows);
+        self.encode_rows_with(F192::coefficients(msg), 3 * num_ntts, log_inv_rate, on_rows);
     }
 
     /// The codeword rows at `positions` of the encode of `msg` over `E`: one row of `num_ntts` elements per position.
     pub(crate) fn rows_at_ext(&self, msg: &[F192], num_ntts: usize, positions: &[usize]) -> Vec<F192> {
-        let rows = self.rows_at(ext_words(msg), 3 * num_ntts, positions);
+        let rows = self.rows_at(F192::coefficients(msg), 3 * num_ntts, positions);
         (rows.as_chunks::<3>().0.iter())
             .map(|&[c0, c1, c2]| F192::new(c0.0, c1.0, c2.0))
             .collect()
@@ -2036,7 +2025,7 @@ mod tests {
             // Reference: 2^rate explicit copies, then the E-valued transform from the rate layer.
             let mut want: Vec<F192> = msg.iter().copied().cycle().take(msg.len() << rate).collect();
             forward_scalar(&ntt, &mut want, lanes, rate);
-            let want_words = ext_words(&want);
+            let want_words = F192::coefficients(&want);
 
             // Under test: the rows the encode hands over, each written once into a zeroed codeword.
             let row_words = 3 * lanes;

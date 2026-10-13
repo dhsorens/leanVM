@@ -499,9 +499,9 @@ pub(crate) mod tests {
         Block, BusError, BusSetup, Coord, F64, F192, N_TUPLE_BITS, Producer, PublicColumn, SparseColumn, build_leaves,
         fingerprint_weights, gkr, layout, prove_balance, verify_balance,
     };
+    use crate::commitment::MAX_MU;
     use crate::cpu::layout::Sizes;
     use crate::cpu::{Layout, Lookup, Program, UNGROUND_LOG_BYTECODE};
-    use crate::pcs::MAX_MU;
     use crate::rv::Region;
     use crate::tables::PerTable;
     use fiat_shamir::{ProverState, SessionId, VerifierState};

@@ -1,47 +1,63 @@
-//! Bridge to flock for the instruction tables.
+//! The tables' circuits, each proven by flock over a packed witness of its own.
 //!
-//! Each class's circuit and each table's clock circuit is proven over one packed witness of its own. The
-//! extension-field product has no class circuit, so its table has its clock circuit's alone.
+//! A table has up to two circuits:
 //!
-//! That witness is one more committed column of the stacked witness: instance `j` of
-//! the batch is row `j` of the circuit's table, and flock's R1CS validity is discharged
-//! by the same stacked WHIR opening, through one ring-switched region per circuit.
+//! - its class's function, which the extension-field table lacks;
+//! - its clock, which orders its memory accesses.
 //!
-//! A register or bytecode word is 64 bits and the packing is 64 bits a word, so the
-//! words a row puts on the bus ARE packed words of its instance, the circuit's ports.
-//! The table's columns for them are therefore virtual, their claims routed to those words.
+//! A packed witness is one more committed column of the stacked witness.
+//!
+//! - Instance `j` of its batch is row `j` of its table.
+//! - The stacked opening discharges flock's claims, through one ring-switched region per circuit.
+//!
+//! A bus word and a packed word are both 64 bits.
+//!
+//! So the words a row puts on the bus are its instance's port words.
+//!
+//! The table's columns for them are virtual: their claims are routed to those words.
 
+use super::{Clock, Fill, N_CLASS_CIRCUITS, N_TABLES, PerTable, TableId};
 use crate::cpu::{Payloads, RowRef, Trace};
 use crate::rv::RiscvProgram;
-use crate::tables::{Clock, Fill, N_CIRCUITS, N_TABLES, Part, PerTable, TableId};
 use flock::Tables;
 use flock::circuit::Circuit;
 use flock::reduction::{Instance, Shape, min_n_blocks_log};
 use primitives::field::F64;
 use std::sync::OnceLock;
 
-/// The zerocheck's cube has at least this many variables (flock's univariate skip
-/// plus its fixed-point dimensions), which floors the batch of a small circuit.
+/// The fewest variables the zerocheck's cube has: flock's univariate skip plus its fixed-point dimensions.
+///
+/// It floors the batch of a small circuit.
 pub const MIN_CUBE_LOG: usize = flock::zerocheck::MIN_LOG_N;
 
 /// The most input ports a circuit with a word-level witness has: EXT's clock circuit's seventeen.
 const MAX_INPUT_WORDS: usize = 17;
 
-/// The packed witnesses: every class circuit in table order (the tables that have one come first), then every
-/// table's clock circuit.
-pub const N_FLOCKS: usize = N_CIRCUITS + N_TABLES;
+/// How many circuits the tables have.
+///
+/// Protocol order is every class circuit in table order, then every clock circuit.
+pub const N_CIRCUITS: usize = N_CLASS_CIRCUITS + N_TABLES;
 
-/// One packed witness: a table's class circuit, or its clock circuit.
+/// Which of a table's two circuits: its class's function, which the extension-field table lacks, or its clock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct FlockId {
+pub enum Part {
+    /// Instruction semantics.
+    Class,
+    /// Memory access ordering.
+    Clock,
+}
+
+/// One of the tables' circuits: a table's class circuit, or its clock circuit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CircuitId {
     table: TableId,
     part: Part,
 }
 
-impl FlockId {
-    /// Every packed witness, in protocol order.
-    pub const ALL: [Self; N_FLOCKS] = {
-        let mut all = [Self::clock(TableId::ALU); N_FLOCKS];
+impl CircuitId {
+    /// Every circuit, in protocol order.
+    pub const ALL: [Self; N_CIRCUITS] = {
+        let mut all = [Self::clock(TableId::ALU); N_CIRCUITS];
         let mut t = 0;
         while t < N_TABLES {
             let table = TableId::ALL[t];
@@ -54,11 +70,11 @@ impl FlockId {
         all
     };
 
-    /// The most variables any packed witness's circuit has per instance.
+    /// The most variables any circuit has per instance.
     pub const MAX_K_LOG: usize = {
         let mut max = 0;
         let mut f = 0;
-        while f < N_FLOCKS {
+        while f < N_CIRCUITS {
             if Self::ALL[f].k_log() > max {
                 max = Self::ALL[f].k_log();
             }
@@ -101,7 +117,7 @@ impl FlockId {
     pub const fn index(self) -> usize {
         match self.part {
             Part::Class => self.table.index(),
-            Part::Clock => N_CIRCUITS + self.table.index(),
+            Part::Clock => N_CLASS_CIRCUITS + self.table.index(),
         }
     }
 
@@ -142,7 +158,7 @@ impl FlockId {
 
     /// The witness's gate list, built once.
     pub fn circuit(self) -> &'static Circuit {
-        static CIRCUITS: [OnceLock<Circuit>; N_FLOCKS] = [const { OnceLock::new() }; N_FLOCKS];
+        static CIRCUITS: [OnceLock<Circuit>; N_CIRCUITS] = [const { OnceLock::new() }; N_CIRCUITS];
         CIRCUITS[self.index()].get_or_init(|| {
             let (spec, part) = (self.table.spec(), self.part);
             let (circuit, n_inputs) = match &spec.circuit {
@@ -183,11 +199,11 @@ pub const fn batch_log(k_log: usize, n_rows: usize) -> usize {
     if natural > floor { natural } else { floor }
 }
 
-impl FlockId {
+impl CircuitId {
     /// Each packed witness's shape and `log2` of its batch, its table's height `2^taus`, in protocol order.
     ///
     /// The verifier's replay of the reductions reads these alone, and builds no circuit.
-    pub fn batches(taus: &PerTable<usize>) -> [(Shape, usize); N_FLOCKS] {
+    pub fn batches(taus: &PerTable<usize>) -> [(Shape, usize); N_CIRCUITS] {
         Self::ALL.map(|f| (f.shape(), taus[f.table()]))
     }
 
@@ -210,9 +226,7 @@ impl FlockId {
     ///
     /// A table's padding rows are alike, so its batch ends in an identical tail the zerocheck sums once.
     pub(crate) fn instance<'a>(self, column: &'a [F64], n_blocks_log: usize, tables: &'a Tables) -> Instance<'a> {
-        // SAFETY: `F64` is `repr(transparent)` over `u64`.
-        let z = unsafe { std::slice::from_raw_parts(column.as_ptr().cast::<u64>(), column.len()) };
-        Instance::new(self.circuit().block(), n_blocks_log, z, tables)
+        Instance::new(self.circuit().block(), n_blocks_log, F64::as_bits(column), tables)
     }
 
     /// The witness's batch from its table's rows, each seen through `view`.
@@ -255,8 +269,7 @@ impl FlockId {
                 );
             }
         };
-        // SAFETY: `F64` is `repr(transparent)` over `u64`, and the packing is bit `i` at position `i` on both sides.
-        let z = unsafe { std::slice::from_raw_parts_mut(window.as_mut_ptr().cast::<u64>(), window.len()) };
+        let z = F64::as_bits_mut(window);
         let fill = match (part, &spec.circuit) {
             (Part::Class, Some(class)) => class.fill,
             _ => Fill::Walk,

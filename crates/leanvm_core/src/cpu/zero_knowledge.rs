@@ -33,11 +33,10 @@ use super::layout::{Announcement, Layout, Lookup};
 use super::proof::ProofKind;
 use super::witness::Witness;
 use super::{CpuError, Output, Program, Proof};
-use crate::class_flock::{FlockId, N_FLOCKS};
+use crate::bus::{self, N_TUPLE_BITS, PublicColumns, SparseColumn};
+use crate::commitment::{Commitment, Committed, Rate};
 use crate::constraints::ConstraintError;
-use crate::leaf::{self, N_TUPLE_BITS, PublicColumns, SparseColumn};
-use crate::pcs::{Commitment, Committed, Rate};
-use crate::tables::Clock;
+use crate::tables::{CircuitId, Clock, N_CIRCUITS};
 use fiat_shamir::arith::{Arith, Verifier};
 use fiat_shamir::{ProofTranscript, ProverState, VerifierState};
 use flock::FlockError;
@@ -218,10 +217,10 @@ impl PublicEvaluations {
         let (bytecode, image_point) = (public(&point.bytecode), public(&point.image_point));
         let kbc = crate::log2_strict_usize(rv.entries().len());
         let (chi, alphas) = bytecode.split_at(kbc);
-        let weights = leaf::fingerprint_weights(alphas);
-        let twist_terms = leaf::producer_twist_terms(&Lookup::Bytecode.tuple(rv), &weights, chi, point.twist.len());
+        let weights = bus::fingerprint_weights(alphas);
+        let twist_terms = bus::producer_twist_terms(&Lookup::Bytecode.tuple(rv), &weights, chi, point.twist.len());
         let image = SparseColumn::new(rv.log_ram(), &[(0, rv.image())]).eval(&image_point);
-        let slice_weights = (FlockId::ALL.into_iter().zip(&claims.circuits))
+        let slice_weights = (CircuitId::ALL.into_iter().zip(&claims.circuits))
             .map(|(f, c)| {
                 // The weights depend on the slices' count, not their values.
                 let form = public_form(&c.point).expect("a public form");
@@ -289,9 +288,9 @@ impl<E: Copy> DeferredClaims<Value<E>> {
         self,
         rec: &mut Recorder<V>,
     ) -> Result<DeferredClaims<E>, CpuError> {
-        if self.circuits.len() != N_FLOCKS {
+        if self.circuits.len() != N_CIRCUITS {
             return Err(CpuError::MalformedClaim(MalformedClaim::CircuitCount {
-                expected: N_FLOCKS,
+                expected: N_CIRCUITS,
                 got: self.circuits.len(),
             }));
         }
@@ -317,9 +316,9 @@ impl<E: Copy> DeferredClaims<Value<E>> {
         })?;
 
         // Each circuit claim: its form public but its slices, then value = sum_i s_i w_i.
-        let mut forms = Vec::with_capacity(N_FLOCKS);
-        let mut weights = Vec::with_capacity(N_FLOCKS);
-        for (f, claim) in FlockId::ALL.into_iter().zip(&self.circuits) {
+        let mut forms = Vec::with_capacity(N_CIRCUITS);
+        let mut weights = Vec::with_capacity(N_CIRCUITS);
+        for (f, claim) in CircuitId::ALL.into_iter().zip(&self.circuits) {
             let (table, part) = (f.table().name(), f.part());
             let malformed = || CpuError::MalformedClaim(MalformedClaim::MatrixForm { table, part });
             let form = public_form(&claim.point).ok_or_else(malformed)?;

@@ -3,10 +3,10 @@
 use crate::refuse;
 use crate::workload::Workload;
 use bench::{Plan, Timing};
+use bench::{pretty_f64, pretty_integer};
 use clap::ValueEnum;
 use leanvm::Prover;
 use leanvm::aggregate::{Kind, Leaf, LeafShape, Tree, TreeProof, TreeShape};
-use primitives::{pretty_f64, pretty_integer};
 
 /// The leaf program.
 #[derive(Clone, Copy, Debug, ValueEnum)]

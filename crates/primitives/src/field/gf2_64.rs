@@ -31,6 +31,20 @@ impl F64 {
         self.0 == 0
     }
 
+    /// The elements as their bit vectors: bit `i` of a word is the coefficient of `x^i`.
+    #[inline]
+    pub const fn as_bits(elements: &[Self]) -> &[u64] {
+        // SAFETY: `F64` is `repr(transparent)` over `u64`.
+        unsafe { core::slice::from_raw_parts(elements.as_ptr().cast::<u64>(), elements.len()) }
+    }
+
+    /// The elements as mutable bit vectors.
+    #[inline]
+    pub const fn as_bits_mut(elements: &mut [Self]) -> &mut [u64] {
+        // SAFETY: `F64` is `repr(transparent)` over `u64`, and every `u64` is a valid `F64`.
+        unsafe { core::slice::from_raw_parts_mut(elements.as_mut_ptr().cast::<u64>(), elements.len()) }
+    }
+
     /// Squaring, as a bit spread followed by one reduction.
     ///
     /// Cross terms vanish in characteristic 2, so the square moves bit `i` to bit `2i`.
@@ -46,6 +60,19 @@ impl F64 {
         {
             Self(reduce(square_wide(self.0)))
         }
+    }
+
+    /// `self^exp`, by square-and-multiply.
+    pub fn pow(self, mut exp: u64) -> Self {
+        let (mut base, mut acc) = (self, Self::ONE);
+        while exp > 0 {
+            if exp & 1 == 1 {
+                acc *= base;
+            }
+            base = base.square();
+            exp >>= 1;
+        }
+        acc
     }
 
     /// Multiplicative inverse `x^(2^64 - 2)`, mapping zero to zero.
@@ -462,20 +489,9 @@ mod tests {
     /// x is primitive: x^((2^64−1)/q) ≠ 1 for every prime q | 2^64 − 1.
     #[test]
     fn x_is_primitive() {
-        fn pow(mut base: F64, mut e: u128) -> F64 {
-            let mut r = F64::ONE;
-            while e > 0 {
-                if e & 1 == 1 {
-                    r *= base;
-                }
-                base = base.square();
-                e >>= 1;
-            }
-            r
-        }
-        let n: u128 = (1 << 64) - 1;
-        for q in [3u128, 5, 17, 257, 641, 65537, 6700417] {
-            assert_ne!(pow(F64::G, n / q), F64::ONE, "x^((2^64-1)/{q}) == 1");
+        let n = u64::MAX;
+        for q in [3, 5, 17, 257, 641, 65537, 6700417] {
+            assert_ne!(F64::G.pow(n / q), F64::ONE, "x^((2^64-1)/{q}) == 1");
         }
     }
 }

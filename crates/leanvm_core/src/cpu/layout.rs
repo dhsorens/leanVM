@@ -10,14 +10,13 @@ use super::error::CpuError;
 use super::execute::Trace;
 use super::proof::ProofKind;
 use super::{MAX_LOG_ROWS, UNGROUND_LOG_BYTECODE};
-use crate::class_flock::FlockId;
+use crate::bus::{Block, ColumnClaim, Coord, Producer, PublicColumn, SparseColumn};
+use crate::commitment::{Rate, RingSwitch, SliceClaim, StackClaim};
 use crate::constraints::{BitColumns, Claims};
-use crate::leaf::{Block, ColumnClaim, Coord, Producer, PublicColumn, SparseColumn};
-use crate::pcs::{Rate, RingSwitch, SliceClaim, StackClaim};
 use crate::rv::{Entry, Reg, Region, RegisterFile, RiscvProgram, Syscall};
-use crate::tables::{ClassTable, Clock, N_TABLES, PerTable, Separator, TableId};
-use crate::witness::{Placement, Source, StackShape, Window};
-use crate::{class_flock, witness};
+use crate::stacking;
+use crate::stacking::{Placement, Source, StackShape, Window};
+use crate::tables::{CircuitId, ClassTable, Clock, N_CIRCUITS, N_TABLES, PerTable, Separator, TableId};
 use Coord::{Col, Const, IntIndex, Sparse};
 use fiat_shamir::ProofOfWork;
 use fiat_shamir::ProverState;
@@ -211,7 +210,7 @@ impl Lookup {
     ///
     /// It is also what the program digest binds.
     pub fn table(self, p: &RiscvProgram) -> Vec<F64> {
-        crate::leaf::stacked_bytecode_table(self.log_rows(Sizes::of(p)), &self.tuple(p))
+        crate::bus::stacked_bytecode_table(self.log_rows(Sizes::of(p)), &self.tuple(p))
     }
 
     /// The array's public columns over its entries, in tuple order after the address.
@@ -226,7 +225,7 @@ impl Lookup {
                 vec![
                     // An illegal entry's tag is zero, which is no table's: nothing can read it.
                     parallel::map_collect(entries.len(), |i| {
-                        TableId::of(entries[i].class).map_or(F64::ZERO, |t| primitives::field::g_pow(t.index()))
+                        TableId::of(entries[i].class).map_or(F64::ZERO, TableId::tag)
                     }),
                     column(&|_, e| e.flags),
                     column(&|_, e| e.a1 as u64),
@@ -340,10 +339,10 @@ const _: () = {
 pub const Q_BASE: usize = Shared::ALL.len();
 
 /// The columns before the first table's: the shared ones, then the packed witnesses.
-pub const N_SHARED: usize = Q_BASE + class_flock::N_FLOCKS;
+pub const N_SHARED: usize = Q_BASE + N_CIRCUITS;
 
 /// The committed column holding packed witness `f`.
-pub(crate) const fn q_column(f: FlockId) -> usize {
+pub(crate) const fn q_column(f: CircuitId) -> usize {
     Q_BASE + f.index()
 }
 
@@ -372,7 +371,7 @@ impl Sizes {
     ///
     /// No witness is needed.
     pub(super) fn stack(self, taus: &PerTable<usize>) -> (Vec<Placement>, StackShape) {
-        witness::placements_of(&self.column_sources(taus))
+        stacking::placements_of(&self.column_sources(taus))
     }
 
     /// Every column's source, in global order.
@@ -391,7 +390,7 @@ impl Sizes {
             .collect();
 
         // The packed witnesses: every class circuit's, then every clock circuit's.
-        sources.extend(FlockId::ALL.map(|f| Source::Committed(taus[f.table()] + f.stride_log())));
+        sources.extend(CircuitId::ALL.map(|f| Source::Committed(taus[f.table()] + f.stride_log())));
 
         // Each table's columns, its circuit words turned into ports of its packed witnesses.
         //
@@ -399,7 +398,7 @@ impl Sizes {
         for (t, table) in ClassTable::all().iter() {
             let base = sources.len();
             sources.resize(base + table.n_committed_columns(), Source::Committed(taus[t]));
-            for f in FlockId::class(t).into_iter().chain([FlockId::clock(t)]) {
+            for f in CircuitId::class(t).into_iter().chain([CircuitId::clock(t)]) {
                 for (port, c) in table.word_columns(f.part()) {
                     sources[base + c] = Source::Port {
                         column: q_column(f),
@@ -607,7 +606,7 @@ impl Layout {
     }
 
     /// Packed witness `f`'s window in the stack.
-    pub(crate) fn witness_window(&self, f: FlockId) -> Window {
+    pub(crate) fn witness_window(&self, f: CircuitId) -> Window {
         self.placements[q_column(f)]
             .window()
             .expect("a packed witness is committed")
@@ -632,7 +631,8 @@ impl Layout {
         tables: &[Claims<E>],
         zero: E,
     ) -> Vec<RingSwitch<E>> {
-        let witnesses = (FlockId::ALL.into_iter().zip(witnesses)).map(|(f, claim)| self.witness_window(f).ring(claim));
+        let witnesses =
+            (CircuitId::ALL.into_iter().zip(witnesses)).map(|(f, claim)| self.witness_window(f).ring(claim));
         let producers = (self.producers.iter().zip(multiplicities)).map(|(p, claims)| {
             let claim = SliceClaim::zero_padded(claims.chi.clone(), claims.evals.iter().copied(), zero);
             self.multiplicity_window(p).ring(claim)
@@ -850,7 +850,7 @@ impl Layout {
 
     /// The layout, if the commitment takes its stacked witness.
     fn fits(self) -> Result<Self, CpuError> {
-        if (crate::pcs::MIN_MU..=crate::pcs::MAX_MU).contains(&self.shape.mu) {
+        if (crate::commitment::MIN_MU..=crate::commitment::MAX_MU).contains(&self.shape.mu) {
             Ok(self)
         } else {
             Err(CpuError::WitnessSize { mu: self.shape.mu })
@@ -873,7 +873,7 @@ impl Layout {
         match kind {
             ProofKind::Plain => self,
             ProofKind::ZeroKnowledge => Self {
-                shape: StackShape::hiding(witness::committed_len(&self.placements)),
+                shape: StackShape::hiding(stacking::committed_len(&self.placements)),
                 grinding: self.grinding + pcs::whir::L0_LIST_BITS as u32,
                 ..self
             },

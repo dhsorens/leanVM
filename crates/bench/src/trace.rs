@@ -2,7 +2,7 @@
 
 use crate::heap::{self, HeapWindow};
 use crate::stages::Stages;
-use primitives::{pretty_f64, pretty_integer};
+use crate::{pretty_f64, pretty_integer};
 use std::cell::RefCell;
 use std::fmt::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -256,7 +256,7 @@ pub fn init_tracing_from_env() {
 }
 
 #[cfg(test)]
-mod tracing_tests {
+mod tests {
     use super::{Line, rewrite_trace_lines};
 
     #[test]

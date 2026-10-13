@@ -42,11 +42,6 @@ fn send_ood(sc: &mut SumcheckProver<'_>, ps: &mut ProverState, n_vars: usize, co
     }
 }
 
-/// An `E` row as the `F64` words its Merkle leaf is hashed from.
-fn ext_row_words(row: &[F192]) -> Vec<F64> {
-    row.iter().flat_map(|v| [F64(v.c0), F64(v.c1), F64(v.c2)]).collect()
-}
-
 /// Prove `sum_x witness(x) * w(x) = target` against the L0 commitment `l0`.
 ///
 /// # Arguments
@@ -257,7 +252,7 @@ pub(crate) fn prove(
             let opened_last = wtns_prev.open(&queries_last);
             ps.prover_hint(
                 &PrunedMerklePaths::prune(&wtns_prev.tree, wtns_prev.block_len, &queries_last, |q| {
-                    ext_row_words(opened_last.row(q))
+                    F192::coefficients(opened_last.row(q)).to_vec()
                 })
                 .to_hint(),
             );
@@ -313,7 +308,7 @@ pub(crate) fn prove(
         let opened_rows_i: Vec<Vec<F192>> = queries_i.iter().map(|&q| opened_i.row(q).to_vec()).collect();
         ps.prover_hint(
             &PrunedMerklePaths::prune(&wtns_prev.tree, wtns_prev.block_len, &queries_i, |q| {
-                ext_row_words(opened_i.row(q))
+                F192::coefficients(opened_i.row(q)).to_vec()
             })
             .to_hint(),
         );

@@ -503,21 +503,6 @@ pub(crate) fn single_round([a, b, c]: [&[F192]; 3], r_eq: &[F192]) -> (F192, F19
     (g1, g_inf)
 }
 
-/// Bind a table's low variable at `chi`, in place: `v[x] = v[2x] + chi (v[2x] + v[2x + 1])`, halving it.
-pub(crate) fn bind_low(v: &mut Vec<F192>, chi: F192) {
-    let half = v.len() / 2;
-    assert!(
-        v.len() == 2 * half && half.is_power_of_two(),
-        "a table of at least two, a power of two"
-    );
-    // Slot `x` is written after slots `2x` and `2x + 1` are read, so the bind runs in place.
-    for x in 0..half {
-        let (v0, v1) = (v[2 * x], v[2 * x + 1]);
-        v[x] = v0 + chi * (v0 + v1);
-    }
-    v.truncate(half);
-}
-
 /// Rounds `t` and `t + 1` from the stored tables, folding the challenges still pending on them first.
 ///
 /// - `ins` are the `(a, b, c)` tables, one or two variables short of level `t`.
@@ -796,11 +781,11 @@ mod planar {
 
 #[cfg(test)]
 mod tests {
-    use primitives::multilinear::skip_lagrange_weights;
-    use primitives::test_util::Rng;
-
     use super::*;
+    use crate::zerocheck::SkipDomain;
     use crate::zerocheck::round1::tests::pack_bits;
+    use primitives::multilinear::fold_low_inplace;
+    use primitives::test_util::Rng;
 
     const K_SKIP: usize = crate::zerocheck::K_SKIP;
 
@@ -826,7 +811,7 @@ mod tests {
     /// Bind every table's low variable at `chi`.
     fn bind_all(tables: &mut [Vec<F192>; 3], chi: F192) {
         for t in tables {
-            bind_low(t, chi);
+            fold_low_inplace(t, chi);
         }
     }
 
@@ -868,7 +853,7 @@ mod tests {
             let (bits, packed_bits) = random_witness(&mut rng, m);
             let r_rest = rng.ext_vec(m - K_SKIP);
             let rho = rng.ext_vec(m - K_SKIP);
-            let lagrange = skip_lagrange_weights(K_SKIP, rng.ext());
+            let lagrange = SkipDomain::FLOCK.lagrange_weights(rng.ext());
             let dense = Padding::dense(m);
 
             // Level 0 of the naive route.
@@ -908,7 +893,7 @@ mod tests {
                 useful_bits: useful,
                 live_blocks: usize::MAX,
             };
-            let lagrange = skip_lagrange_weights(K_SKIP, rng.ext());
+            let lagrange = SkipDomain::FLOCK.lagrange_weights(rng.ext());
             let r_rest = rng.ext_vec(m - K_SKIP);
             let rho = rng.ext_vec(4);
             for t in 0..=4 {

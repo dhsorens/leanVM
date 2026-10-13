@@ -9,12 +9,12 @@
 //! - Challenges before the opening pay for that list size (section sec:e2e-ledger).
 //! - Each deeper commitment takes one out-of-domain sample to bind to one codeword.
 
-use crate::witness::StackShape;
+use crate::stacking::StackShape;
 use fiat_shamir::{ProverState, TranscriptError};
 use pcs::stack::{CommittedStack, StackCommitment, Statement};
 use pcs::verifier::OpeningVerifier;
+use pcs::whir::ConfigError;
 use pcs::whir::WhirError;
-use pcs::whir::config::ConfigError;
 use primitives::field::F64;
 use rand_core::CryptoRng;
 use thiserror::Error;
@@ -274,9 +274,9 @@ impl<R: Copy> Commitment<R> {
 #[cfg(test)]
 mod tests {
     use super::{Committed, InvalidRate, LOG_BATCH, MAX_MU, MIN_MU, Rate, WitnessError};
-    use crate::witness::StackShape;
+    use crate::stacking::StackShape;
     use fiat_shamir::{ProverState, SessionId};
-    use pcs::whir::config::ConfigError;
+    use pcs::whir::ConfigError;
     use primitives::field::F64;
 
     #[test]

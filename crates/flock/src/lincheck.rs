@@ -71,7 +71,7 @@ use parallel::SendPtr;
 use pcs::ring_switch::SliceClaim;
 use primitives::bits::bit_transpose_64bytes;
 use primitives::field::F192;
-use primitives::multilinear::{eq_table, inner_product, skip_lagrange_weights};
+use primitives::multilinear::{eq_table, inner_product};
 use thiserror::Error;
 
 use crate::reduction::Shape;
@@ -167,7 +167,10 @@ pub enum LincheckError {
 ///     out[i_skip + i_rest 2^k_skip] = L_(i_skip)(z_skip) * eq(x_inner_rest, i_rest)
 /// ```
 pub fn build_quirky_eq_table(z_skip: F192, x_inner_rest: &[F192], k_skip: usize) -> Vec<F192> {
-    outer_product(&eq_table(x_inner_rest), &skip_lagrange_weights(k_skip, z_skip))
+    outer_product(
+        &eq_table(x_inner_rest),
+        &SkipDomain::new(k_skip).lagrange_weights(z_skip),
+    )
 }
 
 /// `out[i_lo + i_hi lo.len()] = lo[i_lo] * hi[i_hi]`: `lo` varies fastest.
@@ -1324,7 +1327,7 @@ mod tests {
 
     /// A Boolean vector's extension at a quirky point: skip Lagrange weights, then eq on the other coordinates.
     fn quirky_eval(f: &[bool], k_log: usize, k_skip: usize, point: &QuirkyPoint) -> F192 {
-        let lambda = skip_lagrange_weights(k_skip, point.z_skip);
+        let lambda = SkipDomain::new(k_skip).lagrange_weights(point.z_skip);
         let eq_rest = eq_table(&point.x_inner_rest);
         let eq_outer = eq_table(&point.x_outer);
         let mut acc = F192::ZERO;

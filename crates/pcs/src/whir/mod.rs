@@ -23,19 +23,18 @@
 //! ```
 
 mod commit;
-pub mod config;
+pub(crate) mod config;
 mod prove;
 mod query;
 mod sumcheck;
 mod verify;
 
 use fiat_shamir::Challenger;
-use primitives::field::{F64, F192};
-use primitives::multilinear::inner_product_base;
+use primitives::field::F192;
 
 pub use config::{
-    Config, INITIAL_FOLDING_FACTOR, L0_LIST_BITS, LOG_INV_RATE_0, MAX_LOG_INV_RATE, MAX_LOG_N, MIN_LOG_INV_RATE,
-    MIN_LOG_N, MIN_LOG_N_HIDING, QUERY_GRINDING_BITS, RANDOM_LANES, RESIDUAL_MAX_LOG,
+    Config, ConfigError, INITIAL_FOLDING_FACTOR, L0_LIST_BITS, LOG_INV_RATE_0, MAX_LOG_INV_RATE, MAX_LOG_N,
+    MIN_LOG_INV_RATE, MIN_LOG_N, MIN_LOG_N_HIDING, QUERY_GRINDING_BITS, RANDOM_LANES, RESIDUAL_MAX_LOG,
     RS_DOMAIN_INITIAL_REDUCTION_FACTOR, SECURITY_BITS, SUBSEQUENT_FOLDING_FACTOR, config_for_rate,
     config_for_rate_hiding, hiding_lanes,
 };
@@ -45,21 +44,6 @@ pub(crate) use prove::prove;
 pub(crate) use sumcheck::{DenseWeight, INITIAL_BASIS_CHUNK, InitialWeight};
 pub use verify::WhirError;
 pub(crate) use verify::verify;
-
-/// The inner product `sum_i b[i] · witness[i]` of a weight in `E` and a witness in `K`.
-pub fn inner_product_base_ext(witness: &[F64], b: &[F192]) -> F192 {
-    assert_eq!(witness.len(), b.len());
-    const PAR_THRESHOLD: usize = 4096;
-    if witness.len() < PAR_THRESHOLD {
-        return inner_product_base(witness, b);
-    }
-    parallel::map_reduce(
-        witness.len(),
-        || F192::ZERO,
-        |i| b[i].mul_base(witness[i]),
-        |a, v| a + v,
-    )
-}
 
 /// Where a query of a batch lands: the top `bits` bits of its position are `index`, the rest uniform.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,13 +117,13 @@ pub(crate) fn sample_queries_ordered(ch: &mut impl Challenger, block_len: usize,
 
 #[cfg(test)]
 mod tests {
-    use super::sumcheck::tests::Table;
     use super::*;
     use crate::merkle::{Hash, PrunedMerklePaths};
     use crate::whir::config::tests::test_config_for;
     use crate::whir::query::{Padding, QueryBatch};
     use fiat_shamir::{ProofTranscript, ProverState, SessionId, TranscriptError, VerifierState};
-    use primitives::multilinear::{eq_eval, eq_table, inner_product};
+    use primitives::field::F64;
+    use primitives::multilinear::{eq_eval, eq_table, inner_product, inner_product_base};
     use primitives::test_util::Rng;
     use std::panic::AssertUnwindSafe;
 
@@ -162,9 +146,9 @@ mod tests {
         let pd = commit(&witness, log_n, pc.initial_k(), pc.log_inv_rates()[0], &[]);
         let point: Vec<F192> = (0..log_n).map(|_| rng.ext()).collect();
         let b_initial = eq_table(&point);
-        let target = inner_product_base_ext(&witness, &b_initial);
+        let target = inner_product_base(&witness, &b_initial);
         let mut ps = ProverState::new(&SessionId::new(b"whir-test"), &0u64);
-        let weight = Table {
+        let weight = DenseWeight {
             weight: b_initial.to_vec(),
             block: 1 << (log_n - pc.initial_k()),
         };
@@ -374,12 +358,12 @@ mod tests {
                 let mut b_initial: Vec<F192> = (0..1usize << log_n).map(|_| rng.ext()).collect();
                 witness[used..].fill(F64::ZERO);
                 b_initial[used..].fill(F192::ZERO);
-                let target = inner_product_base_ext(&witness, &b_initial);
+                let target = inner_product_base(&witness, &b_initial);
 
                 let prove_with = |msg: &[F64], b: &[F192]| {
                     let pd = commit(msg, log_n, pc.initial_k(), pc.log_inv_rates()[0], &[]);
                     let mut ps = ProverState::new(&SessionId::new(b"whir-test"), &0u64);
-                    let weight = Table {
+                    let weight = DenseWeight {
                         weight: b.to_vec(),
                         block: lane_block,
                     };
@@ -479,11 +463,11 @@ mod tests {
                 let witness: Vec<F64> = (0..used).map(|_| F64(rng.next_u64())).collect();
                 let mut weight = vec![F192::ZERO; 1 << log_n];
                 weight[..used].copy_from_slice(&rng.ext_vec(used));
-                let target = inner_product_base_ext(&witness, &weight[..used]);
+                let target = inner_product_base(&witness, &weight[..used]);
 
                 let pd = commit(&witness, log_n, pc.initial_k(), log_inv_rate, &[]);
                 let mut ps = ProverState::new(&SessionId::new(b"whir-test"), &0u64);
-                let table = Table {
+                let table = DenseWeight {
                     weight: weight[..used].to_vec(),
                     block: lane_block,
                 };

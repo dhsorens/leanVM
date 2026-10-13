@@ -2,6 +2,7 @@
 
 use super::{BusError, Coord, PublicColumn};
 use primitives::field::{F64, F192};
+use primitives::multilinear::eq_table;
 
 /// A flushing rule: `2^kappa` rows, each a tuple of coordinates. Every one of them is a
 /// row the program executed, since a table's height is its row count (§sec:e2e-pad), so a
@@ -56,21 +57,15 @@ pub struct Layout {
     pub offsets: Vec<usize>,
 }
 
-/// The fingerprint weights `eq(α⃗, x)` over the `2^N_TUPLE_BITS` slots (§sec:gp).
-/// A tuple is fingerprinted as `Σ_x eq(α⃗, x)·σ_x`, a MULTILINEAR combination
-/// rather than a power chain: each leaf factor is then of total degree
-/// `N_TUPLE_BITS` in the challenges instead of the tuple width, and slot `x`'s
-/// weight is an `eq` weight, which is what lets the aligned bytecode polynomial
-/// be read off at `α⃗` itself (§sec:e2e-bc).
+/// The fingerprint weights `eq(alpha, x)` over the `2^N_TUPLE_BITS` slots of a tuple (§sec:gp).
+///
+/// A tuple is fingerprinted as `sum_x eq(alpha, x) * sigma_x`, a multilinear combination rather than a power chain.
+///
+/// - Each leaf factor then has degree `N_TUPLE_BITS` in the challenges, not the tuple's width.
+/// - Slot `x`'s weight is an `eq` weight, so the aligned bytecode polynomial is read at `alpha` itself (§sec:e2e-bc).
 pub fn fingerprint_weights(alphas: &[F192]) -> Vec<F192> {
     debug_assert_eq!(alphas.len(), N_TUPLE_BITS);
-    let mut w = vec![F192::ONE; 1 << N_TUPLE_BITS];
-    for (bit, &a) in alphas.iter().enumerate() {
-        for (x, wx) in w.iter_mut().enumerate() {
-            *wx *= if (x >> bit) & 1 == 1 { a } else { a + F192::ONE };
-        }
-    }
-    w
+    eq_table(alphas)
 }
 
 /// Bits indexing a bus tuple's coordinates: every tuple, the bytecode's widest at
@@ -157,7 +152,7 @@ pub fn layout(blocks: &[Block], producers: &[Producer]) -> Layout {
         .chain(producers.iter().flat_map(|p| std::iter::repeat_n(p.kappa, p.bits)))
         .map(Some)
         .collect();
-    let (offsets, placed) = crate::witness::stack_offsets(&kappas);
+    let (offsets, placed) = crate::stacking::stack_offsets(&kappas);
     Layout {
         mu: crate::log2_ceil_usize(placed.max(1)),
         offsets,

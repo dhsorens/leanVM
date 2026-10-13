@@ -866,8 +866,6 @@ pub(super) mod tests {
     use primitives::multilinear::inner_product;
     use primitives::test_util::Rng;
 
-    pub(in crate::whir) use super::DenseWeight as Table;
-
     /// One lane bit folded the naive way: block `2i` with block `2i + 1`, the last with zeros.
     fn fold_lane_bit(v: &[F192], block: usize, r: F192) -> Vec<F192> {
         let lanes = v.len() / block;
@@ -929,7 +927,7 @@ pub(super) mod tests {
                     .filter(|&l| l >= 1 && l <= full)
                 {
                     let f: Vec<F64> = (0..block * lanes).map(|_| F64(rng.next_u64())).collect();
-                    let table = Table {
+                    let table = DenseWeight {
                         weight: rng.ext_vec(f.len()),
                         block,
                     };
@@ -980,7 +978,7 @@ pub(super) mod tests {
                 let mut b = vec![F192::ZERO; 1 << log_n];
                 b[..used].copy_from_slice(&rng.ext_vec(used));
 
-                let table = Table {
+                let table = DenseWeight {
                     weight: b[..used].to_vec(),
                     block,
                 };

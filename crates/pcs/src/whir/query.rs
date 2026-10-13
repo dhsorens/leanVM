@@ -27,8 +27,8 @@
 use crate::ntt::{AdditiveNttF64, transposed_butterfly_lanes};
 use fiat_shamir::arith::{Arith, Native};
 use parallel::SendPtr;
-use primitives::field::{F64, F192, F192Unreduced};
-use primitives::multilinear::{eq_table, inner_product, inner_product_base};
+use primitives::field::{F64, F192, F192Unreduced, Subfield};
+use primitives::multilinear::eq_table;
 use std::collections::HashMap;
 
 /// The subspace polynomials' normalizers on the standard basis, `s_k(v_k)` for `k <= log_n`, and their inverses.
@@ -162,26 +162,6 @@ impl Padding {
     }
 }
 
-/// An entry of an opened row: a word of `K` at L0, an element of `E` at every deeper level.
-pub(crate) trait RowElem: Copy + Sync {
-    /// The inner product `sum_l row[l] * eq[l]`, in `E`.
-    fn dot(row: &[Self], eq: &[F192]) -> F192;
-}
-
-impl RowElem for F64 {
-    #[inline]
-    fn dot(row: &[Self], eq: &[F192]) -> F192 {
-        inner_product_base(row, eq)
-    }
-}
-
-impl RowElem for F192 {
-    #[inline]
-    fn dot(row: &[Self], eq: &[F192]) -> F192 {
-        inner_product(row, eq)
-    }
-}
-
 /// Queries per unit of blowup above which the transposed encode replaces the direct expansion.
 const TRANSPOSED_QUERIES_PER_BLOWUP: usize = 8;
 
@@ -211,11 +191,14 @@ impl<'a> QueryBatch<'a> {
     ///
     /// # Panics
     ///
-    /// Panics unless there is one opened row per query.
-    pub(crate) fn claimed_sum<T: RowElem>(&self, rows: &[Vec<T>], fold: &[F192]) -> F192 {
+    /// Panics unless there is one opened row per query, each one fold wide.
+    pub(crate) fn claimed_sum<T: Subfield>(&self, rows: &[Vec<T>], fold: &[F192]) -> F192 {
         assert_eq!(rows.len(), self.positions.len(), "one opened row per query");
         let eq = eq_table(fold);
-        (rows.iter().zip(self.weights)).fold(F192::ZERO, |sum, (row, &w)| sum + w * T::dot(row, &eq))
+        (rows.iter().zip(self.weights)).fold(F192::ZERO, |sum, (row, &w)| {
+            assert_eq!(row.len(), eq.len(), "a row is one fold's width");
+            sum + w * T::dot(&eq, row, F192::ZERO)
+        })
     }
 
     /// The weight the batch induces on a message of `2^log_msg_cols` coefficients, encoded at rate `2^-log_inv_rate`.
@@ -337,16 +320,7 @@ impl<'a> QueryBatch<'a> {
 ///
 /// An element of `E` is three words of `K` and `t` is in `K`, so the rows are lanes of `K` sharing one twiddle.
 fn transposed_butterflies(t: F64, top: &mut [F192], bot: &mut [F192]) {
-    // SAFETY:
-    // - An element of `E` is laid out as three words of `K`, and an element of `K` as one word.
-    // - So each view covers exactly the memory of the slice it came from, which it shadows for its lifetime.
-    let (top, bot) = unsafe {
-        (
-            std::slice::from_raw_parts_mut(top.as_mut_ptr().cast::<F64>(), 3 * top.len()),
-            std::slice::from_raw_parts_mut(bot.as_mut_ptr().cast::<F64>(), 3 * bot.len()),
-        )
-    };
-    transposed_butterfly_lanes(top, bot, t);
+    transposed_butterfly_lanes(F192::coefficients_mut(top), F192::coefficients_mut(bot), t);
 }
 
 /// Elements per cache-resident window of the layer-blocked run.

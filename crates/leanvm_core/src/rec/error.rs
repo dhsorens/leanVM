@@ -2,8 +2,8 @@
 
 use super::layout::RecLayout;
 use super::table::Table;
+use crate::bus::BusError;
 use crate::constraints::ConstraintError;
-use crate::leaf::BusError;
 use fiat_shamir::TranscriptError;
 use flock::FlockError;
 use pcs::whir::WhirError;
@@ -16,7 +16,7 @@ pub enum RecError {
     #[error("the statement has {got} words, and the circuit exposes {expected}")]
     StatementLength { expected: usize, got: usize },
     /// The witness does not fit one commitment.
-    #[error("the witness has 2^{mu} words, more than one commitment holds (2^{max})", max = crate::pcs::MAX_MU)]
+    #[error("the witness has 2^{mu} words, more than one commitment holds (2^{max})", max = crate::commitment::MAX_MU)]
     TooLong { mu: usize },
     /// A table has more rows than a slot's key can name.
     #[error("table {table:?} has 2^{tau} rows, more than 2^{max}", max = RecLayout::MAX_TAU)]

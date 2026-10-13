@@ -9,10 +9,12 @@ use std::time::{Duration, Instant};
 
 mod allocator;
 mod heap;
+mod pretty;
 mod stages;
 mod trace;
 pub use allocator::Jemalloc;
 pub use heap::{Counting, Heap, HeapWindow, measure_heap};
+pub use pretty::{pretty_f64, pretty_integer};
 pub use stages::{take_stages, time_stages};
 
 pub use trace::{TraceSuppressed, init_tracing, init_tracing_from_env, suppress_tracing};

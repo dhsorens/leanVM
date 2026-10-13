@@ -13,15 +13,14 @@
 //!
 //! The leaves and every level are `E`-valued: the bus fingerprints mix `K` columns into `E` upstream.
 
-mod lanes;
 mod layer;
 
-use self::lanes::{Lane, Lanes};
 use self::layer::{EQ_LOW_VARS, Grid, Layer};
 use crate::PAR_THRESHOLD;
 use fiat_shamir::arith::RoundPolynomial;
 use fiat_shamir::arith::Verifier;
 use fiat_shamir::{ProverState, TranscriptError};
+use primitives::field::lanes::{Lane, Lanes};
 use primitives::field::{F192, mul2};
 use primitives::multilinear::{SplitEq, interp};
 use std::mem::MaybeUninit;

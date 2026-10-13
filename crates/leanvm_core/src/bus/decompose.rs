@@ -1,12 +1,11 @@
 //! A side's leaf claim, decomposed into the tables' forms, the framework blocks' column claims and the producers' weights.
 
 use super::{ColumnClaim, Coord, Fingerprint, Openings, Producer, PublicColumn, PublicColumns, Side, SparseColumn};
-use crate::colval::ColVal;
-#[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
-use crate::colval::PackedCoeffs;
 use fiat_shamir::ProverState;
 use fiat_shamir::arith::{Arith, Native};
-use primitives::field::{F64, F192};
+#[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
+use primitives::field::PackedCoeffs;
+use primitives::field::{F64, F192, Subfield};
 use primitives::multilinear::mle_eval;
 use std::collections::HashSet;
 use std::convert::Infallible;
@@ -217,7 +216,7 @@ impl BusForm {
     /// at the sumcheck point after, so a table's several forms share one reduction
     /// rather than paying one per term.
     /// `quadratic` selects only degree-two terms, for a sumcheck round coefficient.
-    pub fn eval_unreduced<T: ColVal>(&self, evals: &[T], quadratic: bool) -> T::Unreduced {
+    pub fn eval_unreduced<T: Subfield>(&self, evals: &[T], quadratic: bool) -> T::Unreduced {
         let linear = if quadratic {
             T::lift(F192::ZERO)
         } else {
@@ -228,7 +227,7 @@ impl BusForm {
 
     /// `acc` plus the form's products at `evals`.
     #[inline(always)]
-    fn add_products<T: ColVal>(&self, evals: &[T], acc: T::Unreduced) -> T::Unreduced {
+    fn add_products<T: Subfield>(&self, evals: &[T], acc: T::Unreduced) -> T::Unreduced {
         (self.prods.iter()).fold(acc, |acc, &(a, b, c)| acc ^ (evals[a] * evals[b]).mul_e_unreduced(c))
     }
 
@@ -274,7 +273,7 @@ impl PackedForm {
     /// [`BusForm::eval_unreduced`], on AVX-512 its linear part one batched dot product
     /// where `evals` is a row padded to the packed width.
     #[inline(always)]
-    pub fn eval_unreduced<T: ColVal>(&self, evals: &[T], quadratic: bool) -> T::Unreduced {
+    pub fn eval_unreduced<T: Subfield>(&self, evals: &[T], quadratic: bool) -> T::Unreduced {
         #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx512f"))]
         if !quadratic && evals.len() == self.packed.width() {
             let linear = T::dot_packed(&self.packed, evals) ^ T::lift(self.form.constant);

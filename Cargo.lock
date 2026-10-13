@@ -455,7 +455,6 @@ name = "bench"
 version = "0.1.0"
 dependencies = [
  "libc",
- "primitives",
  "tikv-jemallocator",
  "tracing",
  "tracing-forest",

@@ -930,7 +930,7 @@ impl WeightFold {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::whir::sumcheck::tests::Table;
+    use crate::whir::DenseWeight;
     use primitives::test_util::Rng;
 
     #[test]
@@ -958,7 +958,7 @@ mod tests {
                 for lanes in [1, (1 << rounds) - 1, 1 << rounds, (1 << rounds) + 3] {
                     let f: Vec<F64> = (0..block * lanes).map(|_| F64(rng.next_u64())).collect();
                     let weight = rng.ext_vec(f.len());
-                    let table = Table {
+                    let table = DenseWeight {
                         weight: weight.clone(),
                         block,
                     };

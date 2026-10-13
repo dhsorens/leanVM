@@ -21,7 +21,7 @@ mod batch;
 mod deferred;
 mod error;
 pub(crate) mod execute;
-pub mod filler;
+mod filler;
 pub(crate) mod layout;
 mod output;
 mod program;

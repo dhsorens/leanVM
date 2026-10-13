@@ -22,6 +22,7 @@
 use std::num::NonZeroUsize;
 use std::time::Instant;
 
+use bench::pretty_integer;
 use bench::{Metric, Plan, Timing, bencher_json};
 use fiat_shamir::{ProofTranscript, ProverState, SessionId, VerifierState};
 use flock::Witness;
@@ -32,7 +33,6 @@ use pcs::ring_switch::RingSwitch;
 use pcs::stack::{CommittedStack, StackCommitment, Statement};
 use pcs::whir::{Config, INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0, config_for_rate};
 use primitives::field::F64;
-use primitives::pretty_integer;
 use primitives::test_util::Rng;
 
 #[global_allocator]

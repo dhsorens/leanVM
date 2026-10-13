@@ -4,12 +4,11 @@ use super::batch::{FormPowers, VerifierBatch};
 use super::deferred::{Claim, DeferredClaims, ProgramPoint};
 use super::error::CpuError;
 use super::layout::{Framework, Layout, Schema};
-use crate::class_flock::FlockId;
+use crate::bus::PublicColumns;
+use crate::commitment::{Commitment, Rate, StackClaim};
 use crate::constraints::Claims;
-use crate::leaf::PublicColumns;
-use crate::pcs::{Commitment, Rate, StackClaim};
-use crate::tables::{ClassTable, N_TABLES};
-use crate::{constraints, leaf};
+use crate::tables::{CircuitId, ClassTable, N_TABLES};
+use crate::{bus, constraints};
 use fiat_shamir::arith::Verifier;
 use flock::reduction;
 use pcs::verifier::OpeningVerifier;
@@ -86,7 +85,7 @@ impl Layout {
     ) -> Result<DeferredClaims<V::E>, CpuError> {
         // Flock's reductions, batched over every class circuit then every clock circuit, each leaving its matrices' form to its circuit.
         // They read only the commitment; their claims wait for the opening, whose challenges follow every claim.
-        let batches = FlockId::batches(&self.taus);
+        let batches = CircuitId::batches(&self.taus);
         let replays = v
             .scope("flock", |v| reduction::verify(&batches, v))
             .map_err(CpuError::Reductions)?;
@@ -125,7 +124,7 @@ impl Layout {
         clock: V::E,
         output: &[V::E; 4],
     ) -> Result<TableReduction<V::E>, CpuError> {
-        let mut bus = leaf::verify_balance(
+        let mut bus = bus::verify_balance(
             v,
             &self.push,
             &self.pull,

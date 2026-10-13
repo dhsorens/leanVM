@@ -1,15 +1,15 @@
 //! Field elements in vector lanes, so that one kernel serves every target.
 
-use primitives::field::{F192, F192Unreduced};
+use super::{F192, F192Unreduced};
 #[cfg(any(
     all(target_arch = "aarch64", target_feature = "aes"),
     all(target_arch = "x86_64", target_feature = "pclmulqdq")
 ))]
-use primitives::field::{F192x1, F192x1Unreduced};
+use super::{F192x1, F192x1Unreduced};
 #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx2"))]
-use primitives::field::{F192x4, F192x4Unreduced};
-use std::mem::MaybeUninit;
-use std::ops::{Add, Mul};
+use super::{F192x4, F192x4Unreduced};
+use core::mem::MaybeUninit;
+use core::ops::{Add, Mul};
 
 /// The widest lanes the target multiplies in.
 ///
@@ -17,7 +17,7 @@ use std::ops::{Add, Mul};
 /// - One element held in vector registers with PCLMULQDQ or PMULL.
 /// - The portable element elsewhere.
 #[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx2"))]
-pub(super) type Lane = F192x4;
+pub type Lane = F192x4;
 
 /// The widest lanes the target multiplies in.
 #[cfg(all(
@@ -27,19 +27,20 @@ pub(super) type Lane = F192x4;
     ),
     not(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx2"))
 ))]
-pub(super) type Lane = F192x1;
+pub type Lane = F192x1;
 
 /// The widest lanes the target multiplies in.
 #[cfg(not(any(
     all(target_arch = "aarch64", target_feature = "aes"),
     all(target_arch = "x86_64", target_feature = "pclmulqdq")
 )))]
-pub(super) type Lane = F192;
+pub type Lane = F192;
 
 /// A value added by XOR: an element, an unreduced product, or an array of them.
 ///
 /// In characteristic two every sum is a XOR, reduced or not.
-pub(super) trait Xor: Copy {
+pub trait Xor: Copy {
+    /// The sum `self + rhs`.
     fn xor(self, rhs: Self) -> Self;
 }
 
@@ -57,7 +58,7 @@ impl<T: Xor, const N: usize> Xor for [T; N] {
 ///
 /// Karatsuba's products are combined by sums alone.
 /// So products summed over many operands can be combined once, after the sum.
-pub(super) trait Polynomial: Copy {
+pub trait Polynomial: Copy {
     /// One coefficient.
     type Coeff;
 
@@ -132,7 +133,7 @@ impl<T: Xor> Polynomial for [T; 3] {
 }
 
 /// `WIDTH` elements of `E` in vector registers, with lane-wise arithmetic.
-pub(super) trait Lanes: Xor + Add<Output = Self> + Mul<Output = Self> {
+pub trait Lanes: Xor + Add<Output = Self> + Mul<Output = Self> {
     /// Lane-wise products before their reduction, summed by XOR.
     type Wide: Xor;
 
@@ -157,9 +158,9 @@ pub(super) trait Lanes: Xor + Add<Output = Self> + Mul<Output = Self> {
     /// The sum of the lanes.
     fn sum(wide: Self::Wide) -> F192Unreduced;
 
-    /// The four children of `WIDTH` rows placed `stride` elements apart.
+    /// The first four elements of `WIDTH` rows placed `stride` elements apart.
     ///
-    /// Vector `c` holds child `c`, of row `l` in lane `l`.
+    /// Vector `c` holds element `c` of row `l` in lane `l`.
     fn gather(values: &[F192], stride: usize) -> [Self; 4];
 }
 

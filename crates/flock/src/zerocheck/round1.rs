@@ -67,11 +67,11 @@ use primitives::field::gf2_8::avx2::gf8_mul_vec32;
 use primitives::field::gf2_8::gf8_reduce;
 #[cfg(target_arch = "aarch64")]
 use primitives::field::gf2_8::neon::{gf8_mul_vec16, gf8_reduce_vec16};
-use primitives::field::{F8, F192, phi8_192};
+use primitives::field::{F8, F192, phi8};
 use primitives::multilinear::SplitEq;
 
 use super::multilinear::PackedWitness;
-use super::ntt::InvNttTableByteSingleGf8;
+use super::ntt::LdeTable;
 use super::{K_SKIP, N_INNER, Padding};
 
 /// Evaluations per row: the size of the skip domain.
@@ -113,12 +113,12 @@ const C_S_F8: u8 = 0x1C;
 
 /// `C_s = phi_8(0x1C)`: the naive message is the sweep's times this constant.
 pub(crate) fn c_s() -> F192 {
-    phi8_192(F8(C_S_F8))
+    phi8(F8(C_S_F8))
 }
 
 /// The three small challenges in F192.
 pub(crate) fn small_challenges() -> [F192; 3] {
-    SMALL_CHAL_F8.map(|byte| phi8_192(F8(byte)))
+    SMALL_CHAL_F8.map(|byte| phi8(F8(byte)))
 }
 
 /// The medium generator `gamma`, fixed by the protocol in the tower basis.
@@ -165,7 +165,7 @@ fn gamma_powers() -> &'static [F192; N_MEDIUM_VALUES] {
 }
 
 /// Extend F192 values from `S` to `Lambda`, by the byte transform's butterflies lifted through `phi_8`.
-pub(crate) fn extend(on_s: &[F192], table: &InvNttTableByteSingleGf8) -> Vec<F192> {
+pub(crate) fn extend(on_s: &[F192], table: &LdeTable) -> Vec<F192> {
     let mut out = on_s.to_vec();
     table.extend_lifted(&mut out);
     out
@@ -251,7 +251,7 @@ pub(crate) struct Round1<'a> {
     /// The eq coordinates past the skip: the seven fixed ones, then the outer ones.
     r: &'a [F192],
     /// The byte extension from `S` to `Lambda`.
-    lde: &'a InvNttTableByteSingleGf8,
+    lde: &'a LdeTable,
     /// Where the witness is zero or repeats itself.
     padding: Padding,
 }
@@ -262,13 +262,7 @@ impl<'a> Round1<'a> {
     /// # Panics
     ///
     /// When the cube is below a window, or the lengths disagree with `m`.
-    pub(crate) fn new(
-        bits: PackedWitness<'a>,
-        m: usize,
-        r: &'a [F192],
-        lde: &'a InvNttTableByteSingleGf8,
-        padding: &Padding,
-    ) -> Self {
+    pub(crate) fn new(bits: PackedWitness<'a>, m: usize, r: &'a [F192], lde: &'a LdeTable, padding: &Padding) -> Self {
         // A window is the sweep's unit: the skip and the seven fixed coordinates.
         assert!(m >= WINDOW_LOG, "the sweep needs at least one {WINDOW_LOG}-bit window");
         assert_eq!(bits.a.len(), (1 << m) / 8);
@@ -342,7 +336,7 @@ struct Sweep<'a> {
     /// The packed `a` and `b`.
     bits: PackedWitness<'a>,
     /// The byte extension from `S` to `Lambda`.
-    lde: &'a InvNttTableByteSingleGf8,
+    lde: &'a LdeTable,
     /// The low half of the outer eq table, times `1 / D`.
     eq_lo: Vec<F192>,
     /// The low half's variables.
@@ -405,7 +399,7 @@ impl Sweep<'_> {
 
 /// The `A B` bytes of one medium position, `a` and `b` its eight K-rows of eight bytes each.
 #[inline]
-fn product_bytes(a: &[u8; MEDIUM_BYTES], b: &[u8; MEDIUM_BYTES], table: &InvNttTableByteSingleGf8) -> [u8; ELL] {
+fn product_bytes(a: &[u8; MEDIUM_BYTES], b: &[u8; MEDIUM_BYTES], table: &LdeTable) -> [u8; ELL] {
     let mut out = [0; ELL];
     shift_reduce_inner_ab(a, b, table, &mut out);
     out
@@ -587,7 +581,7 @@ unsafe fn fused_apply_one_k<const K: i32>(
 fn shift_reduce_inner_ab_fused_neon(
     a_packed: &[u8; MEDIUM_BYTES],
     b_packed: &[u8; MEDIUM_BYTES],
-    inv_table: &InvNttTableByteSingleGf8,
+    inv_table: &LdeTable,
     out: &mut [u8; 64],
 ) {
     let byte_base_b = 0;
@@ -654,7 +648,7 @@ fn shift_reduce_inner_ab_fused_neon(
 fn shift_reduce_inner_ab(
     a_packed: &[u8; MEDIUM_BYTES],
     b_packed: &[u8; MEDIUM_BYTES],
-    inv_table: &InvNttTableByteSingleGf8,
+    inv_table: &LdeTable,
     out: &mut [u8; 64],
 ) {
     #[cfg(target_arch = "aarch64")]
@@ -694,7 +688,7 @@ fn shift_reduce_inner_ab(
 unsafe fn shift_reduce_inner_ab_gfni_512(
     a_packed: &[u8; MEDIUM_BYTES],
     b_packed: &[u8; MEDIUM_BYTES],
-    inv_table: &InvNttTableByteSingleGf8,
+    inv_table: &LdeTable,
     out: &mut [u8; 64],
 ) {
     let byte_base_b = 0;
@@ -749,7 +743,7 @@ unsafe fn shift_reduce_inner_ab_gfni_512(
 unsafe fn shift_reduce_inner_ab_avx2(
     a_packed: &[u8; MEDIUM_BYTES],
     b_packed: &[u8; MEDIUM_BYTES],
-    inv_table: &InvNttTableByteSingleGf8,
+    inv_table: &LdeTable,
     out: &mut [u8; 64],
 ) {
     let byte_base_b = 0;
@@ -814,7 +808,7 @@ unsafe fn shift_reduce_inner_ab_avx2(
 fn shift_reduce_inner_ab_scalar(
     a_packed: &[u8; MEDIUM_BYTES],
     b_packed: &[u8; MEDIUM_BYTES],
-    inv_table: &InvNttTableByteSingleGf8,
+    inv_table: &LdeTable,
     out: &mut [u8; 64],
 ) {
     // `inv_table.apply` overwrites every lane, so these need no re-zeroing per K.
@@ -859,7 +853,7 @@ use table::Convert;
 mod table {
     use std::sync::OnceLock;
 
-    use primitives::field::{F192, PHI_8_TABLE_192};
+    use primitives::field::{F192, PHI8_TABLE};
 
     use super::{ELL, N_MEDIUM_VALUES, gamma_powers};
 
@@ -876,7 +870,7 @@ mod table {
             // Row `b` is `phi_8` of every byte, scaled by `gamma^b`.
             let mut table: Box<Table> = Box::new([[F192::ZERO; 256]; N_MEDIUM_VALUES]);
             for (row, &g_b) in table.iter_mut().zip(gamma_powers()) {
-                for (entry, &phi) in row.iter_mut().zip(PHI_8_TABLE_192.iter()) {
+                for (entry, &phi) in row.iter_mut().zip(PHI8_TABLE.iter()) {
                     *entry = g_b * phi;
                 }
             }
@@ -956,7 +950,7 @@ mod avx2 {
     use std::sync::LazyLock;
 
     use primitives::bit_fold::avx2::{self, Best, HALF, OUT_BYTES, Product};
-    use primitives::field::{F192, PHI_8_TABLE_192, mul4};
+    use primitives::field::{F192, PHI8_TABLE, mul4};
 
     use super::{ELL, N_MEDIUM_VALUES, gamma_powers};
 
@@ -965,7 +959,7 @@ mod avx2 {
 
     /// The maps of the product `P`.
     pub(super) fn maps<P: Product>() -> Maps<P> {
-        let units: [F192; 8] = std::array::from_fn(|s| PHI_8_TABLE_192[1 << s]);
+        let units: [F192; 8] = std::array::from_fn(|s| PHI8_TABLE[1 << s]);
         gamma_powers().map(|g| P::maps(&units.map(|u| g * u)))
     }
 
@@ -1044,7 +1038,7 @@ mod gfni {
     use std::sync::OnceLock;
 
     use primitives::bit_fold::gfni::{OUT_BYTES, store_f192, weight_matrices};
-    use primitives::field::{F64, F192, PHI_8_TABLE_192, mul_base8, mul4};
+    use primitives::field::{F64, F192, PHI8_TABLE, mul_base8, mul4};
 
     use super::{ELL, N_MEDIUM_VALUES, gamma_powers};
 
@@ -1073,7 +1067,7 @@ mod gfni {
             static UNITS: OnceLock<[F64; 8]> = OnceLock::new();
             let units = UNITS.get_or_init(|| {
                 std::array::from_fn(|s| {
-                    let phi = PHI_8_TABLE_192[1 << s];
+                    let phi = PHI8_TABLE[1 << s];
                     assert!(phi.c1 == 0 && phi.c2 == 0, "phi_8 lands in the base field");
                     F64(phi.c0)
                 })
@@ -1138,7 +1132,7 @@ pub(crate) mod tests {
     use primitives::test_util::Rng;
 
     use super::*;
-    use crate::zerocheck::ntt::AdditiveNttGf8;
+    use crate::zerocheck::ntt::AdditiveNttF8;
 
     /// Pack bits low bit first into bytes.
     pub(crate) fn pack_bits(bits: &[bool]) -> Vec<u8> {
@@ -1148,13 +1142,13 @@ pub(crate) mod tests {
     }
 
     /// The byte extension from `S` to `Lambda` at the protocol's skip.
-    fn lde() -> InvNttTableByteSingleGf8 {
+    fn lde() -> LdeTable {
         table(K_SKIP, F8::ZERO, F8(1 << K_SKIP))
     }
 
     /// The byte extension from `beta_s + S` to `beta_l + S`, `S` of size `2^k`.
-    fn table(k: usize, beta_s: F8, beta_l: F8) -> InvNttTableByteSingleGf8 {
-        InvNttTableByteSingleGf8::new(&AdditiveNttGf8::new(k, beta_s), &AdditiveNttGf8::new(k, beta_l))
+    fn table(k: usize, beta_s: F8, beta_l: F8) -> LdeTable {
+        LdeTable::new(&AdditiveNttF8::new(k, beta_s), &AdditiveNttF8::new(k, beta_l))
     }
 
     /// The eq coordinates: the seven fixed ones, then random outer ones.
@@ -1180,7 +1174,7 @@ pub(crate) mod tests {
                 let x = beta_l + F8(i as u8);
                 let numerator = s.iter().fold(F8::ONE, |acc, &s_h| acc * (x + s_h));
                 (s.iter().zip(&denominators))
-                    .map(|(&s_j, &d)| phi8_192(numerator * (x + s_j).inv() * d))
+                    .map(|(&s_j, &d)| phi8(numerator * (x + s_j).inv() * d))
                     .collect()
             })
             .collect()
@@ -1188,8 +1182,8 @@ pub(crate) mod tests {
 
     /// The message by the protocol's formula: every row extended on its own, nothing factored.
     fn naive(bits: [&[bool]; 3], m: usize, r: &[F192]) -> (Vec<F192>, Vec<F192>) {
-        let ntt_s = AdditiveNttGf8::new(K_SKIP, F8::ZERO);
-        let ntt_l = AdditiveNttGf8::new(K_SKIP, F8(ELL as u8));
+        let ntt_s = AdditiveNttF8::new(K_SKIP, F8::ZERO);
+        let ntt_l = AdditiveNttF8::new(K_SKIP, F8(ELL as u8));
         let mut p = [vec![F192::ZERO; ELL], vec![F192::ZERO; ELL]];
         for (x, &weight) in eq_table(r).iter().enumerate().take(1 << (m - K_SKIP)) {
             // Row `x` of each vector, extended from `S` to `Lambda`.
@@ -1200,8 +1194,8 @@ pub(crate) mod tests {
                 col
             });
             for l in 0..ELL {
-                p[0][l] += weight * phi8_192(a[l] * b[l]);
-                p[1][l] += weight * phi8_192(c[l]);
+                p[0][l] += weight * phi8(a[l] * b[l]);
+                p[1][l] += weight * phi8(c[l]);
             }
         }
         let [ab, c] = p;
@@ -1373,8 +1367,7 @@ pub(crate) mod tests {
     /// The convert's definition, lane by lane: `sum_b gamma^b * phi_8(rows[b][lane])`.
     fn reference(rows: &[[u8; 64]]) -> [F192; ELL] {
         std::array::from_fn(|lane| {
-            (rows.iter().zip(gamma_powers()))
-                .fold(F192::ZERO, |acc, (row, &gamma)| acc + gamma * phi8_192(F8(row[lane])))
+            (rows.iter().zip(gamma_powers())).fold(F192::ZERO, |acc, (row, &gamma)| acc + gamma * phi8(F8(row[lane])))
         })
     }
 

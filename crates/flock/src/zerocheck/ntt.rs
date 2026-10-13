@@ -3,7 +3,7 @@
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 use core::arch::x86_64::*;
-use primitives::field::{F8, F64, F192, phi8_192};
+use primitives::field::{F8, F64, F192, phi8};
 
 /// Twiddle recurrence used to build the next subspace layer's evaluation points:
 /// `next_s(s, root) = s² + root · s = s · (s + root)`.
@@ -104,12 +104,12 @@ fn ifft_rec(v: &mut [F8], tw: &[F8], idx: usize) {
 /// Lin-Chung-Han basis to evaluations at the 2^k points of the domain.
 /// `inverse` is the exact reverse.
 #[derive(Clone, Debug)]
-pub(crate) struct AdditiveNttGf8 {
+pub(crate) struct AdditiveNttF8 {
     k: usize,
     twiddles: Vec<F8>,
 }
 
-impl AdditiveNttGf8 {
+impl AdditiveNttF8 {
     /// Build an NTT for a 2^k-point domain with offset β.
     pub(crate) fn new(k: usize, beta: F8) -> Self {
         Self {
@@ -142,7 +142,7 @@ impl AdditiveNttGf8 {
     }
 }
 
-/// §2.1 single-table collapse of the LDE matrix `M = fwd_NTT_Λ ∘ inv_NTT_S`.
+/// The low-degree extension from `S` to `Λ`, `M = fwd_NTT_Λ ∘ inv_NTT_S`, collapsed to one byte table (§2.1).
 ///
 /// Background: the URM round-1 needs to map each `ell`-bit row of the boolean
 /// witness (packed as `n_chunks = ell/8` bytes) to `ell` evaluations on the
@@ -161,7 +161,7 @@ impl AdditiveNttGf8 {
 /// Storage: 256 × ell bytes (16 KB at k=6, 32 KB at k=7), which fits in L1.
 /// Lookups per row: n_chunks (= ell/8), each load is `ell` contiguous bytes.
 #[derive(Clone, Debug)]
-pub(crate) struct InvNttTableByteSingleGf8 {
+pub(crate) struct LdeTable {
     pub(crate) k: usize,
     pub(crate) ell: usize,
     pub(crate) n_chunks: usize,
@@ -173,11 +173,11 @@ pub(crate) struct InvNttTableByteSingleGf8 {
     twiddles: Vec<F64>,
 }
 
-impl InvNttTableByteSingleGf8 {
+impl LdeTable {
     /// Build the table given the two NTT instances: `ntt_S` over the input
     /// domain, `ntt_L` over the output (extension) domain. Both must have the
     /// same `k`.
-    pub(crate) fn new(ntt_s: &AdditiveNttGf8, ntt_l: &AdditiveNttGf8) -> Self {
+    pub(crate) fn new(ntt_s: &AdditiveNttF8, ntt_l: &AdditiveNttF8) -> Self {
         assert_eq!(ntt_s.k(), ntt_l.k(), "ntt_S and ntt_L must share k");
         let k = ntt_s.k();
         let ell = 1usize << k;
@@ -229,7 +229,7 @@ impl InvNttTableByteSingleGf8 {
                 .twiddles
                 .iter()
                 .chain(&ntt_l.twiddles)
-                .map(|&t| F64(phi8_192(t).c0))
+                .map(|&t| F64(phi8(t).c0))
                 .collect(),
         }
     }
@@ -427,8 +427,7 @@ impl InvNttTableByteSingleGf8 {
         }
     }
 
-    /// Scalar reference. Kept public so tests can use it as the cross-check
-    /// oracle for the NEON variant.
+    /// The scalar reference: the arm [`Self::apply`] takes below 16 evaluations, and its SIMD arms' test oracle.
     pub(crate) fn apply_scalar(&self, bytes: &[u8], out: &mut [F8]) {
         assert_eq!(bytes.len(), self.n_chunks);
         assert_eq!(out.len(), self.ell);
@@ -589,7 +588,7 @@ mod tests {
     fn forward_inverse_roundtrip() {
         let mut rng = Rng::new(42);
         for k in 1..=7 {
-            let ntt = AdditiveNttGf8::new(k, F8::ZERO);
+            let ntt = AdditiveNttF8::new(k, F8::ZERO);
             for _ in 0..8 {
                 let original = rand_vec(&mut rng, 1 << k);
                 let mut v = original.clone();
@@ -606,7 +605,7 @@ mod tests {
         for beta_v in [0x01u8, 0x42, 0xCA, 0xFF] {
             let beta = F8(beta_v);
             for k in 1..=6 {
-                let ntt = AdditiveNttGf8::new(k, beta);
+                let ntt = AdditiveNttF8::new(k, beta);
                 let original = rand_vec(&mut rng, 1 << k);
                 let mut v = original.clone();
                 ntt.forward(&mut v);
@@ -618,7 +617,7 @@ mod tests {
 
     /// Naive reference: unpack `bytes` into `ell` GF(2)-valued F8 elements
     /// (one per coefficient bit), apply inv_NTT_S, then fwd_NTT_Λ.
-    fn naive_apply(ntt_s: &AdditiveNttGf8, ntt_l: &AdditiveNttGf8, bytes: &[u8]) -> Vec<F8> {
+    fn naive_apply(ntt_s: &AdditiveNttF8, ntt_l: &AdditiveNttF8, bytes: &[u8]) -> Vec<F8> {
         let ell = 1usize << ntt_s.k();
         assert_eq!(bytes.len(), ell / 8);
         let mut v = vec![F8::ZERO; ell];
@@ -637,9 +636,9 @@ mod tests {
     #[test]
     fn matches_naive() {
         for k in [3usize, 4, 6] {
-            let ntt_s = AdditiveNttGf8::new(k, F8::ZERO);
-            let ntt_l = AdditiveNttGf8::new(k, F8(1 << k));
-            let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
+            let ntt_s = AdditiveNttF8::new(k, F8::ZERO);
+            let ntt_l = AdditiveNttF8::new(k, F8(1 << k));
+            let table = LdeTable::new(&ntt_s, &ntt_l);
             let mut rng = Rng::new(100 + k as u64);
             let mut out = vec![F8::ZERO; table.ell];
             for _ in 0..32 {
@@ -656,9 +655,9 @@ mod tests {
     #[test]
     fn apply_simd_matches_apply_scalar() {
         for &k in &[4usize, 5, 6] {
-            let ntt_s = AdditiveNttGf8::new(k, F8::ZERO);
-            let ntt_l = AdditiveNttGf8::new(k, F8(1u8 << k));
-            let table = InvNttTableByteSingleGf8::new(&ntt_s, &ntt_l);
+            let ntt_s = AdditiveNttF8::new(k, F8::ZERO);
+            let ntt_l = AdditiveNttF8::new(k, F8(1u8 << k));
+            let table = LdeTable::new(&ntt_s, &ntt_l);
 
             let mut rng = Rng::new(100 + k as u64);
             for _ in 0..32 {
