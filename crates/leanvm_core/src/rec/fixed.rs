@@ -5,7 +5,7 @@
 //!
 //! Two circuits of the same heights differ exactly where these columns do, so the columns name the circuit.
 //!
-//! A circuit's fixed columns stack into its fixed polynomial ([`FixedLayout`]), and the circuits' stacks into the nodes' `W_node`.
+//! A circuit's fixed columns stack into its fixed polynomial, and the circuits' stacks into the nodes' `W_node`.
 
 use super::bus::SlotKey;
 use super::circuit::{Circuit, Limbs, PubSource};
@@ -68,10 +68,11 @@ impl FixedColumn {
 }
 
 impl FixedColumns {
-    /// The fixed columns of a circuit at the given table heights.
+    /// The fixed columns of a circuit at its heights.
     ///
     /// The slots of a wire class, in table, row and slot order, form one cycle: each slot's `next` is the following one's key.
-    pub(crate) fn of(circuit: &Circuit, taus: &PerRecTable<usize>) -> Self {
+    pub(crate) fn new(circuit: &Circuit) -> Self {
+        let taus = &circuit.heights();
         let mut next: Vec<Vec<F64>> = (Table::ALL.into_iter())
             .flat_map(|t| {
                 let height = 1 << taus[t];
@@ -143,13 +144,11 @@ impl FixedColumns {
     }
 }
 
-// The nodes' fixed polynomial `W_node`: each circuit's fixed columns stacked, in the order of their kind's index.
-//
-// The circuits share their heights, so their stacks have one layout, and the kind's bits, more variables, select the circuit.
-
 /// Where each fixed column sits in one circuit's stack: the circuit's fixed polynomial over `kappa_fix` variables.
 ///
-/// Columns are stacked largest first, each at an offset that is a multiple of its length.
+/// - Columns are stacked largest first, each at an offset that is a multiple of its length.
+/// - The circuits of a tier share their heights, so their stacks share this layout.
+/// - The tier's polynomial stacks its circuits' stacks by their kind's index, whose bits select the circuit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FixedLayout {
     /// Each column's variables.

@@ -11,7 +11,7 @@ use crate::bus::{PublicColumn, PublicColumns};
 use fiat_shamir::TranscriptError;
 use fiat_shamir::arith::{Arith, Verifier};
 use pcs::verifier::OpeningVerifier;
-use pcs::whir::{Stratum, strata};
+use pcs::whir::Stratum;
 use primitives::field::F192;
 use recursion::FixedHints;
 use std::fmt::Debug;
@@ -49,48 +49,41 @@ impl<'a, 's> Rows<'a, 's> {
     }
 }
 
-impl Arith for Builder {
-    type E = Ew;
-
-    fn constant(&mut self, c: F192) -> Ew {
-        self.e_const(c)
-    }
-
-    fn mul_add(&mut self, a: Ew, b: Ew, d: Ew) -> Ew {
-        Self::mul_add(self, a, b, d)
-    }
-
-    fn add(&mut self, a: Ew, d: Ew) -> Ew {
-        Self::add(self, a, d)
-    }
-
-    fn mul_const_add(&mut self, a: Ew, c: F192, d: Ew) -> Ew {
-        Self::mul_const_add(self, a, c, d)
-    }
-
-    fn inv(&mut self, a: Ew) -> Ew {
-        Self::inv(self, a)
-    }
-
-    /// `v + c2 (Y + Y^2) + c1 Y^2` for `v = c0 + c1 Y + c2 Y^2`.
-    fn frobenius2(&mut self, a: Ew) -> Ew {
-        let [_, c1, c2] = self.e_to_k(a);
-        let y_y2 = self.e_const(F192::new(0, 1, 1));
-        let y2 = self.e_const(F192::new(0, 0, 1));
-        let u = self.mul_k_add(y_y2, c2, a);
-        self.mul_k_add(y2, c1, u)
-    }
-
-    fn zero(&mut self) -> Ew {
-        Self::zero(self)
-    }
-
-    fn one(&mut self) -> Ew {
-        Self::one(self)
-    }
-
-    fn mul(&mut self, a: Ew, b: Ew) -> Ew {
-        Self::mul(self, a, b)
+impl Rows<'_, '_> {
+    /// Each query's row, its opening the next phase's, hashed up its own low levels to its stratum's node, every node
+    /// then tied to the root.
+    ///
+    /// A query of stratum `(s, j)` is hashed up its `depth - s` low levels to node `j` of the top subtree's level `s`.
+    /// The batch's largest group reaches every node of the subtree's bottom level, which is hashed once up to the root.
+    /// Every other query's node is the subtree's.
+    /// So each leaf sits `depth` levels below the root, as the shape fixes.
+    fn authenticate(&mut self, root: Dw, queries: &[Vec<Kw>], row_words: usize, leaf_words: usize) -> Vec<Vec<Kw>> {
+        self.t.next_openings();
+        let depth = queries[0].len();
+        let strata = Stratum::batch(queries.len(), depth);
+        let top = strata[0].bits;
+        let mut nodes: Vec<Vec<Option<Dw>>> = (0..=top).map(|s| vec![None; 1 << s]).collect();
+        let tie = |b: &mut Builder, slot: &mut Option<Dw>, node: Dw| match *slot {
+            Some(known) => b.eq(known, node),
+            None => *slot = Some(node),
+        };
+        let rows = (queries.iter().zip(&strata))
+            .map(|(bits, s)| {
+                let row = self.t.open_row(self.b, &bits[..depth - s.bits], row_words, leaf_words);
+                tie(self.b, &mut nodes[s.bits][s.index], row.node);
+                row.words
+            })
+            .collect();
+        for s in (1..=top).rev() {
+            for j in 0..1 << (s - 1) {
+                let [left, right] =
+                    [2 * j, 2 * j + 1].map(|i| nodes[s][i].expect("the largest group covers its level"));
+                let node = self.b.parent(left, right);
+                tie(self.b, &mut nodes[s - 1][j], node);
+            }
+        }
+        tie(self.b, &mut nodes[0][0], root);
+        rows
     }
 }
 
@@ -158,7 +151,7 @@ impl Verifier for Rows<'_, '_> {
     }
 
     fn ensure_eq<Er>(&mut self, a: Ew, b: Ew, _: impl FnOnce() -> Er) -> Result<(), Er> {
-        self.b.eq_e(a, b);
+        self.b.eq(a, b);
         Ok(())
     }
 
@@ -206,7 +199,7 @@ impl OpeningVerifier for Rows<'_, '_> {
             out.extend((0..n).map(|j| bits[j * depth..(j + 1) * depth].to_vec()));
         }
         // Each query's top bits are its stratum's, constants of the shape.
-        for (bits, s) in out.iter_mut().zip(strata(count, depth)) {
+        for (bits, s) in out.iter_mut().zip(Stratum::batch(count, depth)) {
             let low = depth - s.bits;
             for (i, bit) in bits[low..].iter_mut().enumerate() {
                 *bit = self.b.k_const((s.index >> i) as u64 & 1);
@@ -223,7 +216,7 @@ impl OpeningVerifier for Rows<'_, '_> {
         row_words: usize,
         leaf_words: usize,
     ) -> Result<Vec<Vec<Kw>>, TranscriptError> {
-        Ok(authenticate(self, *root, queries, row_words, leaf_words))
+        Ok(self.authenticate(*root, queries, row_words, leaf_words))
     }
 
     fn mul_k_add(&mut self, a: Ew, k: Kw, d: Ew) -> Ew {
@@ -240,57 +233,6 @@ impl OpeningVerifier for Rows<'_, '_> {
     }
 }
 
-/// Each query's row, its opening the next phase's, then authenticated against the root.
-fn authenticate(
-    r: &mut Rows<'_, '_>,
-    root: Dw,
-    queries: &[Vec<Kw>],
-    row_words: usize,
-    leaf_words: usize,
-) -> Vec<Vec<Kw>> {
-    r.t.next_openings();
-    authenticate_queued(r, root, queries, row_words, leaf_words)
-}
-
-/// Each query's row, hashed up its own low levels to its stratum's node, every node then tied to the root.
-///
-/// A query of stratum `(s, j)` is hashed up its `depth - s` low levels to node `j` of the top subtree's level `s`.
-/// The batch's largest group reaches every node of the subtree's bottom level, which is hashed once up to the root.
-/// Every other query's node is the subtree's.
-/// So each leaf sits `depth` levels below the root, as the shape fixes.
-fn authenticate_queued(
-    r: &mut Rows<'_, '_>,
-    root: Dw,
-    queries: &[Vec<Kw>],
-    row_words: usize,
-    leaf_words: usize,
-) -> Vec<Vec<Kw>> {
-    let depth = queries[0].len();
-    let strata: Vec<Stratum> = strata(queries.len(), depth);
-    let top = strata[0].bits;
-    let mut nodes: Vec<Vec<Option<Dw>>> = (0..=top).map(|s| vec![None; 1 << s]).collect();
-    let tie = |b: &mut Builder, slot: &mut Option<Dw>, node: Dw| match *slot {
-        Some(known) => b.eq_d(known, node),
-        None => *slot = Some(node),
-    };
-    let rows = (queries.iter().zip(&strata))
-        .map(|(bits, s)| {
-            let (node, row) = r.t.open_row(r.b, &bits[..depth - s.bits], row_words, leaf_words);
-            tie(r.b, &mut nodes[s.bits][s.index], node);
-            row
-        })
-        .collect();
-    for s in (1..=top).rev() {
-        for j in 0..1 << (s - 1) {
-            let [left, right] = [2 * j, 2 * j + 1].map(|i| nodes[s][i].expect("the largest group covers its level"));
-            let node = r.b.parent(left, right);
-            tie(r.b, &mut nodes[s - 1][j], node);
-        }
-    }
-    tie(r.b, &mut nodes[0][0], root);
-    rows
-}
-
 /// The value of a read the rows never refuse.
 pub(crate) fn infallible<T, Er: Debug>(read: Result<T, Er>) -> T {
     read.unwrap_or_else(|e| unreachable!("rows record a failure rather than refuse: {e:?}"))
@@ -305,18 +247,20 @@ mod tests {
     use crate::commitment::{Commitment, Committed, Rate, RingSwitch, SliceClaim, StackClaim};
     use crate::rec::RecError;
     use crate::rec::circuit::{Assignment, Builder, Circuit, Ew, Finished, Kw, Unsatisfied};
-    use crate::rec::table::HashCircuit;
+    use crate::rec::hash;
+    use crate::rec::proof::CircuitKey;
     use crate::rec::transcript::{ProofSource, Transcript};
 
     use crate::stacking::StackShape;
     use fiat_shamir::{Encoding, FromNarg, ProofTranscript, ProverState, SessionId, VerifierState};
+    use flock::BatchRows;
     use flock::FlockError;
-    use flock::Witness;
     use flock::reduction::{self, Block, Instance, ReductionReplay, Shape};
+    use flock::test_util::Witness;
     use flock::zerocheck::K_SKIP;
     use pcs::merkle::{Hash, Openings, hash_leaf, hash_pair};
     use pcs::verifier::Recording;
-    use pcs::whir::{WhirError, strata};
+    use pcs::whir::{Stratum, WhirError};
     use primitives::field::{F64, F192};
     use primitives::multilinear::inner_product_base;
     use primitives::test_util::Rng;
@@ -346,7 +290,7 @@ mod tests {
             levels.push(level.chunks(2).map(|pair| hash_pair(&pair[0], &pair[1])).collect());
         }
         let root = levels.last().unwrap()[0];
-        let strata = strata(count, depth);
+        let strata = Stratum::batch(count, depth);
         let mut rng = Rng::new(9);
         let queries: Vec<usize> = (strata.iter())
             .map(|s| {
@@ -360,7 +304,6 @@ mod tests {
         let failures = |forge: Option<usize>| {
             let mut b = Builder::new();
             let instance = [b.k_const(0)];
-            let mut t = Transcript::new(&mut b, &SessionId::new(LABEL), &instance, ProofSource::Shape);
             let mut openings = Openings {
                 leaf_words: 8,
                 height: depth,
@@ -375,12 +318,19 @@ mod tests {
                 openings.images.extend((0..8).map(|j| F64(8 * q as u64 + j)));
                 openings.paths.extend(path);
             }
-            t.queue_openings(&openings);
+            let proof = ProofTranscript::default();
+            let phases = [openings];
+            let mut t = Transcript::new(
+                &mut b,
+                &SessionId::new(LABEL),
+                &instance,
+                ProofSource::Proof(&proof, &phases),
+            );
             let bits: Vec<Vec<Kw>> = (queries.iter())
                 .map(|&q| (0..depth).map(|l| b.k_const((q >> l) as u64 & 1)).collect())
                 .collect();
             let root = b.d_const(primitives::hash::digest_words(&root));
-            authenticate_queued(&mut Rows::new(&mut b, &mut t), root, &bits, 8, 8);
+            Rows::new(&mut b, &mut t).authenticate(root, &bits, 8, 8);
             b.finish().failures
         };
         assert!(failures(None).is_empty(), "the honest paths tie to the root");
@@ -400,7 +350,7 @@ mod tests {
         let acc = b.free_d([1, 2, 3, 4]);
         let bit = b.free_k(1);
         let parent = b.node(acc, bit, [5, 6, 7, 8]);
-        b.expose_d(parent);
+        b.expose(parent);
         let Finished {
             circuit,
             assignment: mut a,
@@ -409,8 +359,9 @@ mod tests {
         assert!(failures.is_empty(), "{failures:?}");
         let session = SessionId::new(b"selector-test");
         let statement = a.statement().to_vec();
-        let prove = |a: &Assignment| circuit.prove(a, &session, Rate::MIN).expect("the circuit fits");
-        let verify = |proof: &ProofTranscript| circuit.verify(&statement, &session, Rate::MIN, proof).map(drop);
+        let key = CircuitKey::new(circuit).expect("the circuit fits");
+        let prove = |a: &Assignment| key.prove(a, &session, Rate::MIN);
+        let verify = |proof: &ProofTranscript| key.verify(&statement, &session, Rate::MIN, proof).map(drop);
         assert_eq!(verify(&prove(&a)), Ok(()));
         a.values[bit.0 as usize][0] = 2;
         assert_eq!(
@@ -442,10 +393,14 @@ mod tests {
         let (circuit, spec) = (f.circuit(), f.table().spec());
         let n_blocks_log = spec.n_blocks_log(rows.len());
         let witness = match spec.circuit.as_ref().map(|c| c.fill) {
-            Some(Fill::Instance(instance)) => {
-                circuit.witness_by_instance(rows, &[0; N], n_blocks_log, |row, z, az, bz| instance(row, z, az, bz))
-            }
-            _ => circuit.witness_by_walk(rows, &[0; N], n_blocks_log, |row, words| words.copy_from_slice(row)),
+            Some(Fill::Instance(instance)) => Witness::by_instance(
+                circuit,
+                BatchRows::new(rows, &[0; N], n_blocks_log),
+                |row, z, az, bz| instance(row, z, az, bz),
+            ),
+            _ => Witness::by_walk(circuit, BatchRows::new(rows, &[0; N], n_blocks_log), |row, words| {
+                words.copy_from_slice(row);
+            }),
         };
         Batch {
             block: circuit.block(),
@@ -458,7 +413,7 @@ mod tests {
     fn check_reductions(batches: &[Batch]) {
         let proof = {
             let instances: Vec<Instance<'_>> = (batches.iter())
-                .map(|batch| Instance::of(batch.block, batch.n_blocks_log, &batch.witness))
+                .map(|batch| batch.witness.instance(batch.block, batch.n_blocks_log))
                 .collect();
             let mut ps = ProverState::new(&SessionId::new(LABEL), &0u64);
             reduction::prove(&instances, &mut ps);
@@ -531,7 +486,7 @@ mod tests {
                 let longest = replays.iter().max_by_key(|r| rounds(r)).expect("a batch");
                 let r_rounds: Vec<F192> = longest.matrices.form.r_inner_rest.iter().rev().copied().collect();
                 let alpha_4 = replays[0].matrices.form.alpha.square().square();
-                let weights = primitives::field::powers(alpha_4, n);
+                let weights = alpha_4.powers(n);
                 (replays.iter().zip(weights))
                     .map(|(replay, w)| r_rounds[rounds(replay)..].iter().fold(w, |acc, &r| acc * r))
                     .collect()
@@ -557,7 +512,7 @@ mod tests {
     fn hash_batch(seed: u64) -> Batch {
         let mut rng = Rng::new(seed);
         let rows: Vec<[u64; 14]> = (0..5).map(|_| std::array::from_fn(|_| rng.next_u64())).collect();
-        batch(HashCircuit::ID, &rows)
+        batch(hash::CIRCUIT, &rows)
     }
 
     fn ld_batch(seed: u64, n: usize) -> Batch {

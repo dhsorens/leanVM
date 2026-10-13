@@ -12,9 +12,13 @@ use std::mem::MaybeUninit;
 #[cfg(feature = "test-util")]
 pub mod test_util;
 
-/// `log2` of a power of two (panics otherwise).
-pub fn log2_strict_usize(n: usize) -> usize {
-    assert!(n.is_power_of_two(), "not a power of two: {n}");
+/// `log2` of a power of two.
+///
+/// # Panics
+///
+/// Panics when `n` is not a power of two.
+pub const fn log2_strict_usize(n: usize) -> usize {
+    assert!(n.is_power_of_two(), "not a power of two");
     n.trailing_zeros() as usize
 }
 

@@ -2,7 +2,8 @@
 
 use super::RecError;
 use super::circuit::Circuit;
-use super::table::{HashCircuit, PerRecTable, Table};
+use super::hash;
+use super::table::{PerRecTable, Table};
 use crate::bus::ColumnClaim;
 use crate::commitment::StackClaim;
 use crate::constraints::{Air, BitColumns, Claims};
@@ -73,7 +74,7 @@ impl RecLayout {
 
     /// Every global column's source: the packed witness, then each owned table's ports and committed columns.
     fn sources(taus: &PerRecTable<usize>) -> Vec<Source> {
-        let stride_log = HashCircuit::stride_log();
+        let stride_log = hash::CIRCUIT.stride_log();
         let mut sources = vec![Source::Committed(taus[Table::Hash] + stride_log)];
         for table in Table::OWNED {
             debug_assert_eq!(sources.len(), Self::columns(table).start);

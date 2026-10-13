@@ -187,7 +187,8 @@ mod tests {
     use crate::commitment::Rate;
     use crate::rec::circuit::{Builder, Circuit, Finished, Kw, Limbs};
     use crate::rec::fixed::FixedColumns;
-    use crate::rec::table::HashCircuit;
+    use crate::rec::hash;
+    use crate::rec::proof::CircuitKey;
     use crate::rec::transcript::ProofSource;
 
     use fiat_shamir::SessionId;
@@ -223,8 +224,8 @@ mod tests {
         }
         let w = b.free_k(0xfeed);
         b.split(w);
-        b.expose_d(acc);
-        b.expose_e(e);
+        b.expose(acc);
+        b.expose(e);
         let Finished {
             circuit,
             assignment: a,
@@ -232,18 +233,17 @@ mod tests {
         } = b.finish();
         assert!(failures.is_empty(), "{failures:?}");
         let session = SessionId::new(LABEL);
-        let proof = circuit.prove(&a, &session, Rate::MIN).expect("the circuit fits");
-        let openings = circuit
+        let key = CircuitKey::new(circuit.clone()).expect("the circuit fits");
+        let proof = key.prove(&a, &session, Rate::MIN);
+        let openings = key
             .verify(a.statement(), &session, Rate::MIN, &proof)
             .expect("an honest proof");
-        let taus = circuit.heights();
-        let columns = FixedColumns::of(&circuit, &taus);
+        let columns = key.fixed();
 
-        let (b, rows) = recursion_rows(&circuit, a.statement(), &columns, ProofSource::Proof(&proof, &openings));
+        let (b, rows) = recursion_rows(&circuit, a.statement(), columns, ProofSource::Proof(&proof, &openings));
         let form = rows.matrix.point.map(|w| b.e(w));
-        let hash = HashCircuit::ID.circuit();
         assert_eq!(
-            form.evaluate(hash),
+            form.evaluate(hash::CIRCUIT.circuit()),
             b.e(rows.matrix.value),
             "the hash rows' matrix claim settles"
         );
@@ -258,23 +258,18 @@ mod tests {
             ..
         } = b.finish();
         assert!(failures.is_empty(), "{failures:?}");
-        let zeros = FixedColumns::zeros(&taus);
+        let zeros = FixedColumns::zeros(&circuit.heights());
         let (shaped, _) = recursion_rows(&circuit, a.statement(), &zeros, ProofSource::Shape);
         assert!(proven == shaped.finish().circuit, "the shape builds another circuit");
 
         // A tampered scalar, and a statement word the proof is not of.
         let mut forged = proof.clone();
         forged.narg[24 * 7 + 8] ^= 1;
-        let (b, _) = recursion_rows(
-            &circuit,
-            a.statement(),
-            &columns,
-            ProofSource::Proof(&forged, &openings),
-        );
+        let (b, _) = recursion_rows(&circuit, a.statement(), columns, ProofSource::Proof(&forged, &openings));
         assert!(!b.finish().failures.is_empty(), "a forged scalar passes");
         let mut statement = a.statement().to_vec();
         statement[1][2] ^= 1;
-        let (b, _) = recursion_rows(&circuit, &statement, &columns, ProofSource::Proof(&proof, &openings));
+        let (b, _) = recursion_rows(&circuit, &statement, columns, ProofSource::Proof(&proof, &openings));
         assert!(!b.finish().failures.is_empty(), "another statement passes");
     }
 }

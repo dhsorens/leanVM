@@ -115,6 +115,39 @@ pub(crate) struct KeyWeights<E> {
     pub(crate) keys: Vec<Option<E>>,
 }
 
+/// Weights on a range of slots, each absent until something adds to it.
+///
+/// An absent weight is zero, and costs nothing when it is pulled back.
+#[derive(Clone, Debug)]
+pub(crate) struct SparseWeights<E>(Vec<Option<E>>);
+
+impl<E: Copy> SparseWeights<E> {
+    /// `n` absent weights.
+    pub(crate) fn new(n: usize) -> Self {
+        Self(vec![None; n])
+    }
+
+    /// Add `w` to slot `i`'s weight.
+    pub(crate) fn add<A: Arith<E = E>>(&mut self, ar: &mut A, i: usize, w: E) {
+        accumulate(ar, &mut self.0[i], w);
+    }
+
+    /// Slot `i`'s weight, absent where nothing was added.
+    fn get(&self, i: usize) -> Option<E> {
+        self.0[i]
+    }
+
+    /// Every slot's weight, in order.
+    pub(crate) fn into_vec(self) -> Vec<Option<E>> {
+        self.0
+    }
+}
+
+/// Add `w` to an optional sum, which starts at `w` when absent.
+fn accumulate<A: Arith>(ar: &mut A, sum: &mut Option<A::E>, w: A::E) {
+    *sum = Some(sum.map_or(w, |s| ar.add(s, w)));
+}
+
 /// Every node's and auxiliary value's value, as the prover computes them from its keys.
 #[derive(Clone, Debug)]
 pub(crate) struct Evaluation {
@@ -159,8 +192,8 @@ impl<E: Copy> Record<E> {
         assert_eq!(sent.len(), self.aux.len(), "a sent value per auxiliary value");
         let mut acc = Accumulator {
             constant: None,
-            nodes: vec![None; self.nodes.len()],
-            keys: vec![None; self.n_keys() + self.n_aux()],
+            nodes: SparseWeights::new(self.nodes.len()),
+            keys: SparseWeights::new(self.n_keys() + self.n_aux()),
             n_keys: self.n_keys(),
             sent,
         };
@@ -176,7 +209,7 @@ impl<E: Copy> Record<E> {
         //
         // Why latest first: a node's terms refer to earlier nodes, so every weight on a node is final when it is reached.
         for (n, node) in self.nodes.iter().enumerate().rev() {
-            let Some(w) = acc.nodes[n] else {
+            let Some(w) = acc.nodes.get(n) else {
                 continue;
             };
             let c = ar.mul(w, node.constant);
@@ -190,7 +223,7 @@ impl<E: Copy> Record<E> {
         let constant = acc.constant.unwrap_or_else(|| ar.zero());
         KeyWeights {
             constant,
-            keys: acc.keys,
+            keys: acc.keys.into_vec(),
         }
     }
 }
@@ -200,9 +233,9 @@ struct Accumulator<'s, E> {
     /// The constant's weight.
     constant: Option<E>,
     /// Each node's weight.
-    nodes: Vec<Option<E>>,
+    nodes: SparseWeights<E>,
     /// Each key's weight.
-    keys: Vec<Option<E>>,
+    keys: SparseWeights<E>,
     /// Hidden scalars read: auxiliary value `j` is key `n_keys + j`.
     n_keys: usize,
     /// The value sent for each auxiliary value.
@@ -210,37 +243,35 @@ struct Accumulator<'s, E> {
 }
 
 impl<E: Copy> Accumulator<'_, E> {
-    /// Add `w` to an optional sum.
-    fn bump<A: Arith<E = E>>(ar: &mut A, sum: &mut Option<E>, w: E) {
-        *sum = Some(sum.map_or(w, |s| ar.add(s, w)));
-    }
-
+    /// Add `w` to the constant's weight.
     fn add_constant<A: Arith<E = E>>(&mut self, ar: &mut A, w: E) {
-        Self::bump(ar, &mut self.constant, w);
+        accumulate(ar, &mut self.constant, w);
     }
 
-    /// An auxiliary value is the value sent for it plus its key.
+    /// Add `w` to auxiliary value `j`, which is the value sent for it plus its key.
     fn add_aux<A: Arith<E = E>>(&mut self, ar: &mut A, j: usize, w: E) {
         let c = ar.mul(w, self.sent[j]);
         self.add_constant(ar, c);
-        Self::bump(ar, &mut self.keys[self.n_keys + j], w);
+        self.keys.add(ar, self.n_keys + j, w);
     }
 
+    /// Add `w` to what a node's term refers to.
     fn add_ref<A: Arith<E = E>>(&mut self, ar: &mut A, r: Ref, w: E) {
         match r {
-            Ref::Node(n) => Self::bump(ar, &mut self.nodes[n as usize], w),
-            Ref::Key(i) => Self::bump(ar, &mut self.keys[i as usize], w),
+            Ref::Node(n) => self.nodes.add(ar, n as usize, w),
+            Ref::Key(i) => self.keys.add(ar, i as usize, w),
             Ref::Aux(j) => self.add_aux(ar, j as usize, w),
         }
     }
 
+    /// Add `w` to what one side of a row refers to.
     fn add_operand<A: Arith<E = E>>(&mut self, ar: &mut A, operand: Operand<E>, w: E) {
         match operand {
             Operand::Const(c) => {
                 let wc = ar.mul(w, c);
                 self.add_constant(ar, wc);
             }
-            Operand::Node(n) => Self::bump(ar, &mut self.nodes[n as usize], w),
+            Operand::Node(n) => self.nodes.add(ar, n as usize, w),
             Operand::Aux(j) => self.add_aux(ar, j as usize, w),
         }
     }

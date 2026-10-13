@@ -129,7 +129,11 @@ impl<T: Encoding, const N: usize> Encoding for [T; N] {
     type Bytes = Vec<u8>;
 
     fn encode(&self) -> Vec<u8> {
-        self.iter().flat_map(|x| x.encode().as_ref().to_vec()).collect()
+        let mut bytes = Vec::new();
+        for x in self {
+            bytes.extend_from_slice(x.encode().as_ref());
+        }
+        bytes
     }
 }
 

@@ -2,10 +2,7 @@
 
 use super::{Block, Coord, Layout, Producer};
 use crate::{PAR_THRESHOLD, gkr};
-use parallel::Chunks;
-#[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx2"))]
-use primitives::field::MixedSums8;
-use primitives::field::{F64, F192};
+use parallel::ChunkView;
 #[cfg(not(any(
     all(target_arch = "aarch64", target_feature = "aes"),
     all(
@@ -14,7 +11,10 @@ use primitives::field::{F64, F192};
         not(target_feature = "vpclmulqdq")
     )
 )))]
-use primitives::field::{F192Unreduced, mul2, mul4};
+use primitives::field::F192Unreduced;
+#[cfg(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx2"))]
+use primitives::field::MixedSums8;
+use primitives::field::{F64, F192};
 #[cfg(any(
     all(target_arch = "aarch64", target_feature = "aes"),
     all(
@@ -145,8 +145,8 @@ fn fill_tuple(
             debug_assert!(tail.is_empty() && products.len() == 2 * groups.len());
             for ((g, out), pair) in groups.iter_mut().enumerate().zip(products.as_chunks_mut::<2>().0) {
                 let l = rows8(base + 8 * g);
-                let [a, b, c, d] = mul4([l[0], l[2], l[4], l[6]], [l[1], l[3], l[5], l[7]]);
-                pair.write_copy_of_slice(&mul2([a, c], [b, d]));
+                let [a, b, c, d] = F192::mul4([l[0], l[2], l[4], l[6]], [l[1], l[3], l[5], l[7]]);
+                pair.write_copy_of_slice(&F192::mul2([a, c], [b, d]));
                 out.write_copy_of_slice(&l);
             }
         } else {
@@ -168,7 +168,7 @@ fn fill_tuple(
             not(target_feature = "vpclmulqdq")
         )
     ))]
-    let constant = F192x1::new(const_part);
+    let constant = F192x1::from(const_part);
     #[cfg(any(
         all(target_arch = "aarch64", target_feature = "aes"),
         all(
@@ -219,7 +219,7 @@ fn fill_tuple(
     };
     if dst.len() >= PAR_THRESHOLD {
         if let Some(products) = products {
-            let products = Chunks::new(products, LEAF_CHUNK / 4);
+            let products = ChunkView::new(products, LEAF_CHUNK / 4);
             parallel::chunks_mut(dst, LEAF_CHUNK, |ci, chunk| {
                 // SAFETY: task `ci` alone takes chunk `ci` of the products, the quarter of its rows.
                 fill(ci * LEAF_CHUNK, chunk, Some(unsafe { products.get(ci) }));

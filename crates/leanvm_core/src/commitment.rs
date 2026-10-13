@@ -13,8 +13,7 @@ use crate::stacking::StackShape;
 use fiat_shamir::{ProverState, TranscriptError};
 use pcs::stack::{CommittedStack, StackCommitment, Statement};
 use pcs::verifier::OpeningVerifier;
-use pcs::whir::ConfigError;
-use pcs::whir::WhirError;
+use pcs::whir::{Config, ConfigError, WhirError};
 use primitives::field::F64;
 use rand_core::CryptoRng;
 use thiserror::Error;
@@ -99,12 +98,12 @@ pub(crate) enum WitnessError {
 }
 
 /// The opening's profile: the hiding one for a hiding stack.
-fn config(shape: StackShape, rate: Rate) -> Result<pcs::whir::Config, ConfigError> {
+fn config(shape: StackShape, rate: Rate) -> Result<Config, ConfigError> {
     let log_inv_rate = usize::from(rate.log_inv_rate());
     if shape.hiding {
-        pcs::whir::config_for_rate_hiding(shape.mu, log_inv_rate)
+        Config::hiding(shape.mu, log_inv_rate)
     } else {
-        pcs::whir::config_for_rate(shape.mu, log_inv_rate)
+        Config::for_rate(shape.mu, log_inv_rate)
     }
 }
 
@@ -162,7 +161,7 @@ impl Committed {
     }
 
     /// The opening's configuration, once the shape and the witness's length are checked.
-    fn config(len: usize, shape: StackShape, rate: Rate) -> Result<pcs::whir::Config, WitnessError> {
+    fn config(len: usize, shape: StackShape, rate: Rate) -> Result<Config, WitnessError> {
         // Validate the dimension before shifting lengths or allocating the codeword.
         let config = config(shape, rate)?;
         let max = 1usize << config.initial_k();

@@ -4,13 +4,11 @@
 //! - What it records is a rank-one system over the keys, which an outer zero-knowledge Spartan proves.
 //! - The keys, the Spartan's dummies and its mask live in a hiding commitment of their own, whose opening discharges the Spartan's claims.
 
-mod keys;
-pub mod outer;
+mod outer;
 mod randomness;
 mod record;
 mod spartan;
 
-pub use keys::{KeyCommitment, Keys};
-pub use outer::OuterError;
+pub use outer::{KeyCommitment, Keys, OuterError};
 pub use randomness::{Purpose, Randomness, Seed};
 pub use record::{Node, Record, Recorder, Value};

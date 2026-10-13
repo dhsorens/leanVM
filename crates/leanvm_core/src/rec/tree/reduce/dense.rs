@@ -9,18 +9,52 @@
 //! lowest variable first.
 //! A polynomial of fewer variables is bound early, and its share then waits on the rest: each later round multiplies it by its challenge.
 
-use super::{DenseTables, Entry, Msg, ReduceError, TILE, ZERO, xor};
-use crate::rec::tree::claims::{DenseClaim, DensePoly, DenseTerm};
+use super::DensePoly;
+use super::{DenseTables, Entry, Msg, ReduceError, TILE};
 use fiat_shamir::ProverState;
-use fiat_shamir::arith::RoundPolynomial;
 use fiat_shamir::arith::{Arith, Verifier};
-use parallel::Chunks;
-use primitives::field::{F64, F192, F192Unreduced, mul_unreduced4};
+use parallel::ChunkView;
+use primitives::field::{F64, F192, F192Unreduced};
 use primitives::multilinear::{eq_table, eq_table_seeded, mle_eval_par};
 use primitives::write_only;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::ops::Range;
+
+/// Public coordinates of a point: `len` bits, lowest first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Bits {
+    /// The bits, as an integer.
+    pub(crate) value: usize,
+    /// How many there are.
+    pub(crate) len: usize,
+}
+
+/// One claim on a dense polynomial `P`, at the shared prefix, then public bits, then the kind's bits: `s P(low, bits, top) = s v`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DenseTerm<E> {
+    /// How many of the shared prefix's coordinates the point starts with.
+    pub(crate) n_low: usize,
+    /// The public coordinates after them.
+    pub(crate) bits: Bits,
+    /// The last coordinates, a child's kind's bits, lowest first, if any.
+    pub(crate) top: Vec<E>,
+    /// A factor both sides carry, one when absent: a zero scale makes the claim vacuous.
+    pub(crate) scale: Option<E>,
+    /// The claimed value.
+    pub(crate) value: E,
+}
+
+/// Claims on one dense polynomial at points sharing a prefix, each batched as a claim of its own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DenseClaim<E> {
+    /// The polynomial.
+    pub(crate) poly: DensePoly,
+    /// The prefix every claim's point starts with a part of.
+    pub(crate) low: Vec<E>,
+    /// The claims.
+    pub(crate) terms: Vec<DenseTerm<E>>,
+}
 
 /// Each dense polynomial's variables: the bytecode table's, the image's, the fixed polynomial's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,31 +118,43 @@ struct Placed {
     offset: usize,
 }
 
-impl DenseVars {
-    /// The polynomials some claim weighs, which the reduction reduces.
-    fn reduced<E>(claims: &[DenseClaim<E>]) -> [bool; DensePoly::COUNT] {
+impl Bits {
+    /// No coordinates.
+    pub(crate) const NONE: Self = Self { value: 0, len: 0 };
+}
+
+impl<E: Copy> DenseTerm<E> {
+    /// The same claim, each element mapped by `f`.
+    pub(super) fn map<T>(&self, f: &mut impl FnMut(E) -> T) -> DenseTerm<T> {
+        DenseTerm {
+            n_low: self.n_low,
+            bits: self.bits,
+            top: self.top.iter().map(|&x| f(x)).collect(),
+            scale: self.scale.map(&mut *f),
+            value: f(self.value),
+        }
+    }
+}
+
+impl<E> DenseClaim<E> {
+    /// The polynomials some claim of these weighs, which the reduction reduces.
+    fn weighed(claims: &[Self]) -> [bool; DensePoly::COUNT] {
         DensePoly::ALL.map(|p| claims.iter().any(|c| c.poly == p))
     }
+}
 
-    /// The rounds: the most variables a reduced polynomial has.
-    fn rounds(&self, reduced: [bool; DensePoly::COUNT]) -> usize {
-        (self.0.iter().zip(reduced))
-            .filter_map(|(&n, r)| r.then_some(n))
-            .max()
-            .unwrap_or(0)
-    }
-
+impl<E: Copy + PartialEq> DenseReduced<E> {
     /// Verify the reduction of the claims.
     ///
     /// # Errors
     ///
     /// Returns a malformed stream, or the final identity's failure.
-    pub(crate) fn verify<V: Verifier>(
-        &self,
+    pub(crate) fn verify<V: Verifier<E = E>>(
         v: &mut V,
-        claims: &[DenseClaim<V::E>],
-    ) -> Result<DenseReduced<V::E>, ReduceError> {
-        let reduced = Self::reduced(claims);
+        vars: &DenseVars,
+        claims: &[DenseClaim<E>],
+    ) -> Result<Self, ReduceError> {
+        let reduced = DenseClaim::weighed(claims);
         let theta = v.verifier_message();
         let n_terms = claims.iter().map(|c| c.terms.len()).sum();
         let powers = v.powers(theta, n_terms);
@@ -119,10 +165,10 @@ impl DenseVars {
             v.mul_add(power, value, acc)
         });
 
-        let rounds = self.rounds(reduced);
+        let rounds = vars.rounds(reduced);
         let mut point = Vec::with_capacity(rounds);
         for _ in 0..rounds {
-            let h = RoundPolynomial::read(v, 3, claim, None)?.coeffs;
+            let h = v.read_round(3, claim, None)?;
             let r = v.verifier_message();
             claim = v.poly_eval(&h, r);
             point.push(r);
@@ -133,17 +179,54 @@ impl DenseVars {
                 *value = Some(v.prover_message()?);
             }
         }
-        let weights = self.final_weights(v, claims, &powers, &point);
+        let weights = vars.final_weights(v, claims, &powers, &point);
         let total = (values.iter().zip(weights)).fold(zero, |acc, (value, weight)| match (value, weight) {
             (Some(value), Some(weight)) => v.mul_add(*value, weight, acc),
             _ => acc,
         });
         v.ensure_eq(claim, total, || ReduceError::Dense)?;
-        Ok(DenseReduced { point, values })
+        Ok(Self { point, values })
+    }
+}
+
+impl<E: Copy> DenseClaim<E> {
+    /// `s P(point) = s v`, the scale `s` one when absent.
+    pub(crate) fn at(poly: DensePoly, point: Vec<E>, scale: Option<E>, value: E) -> Self {
+        let n_low = point.len();
+        Self {
+            poly,
+            low: point,
+            terms: vec![DenseTerm {
+                n_low,
+                bits: Bits::NONE,
+                top: Vec::new(),
+                scale,
+                value,
+            }],
+        }
+    }
+
+    /// The same claims, each element mapped by `f`.
+    pub(super) fn map<T>(&self, f: &mut impl FnMut(E) -> T) -> DenseClaim<T> {
+        DenseClaim {
+            poly: self.poly,
+            low: self.low.iter().map(|&x| f(x)).collect(),
+            terms: self.terms.iter().map(|t| t.map(f)).collect(),
+        }
+    }
+}
+
+impl DenseVars {
+    /// The rounds: the most variables a reduced polynomial has.
+    fn rounds(&self, reduced: [bool; DensePoly::COUNT]) -> usize {
+        (self.0.iter().zip(reduced))
+            .filter_map(|(&n, r)| r.then_some(n))
+            .max()
+            .unwrap_or(0)
     }
 
     /// Each reduced polynomial's weight in the final identity: `Xi_j` at its prefix of `point`, times the later challenges.
-    pub(crate) fn final_weights<A: Arith>(
+    pub(super) fn final_weights<A: Arith>(
         &self,
         a: &mut A,
         claims: &[DenseClaim<A::E>],
@@ -225,7 +308,7 @@ impl DenseTerm<F192> {
 
 impl<'a> DenseProver<'a> {
     /// Prove the reduction of the claims, which must be true of the tables.
-    pub(crate) fn prove(ps: &mut ProverState, vars: &DenseVars, tables: &'a DenseTables, claims: &[DenseClaim<F192>]) {
+    pub(super) fn prove(ps: &mut ProverState, vars: &DenseVars, tables: &'a DenseTables, claims: &[DenseClaim<F192>]) {
         let theta = ps.verifier_message();
         let mut prover = Self::new(vars, tables, claims, theta);
         for i in 0..prover.rounds() {
@@ -237,8 +320,8 @@ impl<'a> DenseProver<'a> {
     }
 
     /// The prover of the claims under the batching challenge `theta`.
-    pub(crate) fn new(vars: &DenseVars, tables: &'a DenseTables, claims: &[DenseClaim<F192>], theta: F192) -> Self {
-        let reduced = DenseVars::reduced(claims);
+    pub(super) fn new(vars: &DenseVars, tables: &'a DenseTables, claims: &[DenseClaim<F192>], theta: F192) -> Self {
+        let reduced = DenseClaim::weighed(claims);
         let mut placed: Vec<Vec<Placed>> = DensePoly::ALL.map(|_| Vec::new()).into();
         let mut power = F192::ONE;
         for claim in claims {
@@ -250,7 +333,7 @@ impl<'a> DenseProver<'a> {
                 power *= theta;
             }
         }
-        let mut message = ZERO;
+        let mut message = Msg::default();
         let parts: Vec<Part> = (DensePoly::ALL.into_iter().zip(placed))
             .filter(|&(p, _)| reduced[p as usize])
             .map(|(p, terms)| {
@@ -258,40 +341,42 @@ impl<'a> DenseProver<'a> {
                 let base = &tables.0[p as usize];
                 assert_eq!(base.len(), 1 << n_vars, "a dense table has its variables");
                 let (part, first) = Part::new(n_vars, base, &terms);
-                message = xor(message, first);
+                message ^= first;
                 part
             })
             .collect();
         Self {
             point: Vec::with_capacity(parts.iter().map(|p| p.n_vars).max().unwrap_or(0)),
             parts,
-            message: message.map(F192Unreduced::reduce),
+            message: message.reduce(),
         }
     }
 
     /// The number of rounds.
-    pub(crate) fn rounds(&self) -> usize {
+    pub(super) fn rounds(&self) -> usize {
         self.parts.iter().map(|p| p.n_vars).max().unwrap_or(0)
     }
 
     /// The next round's message: `h(0)` and the leading coefficient, the claim fixing the linear one.
     ///
     /// A polynomial bound already contributes a linear term only, which the claim accounts for.
-    pub(crate) const fn message(&self) -> [F192; 2] {
+    pub(super) const fn message(&self) -> [F192; 2] {
         self.message
     }
 
     /// Bind round `i`'s variable to `r`, and build the next round's message from the folded pairs.
-    pub(crate) fn bind(&mut self, i: usize, r: F192) {
+    pub(super) fn bind(&mut self, i: usize, r: F192) {
         assert_eq!(i, self.point.len(), "rounds come in order");
         self.point.push(r);
         let point = &self.point;
-        let message = (self.parts.iter_mut().filter(|p| p.n_vars > i)).fold(ZERO, |acc, p| xor(acc, p.bind(point)));
-        self.message = message.map(F192Unreduced::reduce);
+        let message: Msg = (self.parts.iter_mut().filter(|p| p.n_vars > i))
+            .map(|p| p.bind(point))
+            .sum();
+        self.message = message.reduce();
     }
 
     /// Each reduced polynomial's value at its prefix of the point.
-    pub(crate) fn finals(&self) -> Vec<F192> {
+    pub(super) fn finals(&self) -> Vec<F192> {
         (self.parts.iter())
             .map(|p| p.table.first().copied().unwrap_or_else(|| F192::from(p.base[0])))
             .collect()
@@ -336,17 +421,20 @@ impl<'a> Part<'a> {
         let mut weights = Vec::with_capacity(w_len);
         // SAFETY: the pass writes every entry before any is read.
         let w_slots = unsafe { write_only(&mut weights.spare_capacity_mut()[..w_len]) };
-        let wc = Chunks::new(w_slots, PAR_LEN);
-        let message = chunked(len, |c| {
+        let wc = ChunkView::new(w_slots, PAR_LEN);
+        let message = Msg::sum_tasks(len.div_ceil(PAR_LEN), |c| {
             let (from, to) = (c * PAR_LEN, len.min((c + 1) * PAR_LEN));
             let touching = source.touching(from, to);
             // SAFETY: each chunk index is taken once, and the table outlives the dispatch.
-            let wo: &mut [F192] = if wc.count() == 0 { &mut [] } else { unsafe { wc.get(c) } };
-            (from..to).step_by(TILE).fold(ZERO, |m, a| {
-                let b = to.min(a + TILE);
-                let wo = wo.get_mut(a - from..b - from).unwrap_or_default();
-                xor(m, source.message(&touching, a, &base[a..b], wo, F192::ZERO))
-            })
+            let wo: &mut [F192] = if wc.is_empty() { &mut [] } else { unsafe { wc.get(c) } };
+            (from..to)
+                .step_by(TILE)
+                .map(|a| {
+                    let b = to.min(a + TILE);
+                    let wo = wo.get_mut(a - from..b - from).unwrap_or_default();
+                    source.message(&touching, a, &base[a..b], wo, F192::ZERO)
+                })
+                .sum()
         });
         // SAFETY: the pass wrote all `w_len` entries.
         unsafe { weights.set_len(w_len) };
@@ -398,9 +486,9 @@ impl<'a> Part<'a> {
             )
         };
         let message = if i == 0 {
-            fold_round(source, self.base, r, half, extra, w_out, t_out)
+            source.fold_round(self.base, r, half, extra, w_out, t_out)
         } else {
-            fold_round(source, &self.table, r, half, extra, w_out, t_out)
+            source.fold_round(&self.table, r, half, extra, w_out, t_out)
         };
         // SAFETY: the fold wrote the first `w_len` and `len` entries.
         unsafe {
@@ -431,15 +519,6 @@ fn buffer(spare: &mut Vec<F192>, len: usize) -> Vec<F192> {
 /// Below this many entries a pass runs on the calling thread; a task of the pool takes this many.
 const PAR_LEN: usize = 1 << 12;
 
-/// The sum of `task(c)` over the chunks of `n` entries, `PAR_LEN` each, across the pool.
-fn chunked(n: usize, task: impl Fn(usize) -> Msg + Sync) -> Msg {
-    match n.div_ceil(PAR_LEN) {
-        0 => ZERO,
-        1 => task(0),
-        count => parallel::map_reduce(count, || ZERO, task, xor),
-    }
-}
-
 /// Where a pass finds the weights of the entries it reaches.
 #[derive(Clone, Copy)]
 enum Source<'w> {
@@ -466,7 +545,7 @@ impl Source<'_> {
     /// factored, the pass writes them to `w`: from the blocks, or folding the table one level up by `r`.
     fn message<T: Entry>(&self, touching: &[&Block], a: usize, t: &[T], w: &mut [F192], r: F192) -> Msg {
         match *self {
-            Self::Blocks(_) => touching.iter().fold(ZERO, |m, b| xor(m, b.message(a, t))),
+            Self::Blocks(_) => touching.iter().map(|b| b.message(a, t)).sum(),
             Self::Write(_) => {
                 let mut acc = [F192Unreduced::ZERO; TILE];
                 let acc = &mut acc[..w.len()];
@@ -484,61 +563,64 @@ impl Source<'_> {
             }
         }
     }
-}
 
-/// One round's fold of a part's table `t` into `t_out`, its weights as `source` says into `w_out`, and the next
-/// round's message.
-///
-/// The first `half` entries fold from pairs. Past them, when `t_out` is one longer, are the weight's zero and the
-/// table's `extra`. The message is over the folded pairs, none when one entry is left.
-fn fold_round<T: Entry>(
-    source: Source,
-    t: &[T],
-    r: F192,
-    half: usize,
-    extra: Option<F192>,
-    w_out: &mut [F192],
-    t_out: &mut [F192],
-) -> Msg {
-    if t_out.len() == 1 {
-        t_out[0] = T::fold(t[0], t[1], r);
-        return ZERO;
+    /// One round's fold of a part's table `t` into `t_out`, its weights as `source` says into `w_out`, and the next
+    /// round's message.
+    ///
+    /// The first `half` entries fold from pairs. Past them, when `t_out` is one longer, are the weight's zero and the
+    /// table's `extra`. The message is over the folded pairs, none when one entry is left.
+    fn fold_round<T: Entry>(
+        self,
+        t: &[T],
+        r: F192,
+        half: usize,
+        extra: Option<F192>,
+        w_out: &mut [F192],
+        t_out: &mut [F192],
+    ) -> Msg {
+        if t_out.len() == 1 {
+            t_out[0] = T::fold(t[0], t[1], r);
+            return Msg::default();
+        }
+        let pairs = half & !1;
+        let tc = ChunkView::new(&mut t_out[..pairs], PAR_LEN);
+        let w_pairs = pairs.min(w_out.len());
+        let wc = ChunkView::new(&mut w_out[..w_pairs], PAR_LEN);
+        let mut message = Msg::sum_tasks(pairs.div_ceil(PAR_LEN), |c| {
+            let (from, to) = (c * PAR_LEN, pairs.min((c + 1) * PAR_LEN));
+            let touching = self.touching(from, to);
+            // SAFETY: each chunk index is taken once, and both tables outlive the dispatch.
+            let (tables, wo): (&mut [F192], &mut [F192]) =
+                unsafe { (tc.get(c), if wc.is_empty() { &mut [] } else { wc.get(c) }) };
+            (from..to)
+                .step_by(TILE)
+                .map(|a| {
+                    let b = to.min(a + TILE);
+                    let tile = &mut tables[a - from..b - from];
+                    T::fold_into(&t[2 * a..2 * b], r, tile);
+                    let wo = wo.get_mut(a - from..b - from).unwrap_or_default();
+                    self.message(&touching, a, tile, wo, r)
+                })
+                .sum()
+        });
+        if let Some(extra) = extra {
+            let k = half - 1;
+            t_out[k..].copy_from_slice(&[T::fold(t[2 * k], t[2 * k + 1], r), extra]);
+            let w = &mut w_out[k..];
+            w[0] = match self {
+                Source::Blocks(_) => unreachable!("a factored level's prefix is whole pairs"),
+                Source::Write(blocks) => {
+                    let mut acc = [F192Unreduced::ZERO];
+                    blocks.iter().for_each(|b| b.add_to(k, &mut acc));
+                    acc[0].reduce()
+                }
+                Source::Fold(table) => F192::fold(table[2 * k], table[2 * k + 1], r),
+            };
+            w[1] = F192::ZERO;
+            message ^= F192::dot(w, &t_out[k..]);
+        }
+        message
     }
-    let pairs = half & !1;
-    let tc = Chunks::new(&mut t_out[..pairs], PAR_LEN);
-    let w_pairs = pairs.min(w_out.len());
-    let wc = Chunks::new(&mut w_out[..w_pairs], PAR_LEN);
-    let mut message = chunked(pairs, |c| {
-        let (from, to) = (c * PAR_LEN, pairs.min((c + 1) * PAR_LEN));
-        let touching = source.touching(from, to);
-        // SAFETY: each chunk index is taken once, and both tables outlive the dispatch.
-        let (tables, wo): (&mut [F192], &mut [F192]) =
-            unsafe { (tc.get(c), if wc.count() == 0 { &mut [] } else { wc.get(c) }) };
-        (from..to).step_by(TILE).fold(ZERO, |m, a| {
-            let b = to.min(a + TILE);
-            let tile = &mut tables[a - from..b - from];
-            T::fold_into(&t[2 * a..2 * b], r, tile);
-            let wo = wo.get_mut(a - from..b - from).unwrap_or_default();
-            xor(m, source.message(&touching, a, tile, wo, r))
-        })
-    });
-    if let Some(extra) = extra {
-        let k = half - 1;
-        t_out[k..].copy_from_slice(&[T::fold(t[2 * k], t[2 * k + 1], r), extra]);
-        let w = &mut w_out[k..];
-        w[0] = match source {
-            Source::Blocks(_) => unreachable!("a factored level's prefix is whole pairs"),
-            Source::Write(blocks) => {
-                let mut acc = [F192Unreduced::ZERO];
-                blocks.iter().for_each(|b| b.add_to(k, &mut acc));
-                acc[0].reduce()
-            }
-            Source::Fold(table) => F192::fold(table[2 * k], table[2 * k + 1], r),
-        };
-        w[1] = F192::ZERO;
-        message = xor(message, F192::dot(w, &t_out[k..]));
-    }
-    message
 }
 
 /// The variables of a block's low tables, which a pass keeps in L1.
@@ -621,7 +703,7 @@ impl Block {
                 let (quads, rest) = low.as_chunks::<4>();
                 let (acc_quads, acc_rest) = acc.as_chunks_mut::<4>();
                 for (s, &q) in acc_quads.iter_mut().zip(quads) {
-                    for (s, p) in s.iter_mut().zip(mul_unreduced4([e; 4], q)) {
+                    for (s, p) in s.iter_mut().zip(F192::mul_unreduced4([e; 4], q)) {
                         *s ^= p;
                     }
                 }
@@ -635,12 +717,12 @@ impl Block {
     /// The message of the table's entries `a..a + t.len()` against the block's weights: each row's run is summed
     /// against the low tables, then scaled by the high ones. A run is whole pairs while a row has two entries.
     fn message<T: Entry>(&self, a: usize, t: &[T]) -> Msg {
-        let mut m = ZERO;
+        let mut m = Msg::default();
         self.runs(a, t.len(), |h, x, run| {
             let t = &t[run.start - a..run.end - a];
             for (low, high) in &self.groups {
-                let [c0, c2] = T::dot(&low[x..x + t.len()], t).map(F192Unreduced::reduce);
-                m = xor(m, [high[h].mul_unreduced(c0), high[h].mul_unreduced(c2)]);
+                let [c0, c2] = T::dot(&low[x..x + t.len()], t).reduce();
+                m ^= Msg::new(high[h].mul_unreduced(c0), high[h].mul_unreduced(c2));
             }
         });
         m
@@ -650,7 +732,6 @@ impl Block {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rec::tree::claims::Bits;
     use crate::rec::tree::reduce;
 
     use fiat_shamir::arith::{Arith, Native};
@@ -705,7 +786,10 @@ mod tests {
         let tables = DenseTables(vars.0.map(|n| (0..1 << n).map(|_| F64(rng.next_u64())).collect()));
         let claims = dense_claims(&mut rng, &tables, &vars);
         let prove = |claims: &[DenseClaim<F192>], forge: bool| {
-            let mut ps = ProverState::new(&reduce::session(&SessionId::new(b"tree-test")), &0u64);
+            let mut ps = ProverState::new(
+                &SessionId::tagged(reduce::SESSION_TAG, &SessionId::new(b"tree-test").0),
+                &0u64,
+            );
             if forge {
                 // A cheating prover: honest rounds, then values that meet the final identity of the claims as stated.
                 let theta = ps.verifier_message();
@@ -741,8 +825,12 @@ mod tests {
             ps.into_proof()
         };
         let verify = |claims: &[DenseClaim<F192>], proof| {
-            let mut vs = VerifierState::new(&reduce::session(&SessionId::new(b"tree-test")), &0u64, proof);
-            vars.verify(&mut vs, claims)
+            let mut vs = VerifierState::new(
+                &SessionId::tagged(reduce::SESSION_TAG, &SessionId::new(b"tree-test").0),
+                &0u64,
+                proof,
+            );
+            DenseReduced::verify(&mut vs, &vars, claims)
         };
 
         let proof = prove(&claims, false);
@@ -823,11 +911,18 @@ mod tests {
         ));
         claims.push(block_claim(&mut rng, &tables, &vars, DensePoly::Fixed, &[(5, 7)]));
         claims.push(block_claim(&mut rng, &tables, &vars, DensePoly::Wide, &[(1, 3)]));
-        let mut ps = ProverState::new(&reduce::session(&SessionId::new(b"tree-test")), &0u64);
+        let mut ps = ProverState::new(
+            &SessionId::tagged(reduce::SESSION_TAG, &SessionId::new(b"tree-test").0),
+            &0u64,
+        );
         DenseProver::prove(&mut ps, &vars, &tables, &claims);
         let proof = ps.into_proof();
-        let mut vs = VerifierState::new(&reduce::session(&SessionId::new(b"tree-test")), &0u64, &proof);
-        let reduced = vars.verify(&mut vs, &claims).expect("an honest reduction");
+        let mut vs = VerifierState::new(
+            &SessionId::tagged(reduce::SESSION_TAG, &SessionId::new(b"tree-test").0),
+            &0u64,
+            &proof,
+        );
+        let reduced = DenseReduced::verify(&mut vs, &vars, &claims).expect("an honest reduction");
         for poly in DensePoly::ALL {
             let point = &reduced.point[..vars.0[poly as usize]];
             assert_eq!(

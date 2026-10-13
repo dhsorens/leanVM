@@ -3,7 +3,7 @@
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 use core::arch::x86_64::*;
-use primitives::field::{F8, F64, F192, phi8};
+use primitives::field::{F8, F64, F192};
 
 /// Twiddle recurrence used to build the next subspace layer's evaluation points:
 /// `next_s(s, root) = s² + root · s = s · (s + root)`.
@@ -142,24 +142,19 @@ impl AdditiveNttF8 {
     }
 }
 
-/// The low-degree extension from `S` to `Λ`, `M = fwd_NTT_Λ ∘ inv_NTT_S`, collapsed to one byte table (§2.1).
+/// The low-degree extension from `S` to `Lambda`, `M = forward_Lambda * inverse_S`, as one byte table.
 ///
-/// Background: the URM round-1 needs to map each `ell`-bit row of the boolean
-/// witness (packed as `n_chunks = ell/8` bytes) to `ell` evaluations on the
-/// NTT domain `Λ`. The naive way computes inv_NTT on S then fwd_NTT on Λ for
-/// every row, which is too slow.
+/// Round 1 maps each `ell`-bit row of the Boolean witness, `ell / 8` bytes, to its `ell` evaluations on `Lambda`.
 ///
-/// The optimization (§2.1 of the paper): `M = α · M̃` with `M̃` Cauchy and `α`
-/// a scalar. The columns of `M` satisfy a XOR-shift relation, so the `n_chunks`
-/// per-byte sub-tables collapse to a single 256-row base table `T_0`:
+/// The columns of `M` satisfy an XOR-shift relation, so its per-byte tables collapse to one 256-row table `T_0`:
 ///
-///   M[i', 8b + t]  =  T_0[bit-t-mask(8b+t)][i' ⊕ 8b]
+/// ```text
+///     M[i, 8b + t] = T_0[2^t][i ^ 8b]
+///     M * row      = sum_b T_0[byte_b] permuted by i -> i ^ 8b
+/// ```
 ///
-/// Per-byte-chunk b contributes `π_b(T_0[byte_b])` to the output, where
-/// `π_b(i') = i' ⊕ 8b`.
-///
-/// Storage: 256 × ell bytes (16 KB at k=6, 32 KB at k=7), which fits in L1.
-/// Lookups per row: n_chunks (= ell/8), each load is `ell` contiguous bytes.
+/// - The table is `256 * ell` bytes, which fits in L1 at the protocol's size.
+/// - A row costs `ell / 8` lookups, each `ell` contiguous bytes.
 #[derive(Clone, Debug)]
 pub(crate) struct LdeTable {
     pub(crate) k: usize,
@@ -229,16 +224,17 @@ impl LdeTable {
                 .twiddles
                 .iter()
                 .chain(&ntt_l.twiddles)
-                .map(|&t| F64(phi8(t).c0))
+                .map(|&t| F64(F192::from(t).c0))
                 .collect(),
         }
     }
 
-    /// Extend E-valued evaluations from S to Λ in place. The GF8 embedding
-    /// lies in K, so each butterfly multiplies the three E limbs by one K
-    /// twiddle. These are the original GF8 domains and LCH basis, not the
-    /// polynomial-basis domains of the GF64 NTT.
-    pub(crate) fn extend_lifted(&self, v: &mut [F192]) {
+    /// Extend `E`-valued evaluations from `S` to `Lambda`, in place.
+    ///
+    /// The byte transform's butterflies run lifted through `phi_8`, whose image lies in `K`.
+    ///
+    /// So each butterfly multiplies the three coefficients of an `E` value by one `K` twiddle.
+    pub(crate) fn extend(&self, v: &mut [F192]) {
         assert_eq!(v.len(), self.ell);
         let (twiddles_s, twiddles_l) = self.twiddles.split_at(self.ell - 1);
 
@@ -453,7 +449,7 @@ impl LdeTable {
     /// requires.
     ///
     /// This is the URM round-1 inner loop and it must inline into flock's
-    /// `shift_reduce_inner_ab_gfni`, hence `#[inline(always)]` here and on
+    /// `product_bytes_gfni`, hence `#[inline(always)]` here and on
     /// every [`Vec128`] method.
     ///
     /// # Safety

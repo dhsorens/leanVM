@@ -253,7 +253,7 @@ impl Lanes for F192x1 {
 
     #[inline(always)]
     fn splat(x: F192) -> Self {
-        Self::new(x)
+        Self::from(x)
     }
 
     #[inline(always)]

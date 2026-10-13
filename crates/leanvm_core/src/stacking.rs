@@ -5,6 +5,7 @@
 //! the column's offset.
 
 use crate::commitment::{RingSwitch, SliceClaim, StackClaim};
+use pcs::whir::Config;
 use primitives::field::F64;
 
 /// What a column is, before it is placed.
@@ -113,7 +114,7 @@ impl StackShape {
     /// The lanes committed: the data's, then for a hiding stack the zero lanes and the random group.
     pub const fn committed_lanes(&self) -> usize {
         if self.hiding {
-            pcs::whir::hiding_lanes(self.n_lanes)
+            Config::hiding_lanes(self.n_lanes)
         } else {
             self.n_lanes
         }
@@ -141,7 +142,7 @@ impl StackShape {
             .max(pcs::whir::MIN_LOG_N_HIDING);
         loop {
             let n_lanes = placed.div_ceil(1 << (mu - crate::commitment::LOG_BATCH)).max(1);
-            if pcs::whir::hiding_lanes(n_lanes) <= lanes {
+            if Config::hiding_lanes(n_lanes) <= lanes {
                 return Self {
                     mu,
                     n_lanes,

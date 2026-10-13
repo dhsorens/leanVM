@@ -1,22 +1,23 @@
 //! The verifier's core of one RISC-V proof, in rows: every check that depends on the proof.
 
 use super::{Rows, infallible};
-use crate::commitment::Rate;
-use crate::cpu::{Announcement, CpuError, DeferredClaims, Layout, Program, ProofKind};
+use crate::cpu::{Announcement, CpuError, DeferredClaims, Layout, Program};
 use crate::rec::circuit::{Builder, Dw, Ew, Kw};
 use crate::rec::transcript::{ProofSource, Transcript};
-use crate::tables::{Clock, PerTable};
+use crate::rec::tree::LeafShape;
+use crate::tables::Clock;
 use fiat_shamir::arith::Verifier;
 use zk::{Recorder, Value};
 
-/// What fixes the rows of a RISC-V proof's verifier: the program, each table's height, the commitment's rate, and whether the proof is zero knowledge.
+/// What fixes the rows of a RISC-V proof's verifier: the program, and the shape its proofs announce.
 ///
 /// Two proofs of one shape are verified by one circuit.
 pub struct ProofShape<'p> {
+    /// The program.
     program: &'p Program,
-    taus: PerTable<usize>,
-    rate: Rate,
-    kind: ProofKind,
+    /// Each table's height, the commitment's rate, and whether the proofs are zero knowledge.
+    shape: LeafShape,
+    /// The layout the shape announces.
     layout: Layout,
 }
 
@@ -29,25 +30,14 @@ pub struct CoreRows {
 }
 
 impl<'p> ProofShape<'p> {
-    /// The shape of a proof of a program, from its tables' base-two logarithms of rows and its rate.
+    /// The rows' shape for proofs of a program of the given shape.
     ///
     /// # Errors
     ///
     /// Refuses what the native verifier refuses of an announcement: a height out of range, or a witness the commitment does not take.
-    pub fn new(program: &'p Program, taus: PerTable<usize>, rate: Rate, kind: ProofKind) -> Result<Self, CpuError> {
-        let layout = Layout::announced(program.rv(), taus, kind)?;
-        Ok(Self {
-            program,
-            taus,
-            rate,
-            kind,
-            layout,
-        })
-    }
-
-    /// The kind of the proofs.
-    pub(crate) const fn kind(&self) -> ProofKind {
-        self.kind
+    pub fn new(program: &'p Program, shape: LeafShape) -> Result<Self, CpuError> {
+        let layout = Layout::announced(program.rv(), *shape.taus(), shape.kind())?;
+        Ok(Self { program, shape, layout })
     }
 
     /// The program.
@@ -55,21 +45,16 @@ impl<'p> ProofShape<'p> {
         self.program
     }
 
-    /// Each table's base-two logarithm of rows.
-    pub const fn taus(&self) -> &PerTable<usize> {
-        &self.taus
-    }
-
-    /// The commitment's rate.
-    pub const fn rate(&self) -> Rate {
-        self.rate
+    /// The shape the proofs announce.
+    pub const fn shape(&self) -> LeafShape {
+        self.shape
     }
 
     /// The verifier's core of a proof of this shape returning `output`, read from `source`, as rows of `b`.
     ///
     /// The rows check everything the native core checks, and leave its deferred claims as wires.
     pub fn verify_core(&self, b: &mut Builder, output: [Kw; 4], source: ProofSource<'_>) -> CoreRows {
-        if self.kind == ProofKind::ZeroKnowledge {
+        if self.shape.is_zero_knowledge() {
             return self.verify_core_zk(b, output, source);
         }
         let mut t = Transcript::new(b, &self.program.session(), &output, source);
@@ -77,7 +62,7 @@ impl<'p> ProofShape<'p> {
 
         let clock = r.scope("announcement", |r| self.read_announcement(r));
         let output = output.map(|o| r.b.k_to_e1(o));
-        let claims = infallible(self.layout.verify_core(&mut r, clock, &output, self.rate));
+        let claims = infallible(self.layout.verify_core(&mut r, clock, &output, self.shape.rate()));
         CoreRows {
             claims,
             state: t.digest(b),
@@ -96,10 +81,10 @@ impl<'p> ProofShape<'p> {
             r.scope("announcement", |r| self.read_shape(r));
             let output = output.map(|o| Value::Public(r.b.k_to_e1(o)));
             let mut rec = Recorder::new(r);
-            let core = infallible(self.layout.record_core(&mut rec, self.rate, &output));
+            let core = infallible(self.layout.record_core(&mut rec, self.shape.rate(), &output));
             let claims = infallible(core.claims.into_plain(&mut rec));
             // A record too large for the key commitment has no outer proof: the rows then refuse every proof.
-            let fits = zk::outer::verify(rec, &core.keys).map(|mut r| infallible(r.check_eof()));
+            let fits = core.keys.verify_outer(rec).map(|mut r| infallible(r.check_eof()));
             (claims, fits.is_ok())
         };
         if !fits {
@@ -113,7 +98,7 @@ impl<'p> ProofShape<'p> {
 
     /// The announced shape: every height and the rate the shape's.
     fn read_shape(&self, r: &mut Rows<'_, '_>) {
-        for size in Announcement::sizes(&self.taus, self.rate) {
+        for size in Announcement::sizes(self.shape.taus(), self.shape.rate()) {
             let x = infallible(r.prover_message());
             r.b.eq_e_const(x, size);
         }
@@ -186,6 +171,7 @@ mod tests {
         openings: Vec<Openings>,
         output: Output,
         taus: PerTable<usize>,
+        kind: ProofKind,
         native: DeferredClaims,
     }
 
@@ -194,18 +180,21 @@ mod tests {
         static FIXTURE: OnceLock<Fixture> = OnceLock::new();
         FIXTURE.get_or_init(|| {
             let program = small_program();
-            let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN).prove(&program, &[]).expect("the run halts");
-            let native = program.verify_core(output, &proof).expect("an honest proof");
-            let openings = program.verify_recording(output, &proof).expect("an honest proof");
-            let taus = heights(&proof.0);
-            Fixture {
-                program,
-                proof: proof.0,
-                openings,
-                output,
-                taus,
-                native,
-            }
+            let run = Prover::new(Rate::MIN).prove(&program, &[]).expect("the run halts");
+            Fixture::new(program, run)
+        })
+    }
+
+    // Proven once, shared by the zero-knowledge tests.
+    fn zk_fixture() -> &'static Fixture {
+        static FIXTURE: OnceLock<Fixture> = OnceLock::new();
+        FIXTURE.get_or_init(|| {
+            let program = small_program();
+            let run = Prover::new(Rate::MIN)
+                .zero_knowledge(Randomness::Fixed([11; 32]))
+                .prove(&program, &[])
+                .expect("the run halts");
+            Fixture::new(program, run)
         })
     }
 
@@ -218,10 +207,31 @@ mod tests {
     const FLOCK_START: usize = 24 * (N_TABLES + 2) + 32;
 
     impl Fixture {
+        // An honest run of a program, verified natively: its claims, its openings, and the heights it announces.
+        //
+        // A zero-knowledge proof announces its heights first too.
+        fn new(program: Program, run: ProvenRun) -> Self {
+            let ProvenRun { proof, output, .. } = run;
+            let kind = if proof.is_zero_knowledge() {
+                ProofKind::ZeroKnowledge
+            } else {
+                ProofKind::Plain
+            };
+            Self {
+                native: program.verify_core(output, &proof).expect("an honest proof"),
+                openings: program.verify_recording(output, &proof).expect("an honest proof"),
+                taus: heights(&proof.0),
+                proof: proof.0,
+                program,
+                output,
+                kind,
+            }
+        }
+
         // The core's rows over `source`: the builder, holding the wires' values, and the claims the core leaves.
         fn build(&self, source: ProofSource<'_>) -> (Builder, DeferredClaims<Ew>) {
-            let shape =
-                ProofShape::new(&self.program, self.taus, Rate::MIN, ProofKind::Plain).expect("an honest shape");
+            let leaf = LeafShape::new(self.taus, Rate::MIN, self.kind);
+            let shape = ProofShape::new(&self.program, leaf).expect("an honest shape");
             let mut b = Builder::new();
             let output = self.output.words().map(|o| b.free_k(o));
             let core = shape.verify_core(&mut b, output, source);
@@ -343,15 +353,9 @@ mod tests {
             a.i(Addi, Reg::ZERO, Reg::ZERO, 0);
         }
         let program = Program::new(&a.finish(), Region::TEXT.base(), vec![], 0, 0).expect("a valid program");
-        let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN).prove(&program, &[]).expect("the run halts");
-        let f = Fixture {
-            native: program.verify_core(output, &proof).expect("an honest proof"),
-            openings: program.verify_recording(output, &proof).expect("an honest proof"),
-            taus: heights(&proof.0),
-            proof: proof.0.clone(),
-            program,
-            output,
-        };
+        let run = Prover::new(Rate::MIN).prove(&program, &[]).expect("the run halts");
+        let proof = run.proof.clone();
+        let f = Fixture::new(program, run);
 
         // The rows leave the native claims, and the shape builds the same circuit.
         let (b, claims) = f.build(ProofSource::Proof(&f.proof, &f.openings));
@@ -377,52 +381,6 @@ mod tests {
             .next()
             .unwrap_or_default();
         assert!(failure.starts_with("bus and tables"), "{failure}");
-    }
-
-    // One honest zero-knowledge proof of the small program.
-    struct ZkFixture {
-        program: Program,
-        proof: ProofTranscript,
-        openings: Vec<Openings>,
-        output: Output,
-        taus: PerTable<usize>,
-        native: DeferredClaims,
-    }
-
-    // Proven once, shared by the zero-knowledge tests.
-    fn zk_fixture() -> &'static ZkFixture {
-        static FIXTURE: OnceLock<ZkFixture> = OnceLock::new();
-        FIXTURE.get_or_init(|| {
-            let program = small_program();
-            let ProvenRun { proof, output, .. } = Prover::new(Rate::MIN)
-                .zero_knowledge(Randomness::Fixed([11; 32]))
-                .prove(&program, &[])
-                .expect("the run halts");
-            let native = program.verify_core(output, &proof).expect("an honest proof");
-            let openings = program.verify_recording(output, &proof).expect("an honest proof");
-            // A zero-knowledge proof announces its heights first too.
-            let taus = heights(&proof.0);
-            ZkFixture {
-                program,
-                proof: proof.0,
-                openings,
-                output,
-                taus,
-                native,
-            }
-        })
-    }
-
-    impl ZkFixture {
-        // The zero-knowledge core's rows over `source`, and the claims it leaves.
-        fn build(&self, source: ProofSource<'_>) -> (Builder, DeferredClaims<Ew>) {
-            let shape = ProofShape::new(&self.program, self.taus, Rate::MIN, ProofKind::ZeroKnowledge)
-                .expect("an honest shape");
-            let mut b = Builder::new();
-            let output = self.output.words().map(|o| b.free_k(o));
-            let core = shape.verify_core(&mut b, output, source);
-            (b, core.claims)
-        }
     }
 
     #[test]

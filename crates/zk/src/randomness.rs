@@ -4,9 +4,8 @@
 //!
 //! A proof drawn from the transcript alone would be a function of the witness, which a verifier could recompute for each guess.
 
-use primitives::field::F192;
 use rand_chacha::ChaCha20Rng;
-use rand_core::{OsRng, RngCore, SeedableRng, TryRngCore};
+use rand_core::{OsRng, SeedableRng, TryRngCore};
 use std::fmt::{self, Debug, Formatter};
 
 /// Where a zero-knowledge prover draws its randomness.
@@ -78,14 +77,10 @@ pub enum Purpose {
     KeyCommitment = 2,
 }
 
-/// A uniform element of `E`.
-pub(crate) fn uniform_e(rng: &mut impl RngCore) -> F192 {
-    F192::new(rng.next_u64(), rng.next_u64(), rng.next_u64())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand_core::RngCore;
 
     #[test]
     fn each_purpose_draws_its_own_stream() {

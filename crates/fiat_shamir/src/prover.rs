@@ -1,11 +1,11 @@
 //! The prover's side of a transcript.
 
-use crate::Challenger;
+use crate::arith::RoundWeight;
 use crate::codec::{Encoding, FromUniform};
-use crate::duplex::{Blake2sDuplex, DuplexSponge};
+use crate::duplex::Blake2sDuplex;
 use crate::pow::ProofOfWork;
 use crate::proof::ProofTranscript;
-use crate::session::SessionId;
+use crate::{Challenger, SessionId};
 use primitives::field::F192;
 
 /// The prover's transcript: a sponge, and the proof it writes.
@@ -22,9 +22,9 @@ use primitives::field::F192;
 /// - While hiding is on, each message is XORed with the pad's next key, used once.
 /// - A key is one element of `E`, so it pads one 24-byte message: in `E`, XOR is addition, and `x` travels as `x + key`.
 /// - The sponge absorbs the padded bytes, which are all the proof carries.
-pub struct ProverState<H: DuplexSponge = Blake2sDuplex> {
+pub struct ProverState {
     /// The duplex sponge.
-    sponge: H,
+    sponge: Blake2sDuplex,
     /// The proof written so far.
     proof: ProofTranscript,
     /// The one-time pad of a zero-knowledge prover.
@@ -59,34 +59,19 @@ impl OneTimePad {
 }
 
 impl ProverState {
-    /// A transcript for one session over the BLAKE2s duplex, its first message the instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics on an instance of no bytes, which would bind no statement.
-    pub fn new(session: &SessionId, instance: &impl Encoding) -> Self {
-        Self::with_sponge(session, instance)
-    }
-}
-
-impl<H: DuplexSponge> ProverState<H> {
-    /// A transcript for one session over the sponge `H`, its first message the instance.
+    /// A transcript for one session, its first message the instance.
     ///
     /// The instance is public: both sides absorb it, and the proof does not carry it.
     ///
     /// # Panics
     ///
     /// Panics on an instance of no bytes, which would bind no statement.
-    pub fn with_sponge(session: &SessionId, instance: &impl Encoding) -> Self {
-        let mut state = Self {
-            sponge: H::init(session.0),
+    pub fn new(session: &SessionId, instance: &impl Encoding) -> Self {
+        Self {
+            sponge: Blake2sDuplex::transcript(session, instance),
             proof: ProofTranscript::default(),
             pad: None,
-        };
-        let encoded = instance.encode();
-        assert!(!encoded.as_ref().is_empty(), "an instance has bytes");
-        state.sponge.absorb(encoded.as_ref());
-        state
+        }
     }
 
     /// Absorb a value the verifier already knows, without sending it.
@@ -102,11 +87,16 @@ impl<H: DuplexSponge> ProverState<H> {
     ///
     /// Panics while hiding on a message other than one element of `E`, or when the keys run out.
     pub fn prover_message(&mut self, value: &impl Encoding) {
-        let mut bytes = value.encode().as_ref().to_vec();
-        if let Some(pad) = self.pad.as_mut().filter(|pad| pad.hiding) {
-            pad.apply(&mut bytes);
+        let encoded = value.encode();
+        match self.pad.as_mut().filter(|pad| pad.hiding) {
+            // A hidden message is padded in a copy of its bytes.
+            Some(pad) => {
+                let mut bytes = encoded.as_ref().to_vec();
+                pad.apply(&mut bytes);
+                self.send(&bytes);
+            }
+            None => self.send(encoded.as_ref()),
         }
-        self.send(&bytes);
     }
 
     /// Absorb bytes and write them to the proof.
@@ -174,16 +164,29 @@ impl<H: DuplexSponge> ProverState<H> {
     ///
     /// Panics on a hint of `2^32` bytes or more.
     pub fn prover_hint(&mut self, bytes: &[u8]) {
-        let len = u32::try_from(bytes.len()).expect("a hint under 4 GiB");
-        self.proof.hints.extend_from_slice(&len.to_le_bytes());
-        self.proof.hints.extend_from_slice(bytes);
+        self.proof.push_hint(bytes);
+    }
+
+    /// Send one sumcheck round's polynomial, its coefficients constant first, but the one its claim fixes.
+    ///
+    /// The verifier rebuilds that coefficient from the claim, so sending it would bind nothing more.
+    ///
+    /// # Panics
+    ///
+    /// Panics on fewer than two coefficients.
+    pub fn send_round(&mut self, coeffs: &[F192], weight: RoundWeight) {
+        assert!(coeffs.len() >= 2, "a round polynomial has at least two coefficients");
+        let fixed = weight.fixed_index();
+        for (i, c) in coeffs.iter().enumerate() {
+            if i != fixed {
+                self.prover_message(c);
+            }
+        }
     }
 
     /// Draw a verifier message from the sponge.
     pub fn verifier_message<T: FromUniform>(&mut self) -> T {
-        let mut repr = T::Repr::default();
-        self.sponge.squeeze(repr.as_mut());
-        T::from_uniform(repr)
+        self.sponge.draw()
     }
 
     /// Draw `n` verifier messages, in order.
@@ -210,12 +213,6 @@ impl<H: DuplexSponge> ProverState<H> {
         self.send(&nonce.encode());
     }
 
-    /// The messages written so far.
-    #[must_use]
-    pub fn narg_string(&self) -> &[u8] {
-        &self.proof.narg
-    }
-
     /// The finished proof.
     #[must_use]
     pub fn into_proof(self) -> ProofTranscript {
@@ -223,7 +220,7 @@ impl<H: DuplexSponge> ProverState<H> {
     }
 }
 
-impl<H: DuplexSponge> Challenger for ProverState<H> {
+impl Challenger for ProverState {
     fn verifier_message<T: FromUniform>(&mut self) -> T {
         Self::verifier_message(self)
     }
