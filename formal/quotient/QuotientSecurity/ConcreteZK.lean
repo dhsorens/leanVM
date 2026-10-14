@@ -10,6 +10,10 @@ that lies in `K`, the digit `w_n` is that polynomial; and every field of `2^192`
 such a `K`, of `2^64` elements.
 -/
 
+-- These files are written on VCVio's `Pr[p | mx]`, which it is retiring; `Statement.lean` states the
+-- results on its replacement, through `prEvent_eq_probEvent`.
+set_option linter.deprecated false
+
 set_option linter.unusedSectionVars false
 
 open OracleSpec OracleComp Polynomial Module NNReal

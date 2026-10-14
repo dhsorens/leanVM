@@ -20,6 +20,10 @@ and whose challenges are good for the witness: no denominator vanishes on a cell
 `t` is not a root of the rows' vanishing polynomial.
 -/
 
+-- These files are written on VCVio's `Pr[p | mx]`, which it is retiring; `Statement.lean` states the
+-- results on its replacement, through `prEvent_eq_probEvent`.
+set_option linter.deprecated false
+
 set_option linter.unusedSectionVars false
 
 open OracleSpec OracleComp Polynomial Module

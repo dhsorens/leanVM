@@ -12,6 +12,9 @@ and of handles the oracle was already asked about. At the protocol's sizes the f
 -/
 
 set_option linter.unusedSectionVars false
+-- These files are written on VCVio's `Pr[p | mx]`, which it is retiring; `Statement.lean` states the
+-- results on its replacement, through `prEvent_eq_probEvent`.
+set_option linter.deprecated false
 
 open OracleSpec OracleComp Polynomial Module NNReal
 

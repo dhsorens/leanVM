@@ -2,6 +2,7 @@ import QuotientSecurity.PublicWeight
 import QuotientSecurity.ConcreteZK
 import QuotientSecurity.Sequence
 import QuotientSecurity.Joint
+import QuotientSecurity.Notation
 
 /-!
 # The statements
@@ -206,35 +207,66 @@ private theorem zkBound_le (hq : Fintype.card E = 2 ^ 192) (U : Finset H) :
   rw [← coe_bit]
   exact add_le_add_left (ENNReal.coe_le_coe.mpr he) _
 
+variable (H) in
+/-- The oracle's table: what it has answered so far. -/
+abbrev Table := (ofFn (ZAnswer I.params H)).QueryCache
+
+variable (H) in
+/-- What an experiment outputs: the proof with its verdict and challenges, and the table. -/
+abbrev View := Outcome (E := E) H × I.Table H
+
+/-- **The real experiment**: the honest prover, on the witness `gK`, against the random oracle in
+the state `c₀`. -/
+noncomputable def real (c₀ : I.Table H) (stmt : Fin 8 → E) (gK : Fin 4 → K[X]) :
+    ProbComp (I.View H) :=
+  realNI c₀ stmt gK (digitPoly 20)
+
+variable (K) in
+/-- **The simulator**: it is given the statement and the oracle's state, and no witness. -/
+noncomputable def sim (c₀ : I.Table H) (stmt : Fin 8 → E) : ProbComp (I.View H) :=
+  simNI (K := K) c₀ stmt
+
+set_option linter.deprecated false in
+private theorem real_event (c₀ : I.Table H) (stmt : Fin 8 → E) (gK : Fin 4 → K[X])
+    (S : I.View H → Prop) :
+    Pr{let o ← I.real c₀ stmt gK}[S o] = Pr[S | realNI c₀ stmt gK (digitPoly 20)] :=
+  prEvent_eq_probEvent _ S
+
+set_option linter.deprecated false in
+private theorem sim_event (c₀ : I.Table H) (stmt : Fin 8 → E) (S : I.View H → Prop) :
+    Pr{let o ← I.sim K c₀ stmt}[S o] = Pr[S | simNI (K := K) c₀ stmt] :=
+  prEvent_eq_probEvent _ S
+
 /-- **Zero knowledge.** For a statement, a witness over `K` that satisfies the relation, and any
 oracle state, of which `U` holds the handles already asked about with this statement: every
 event on the outcome has probabilities in the real experiment and in the simulator's that differ
 by at most `1 / 2^128 + |U| / |H|`. -/
 theorem zero_knowledge (h3 : finrank K E = 3) (hq : Fintype.card E = 2 ^ 192)
-    (c₀ : (ofFn (ZAnswer I.params H)).QueryCache) (stmt : Fin 8 → E)
+    (c₀ : I.Table H) (stmt : Fin 8 → E)
     (U : Finset H) (hU : ∀ c₁, c₁ ∉ U → Fresh c₀ stmt c₁) (gK : Fin 4 → K[X])
     (hsat : I.Relation stmt (I.cellsOf (committed gK (digitPoly 20) 0)))
-    (S : Outcome (E := E) H × (ofFn (ZAnswer I.params H)).QueryCache → Prop) :
-    Pr[S | realNI c₀ stmt gK (digitPoly 20)]
-        ≤ Pr[S | simNI (K := K) c₀ stmt] + (1 / 2 ^ 128 + U.card / Fintype.card H) ∧
-      Pr[S | simNI (K := K) c₀ stmt]
-        ≤ Pr[S | realNI c₀ stmt gK (digitPoly 20)] + (1 / 2 ^ 128 + U.card / Fintype.card H) := by
+    (S : I.View H → Prop) :
+    Pr{let o ← I.real c₀ stmt gK}[S o]
+        ≤ Pr{let o ← I.sim K c₀ stmt}[S o] + (1 / 2 ^ 128 + U.card / Fintype.card H) ∧
+      Pr{let o ← I.sim K c₀ stmt}[S o]
+        ≤ Pr{let o ← I.real c₀ stmt gK}[S o] + (1 / 2 ^ 128 + U.card / Fintype.card H) := by
   have hsat' : I.params.Sat stmt (I.params.cells (committed gK (digitPoly 20) 0)) :=
     (I.sat_iff stmt _).mpr ((I.cells_eq _).symm ▸ hsat)
   have h := zeroKnowledge h3 I.exact c₀ stmt U hU gK (digitPoly 20)
     (digitPoly_monic_natDegree 20).1.ne_zero I.mask_vanishes hsat' S
   have hle := I.zkBound_le (K := K) hq U
+  rw [I.real_event, I.sim_event]
   exact ⟨h.1.trans (add_le_add_right hle _), h.2.trans (add_le_add_right hle _)⟩
 
 /-- **Completeness.** In the same experiment, with row polynomials of degree at most `2^21`: the
 verifier's verdict on the honest proof is false with probability at most
 `2 / 2^128 + |U| / |H|`. -/
 theorem completeness (hq : Fintype.card E = 2 ^ 192)
-    (c₀ : (ofFn (ZAnswer I.params H)).QueryCache) (stmt : Fin 8 → E)
+    (c₀ : I.Table H) (stmt : Fin 8 → E)
     (U : Finset H) (hU : ∀ c₁, c₁ ∉ U → Fresh c₀ stmt c₁) (gK : Fin 4 → K[X])
     (hdeg : ∀ j, (gK j).natDegree ≤ 2 ^ 21)
     (hsat : I.Relation stmt (I.cellsOf (committed gK (digitPoly 20) 0))) :
-    Pr[fun o => o.1.verdict = false | realNI c₀ stmt gK (digitPoly 20)]
+    Pr{let o ← I.real c₀ stmt gK}[o.1.verdict = false]
       ≤ 2 / 2 ^ 128 + U.card / Fintype.card H := by
   have hsat' : I.params.Sat stmt (I.params.cells (committed gK (digitPoly 20) 0)) :=
     (I.sat_iff stmt _).mpr ((I.cells_eq _).symm ▸ hsat)
@@ -261,6 +293,7 @@ theorem completeness (hq : Fintype.card E = 2 ^ 192)
       simp
     rw [hc, ← coe_bit]
     exact ENNReal.coe_le_coe.mpr hle
+  rw [I.real_event]
   refine (h.trans (add_le_add (I.zkBound_le (K := K) hq U) e2)).trans (le_of_eq ?_)
   rw [show (2 : ENNReal) / 2 ^ 128 = 1 / 2 ^ 128 + 1 / 2 ^ 128 by
     rw [ENNReal.div_add_div_same]; norm_num]

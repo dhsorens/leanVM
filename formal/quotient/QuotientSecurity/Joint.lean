@@ -12,6 +12,10 @@ simulator's do. `knowledgeSoundness_handles` is the soundness bound in this mode
 simulator of the zero knowledge theorem run without programming being one.
 -/
 
+-- These files are written on VCVio's `Pr[p | mx]`, which it is retiring; `Statement.lean` states the
+-- results on its replacement, through `prEvent_eq_probEvent`.
+set_option linter.deprecated false
+
 set_option linter.unusedSectionVars false
 
 open OracleSpec OracleComp NNReal Function Polynomial

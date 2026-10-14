@@ -9,6 +9,10 @@ asked about, a challenge at which a denominator vanishes on a cell or the masks 
 the fraction of points at which the product the verifier inverts is zero.
 -/
 
+-- These files are written on VCVio's `Pr[p | mx]`, which it is retiring; `Statement.lean` states the
+-- results on its replacement, through `prEvent_eq_probEvent`.
+set_option linter.deprecated false
+
 set_option linter.unusedSectionVars false
 
 open OracleSpec OracleComp Polynomial Module NNReal

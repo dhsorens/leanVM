@@ -12,6 +12,10 @@ that for every `r` outside `K` at which the vanishing polynomial is not zero, th
 exactly uniform in `E^4`, whatever the witness: a simulator samples them.
 -/
 
+-- These files are written on VCVio's `Pr[p | mx]`, which it is retiring; `Statement.lean` states the
+-- results on its replacement, through `prEvent_eq_probEvent`.
+set_option linter.deprecated false
+
 open Module Polynomial IntermediateField
 
 namespace QuotientSecurity

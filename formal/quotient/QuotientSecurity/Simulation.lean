@@ -11,6 +11,10 @@ has exactly the distribution a simulator without the witness produces: four valu
 wiring's public value, and the verdict the verifier's own nonzero check gives.
 -/
 
+-- These files are written on VCVio's `Pr[p | mx]`, which it is retiring; `Statement.lean` states the
+-- results on its replacement, through `prEvent_eq_probEvent`.
+set_option linter.deprecated false
+
 set_option linter.unusedSectionVars false
 
 open Polynomial Module
