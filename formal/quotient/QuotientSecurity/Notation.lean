@@ -1,5 +1,4 @@
-import VCVio.EvalDist.ProbabilityNotation
-import VCVio.OracleComp.ProbComp
+import QuotientSecurity.Distance
 
 /-!
 # One notation for probabilities
