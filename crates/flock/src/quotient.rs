@@ -41,7 +41,7 @@ impl Index {
         let m = circuit.log_rows + 2;
         let mut sigma = parallel::map_collect(circuit.sigma.len(), |i| point(circuit.sigma[i] as usize));
         domain::coefficients(&mut sigma, F64::ZERO);
-        let table = Table::new(Layout::new(m, m, m, &[(0, 64)]), |_, j, lane| {
+        let table = Table::new(Layout::new(m, m, (m, 6, 3), &[(0, 1 << m)]), |_, j, lane| {
             lane.copy_from_slice(&sigma[j * lane.len()..(j + 1) * lane.len()])
         });
         Self {
@@ -77,25 +77,30 @@ fn coset(m: usize) -> F64 {
     beta()[m + 2]
 }
 
-/// Where the witness table can be nonzero: the four polynomials, and the first lane of their masks.
+/// Where the witness table can be nonzero: the four polynomials, and their masks.
 pub fn witness_layout(log_rows: usize) -> Layout {
     let m = log_rows + 2;
-    Layout::new(m + 1, m, m + 1, &[(0, 32), (1, 1)])
+    Layout::new(m + 1, m, (m + 1, 6, 3), &[(0, 1 << m), (1, 16)])
 }
 
+/// The quotient table's first fold, and how much its code's domain shrinks after it.
+const QUOTIENT_FOLD: (usize, usize) = (7, 4);
+
 /// Where the quotient table can be nonzero: three limbs of `h` below `2^m`, of `q` below `3 * 2^m` plus what the
-/// public weight's degree adds, and the gate's quotient below `4 * 2^m`.
+/// public weight's degree adds, and the gate's quotient below `(4 - 1/4) * 2^m` plus what the masks add.
 pub fn quotient_layout(log_rows: usize) -> Layout {
     let m = log_rows + 2;
-    let top = (1usize << 14).div_ceil(1 << (m - 1));
+    let n = 1usize << m;
     let mut chunks = vec![];
     for e in 0..3 {
-        chunks.push((16 * e, 2));
-        chunks.extend((0..3).map(|digit| (16 * e + 4 + digit, 2)));
-        chunks.push((16 * e + 7, top));
+        chunks.push((16 * e, n));
+        chunks.extend((0..3).map(|digit| (16 * e + 4 + digit, n)));
+        chunks.push((16 * e + 7, 1 << 14));
     }
-    chunks.extend((0..4).map(|digit| (8 + digit, 2)));
-    Layout::new(m + 6, m, m + 5, &chunks)
+    chunks.extend((0..3).map(|digit| (8 + digit, n)));
+    chunks.push((11, 3 * n / 4 + 64));
+    let (fold, reduction) = QUOTIENT_FOLD;
+    Layout::new(m + 6, m, (m + 5, fold, reduction), &chunks)
 }
 
 /// What a proof leaves: one claim on the witness table, one on the circuit's, two on the quotient table.
@@ -338,8 +343,14 @@ pub fn prove(
     // The quotient table: 22 variables of a polynomial, two more digits, `h` or `q`, that pair or the gate's
     // quotient, and the extension's two. `q`'s top digit holds only what the public weight's degree adds.
     let layout = quotient_layout(circuit.log_rows);
-    let top = layout.covered(7);
-    assert!(q[3 * n + top..].iter().all(|v| v.is_zero()), "q above its layout");
+    assert!(
+        q[3 * n + layout.covered(7)..].iter().all(|v| v.is_zero()),
+        "q above its layout"
+    );
+    assert!(
+        q_gate[3 * n + layout.covered(11)..].iter().all(|v| v.is_zero()),
+        "the gate's quotient above its layout"
+    );
     let quotient = Table::new(layout, |c, j, lane| {
         let len = lane.len();
         let (digit, limb) = (c & 3, c >> 4);

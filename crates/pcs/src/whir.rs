@@ -146,6 +146,22 @@ pub fn config_for_rate(log_n: usize, log_inv_rate: usize) -> Result<ProverConfig
     sec.to_config()
 }
 
+/// [`config_for_rate`] with another first fold, as [`WhirSecurityConfig::derive_config_with_shape`] takes it.
+pub fn config_for_shape(
+    log_n: usize,
+    log_inv_rate: usize,
+    initial_k: usize,
+    initial_reduction: usize,
+) -> Result<ProverConfig, String> {
+    let sec = WhirSecurityConfig::derive_config_with_shape(
+        log_n + crate::LOG_PACKING,
+        log_inv_rate,
+        initial_k,
+        initial_reduction,
+    )?;
+    sec.to_config()
+}
+
 // ===================================================================
 // Commit: F64 message -> interleaved RS codeword -> Merkle root
 // ===================================================================

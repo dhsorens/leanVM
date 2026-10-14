@@ -6,7 +6,7 @@ use fiat_shamir::digest_words;
 use fiat_shamir::merkle::Hash;
 use fiat_shamir::transcript::{Challenger, Proof, ProverState, VerifierState};
 use pcs::whir::{
-    INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0, LaneWeight, ProverData, commit as whir_commit, config_for_rate,
+    LOG_INV_RATE_0, LaneWeight, ProverData, commit as whir_commit, config_for_shape,
     recursive_prover_with_lane_weights, recursive_verifier_with_basis_succinct,
 };
 use primitives::field::{F64, F192};
@@ -17,42 +17,56 @@ use crate::standalone::Claim;
 
 const LABEL: &[u8] = b"flock-quotient-opening";
 
-/// Where a table's entries can be nonzero: lanes of `2^(log_n - INITIAL_FOLDING_FACTOR)` entries, each a slice of
-/// one chunk.
+/// Where a table's entries can be nonzero, and the shape of its WHIR commitment: lanes of
+/// `2^(log_n - fold)` entries, each a slice of one chunk, and a first fold of `fold` variables after which
+/// the code's domain shrinks by `reduction` bits.
 pub struct Layout {
     pub vars: usize,
     pub log_chunk: usize,
     /// The committed message is `2^log_n` entries, of which only the lanes are encoded.
     pub log_n: usize,
+    pub fold: usize,
+    pub reduction: usize,
     /// Each lane's chunk, and its place in that chunk.
     lanes: Vec<(usize, usize)>,
 }
 
 impl Layout {
-    /// The leading `count` lanes of each listed chunk.
-    pub fn new(vars: usize, log_chunk: usize, log_n: usize, chunks: &[(usize, usize)]) -> Self {
-        let layout = Self {
-            vars,
-            log_chunk,
-            log_n,
-            lanes: chunks
-                .iter()
-                .flat_map(|&(chunk, count)| (0..count).map(move |j| (chunk, j)))
-                .collect(),
-        };
-        let log_lane = layout.log_lane();
+    /// Lanes enough for the leading `len` entries of each listed chunk.
+    pub fn new(
+        vars: usize,
+        log_chunk: usize,
+        (log_n, fold, reduction): (usize, usize, usize),
+        chunks: &[(usize, usize)],
+    ) -> Self {
+        let log_lane = log_n - fold;
         assert!(log_lane <= log_chunk && log_chunk <= vars);
-        assert!(layout.lanes.len() <= 1 << INITIAL_FOLDING_FACTOR);
         assert!(
             chunks
                 .iter()
-                .all(|&(chunk, count)| chunk >> (vars - log_chunk) == 0 && count << log_lane <= 1 << log_chunk)
+                .all(|&(chunk, len)| chunk >> (vars - log_chunk) == 0 && len <= 1 << log_chunk)
         );
-        layout
+        let lanes: Vec<(usize, usize)> = chunks
+            .iter()
+            .flat_map(|&(chunk, len)| (0..len.div_ceil(1 << log_lane)).map(move |j| (chunk, j)))
+            .collect();
+        assert!(lanes.len() <= 1 << fold);
+        Self {
+            vars,
+            log_chunk,
+            log_n,
+            fold,
+            reduction,
+            lanes,
+        }
     }
 
     fn log_lane(&self) -> usize {
-        self.log_n - INITIAL_FOLDING_FACTOR
+        self.log_n - self.fold
+    }
+
+    fn config(&self) -> Result<pcs::whir::ProverConfig, String> {
+        config_for_shape(self.log_n, LOG_INV_RATE_0, self.fold, self.reduction)
     }
 
     /// How many leading entries of `chunk` its lanes hold.
@@ -115,7 +129,8 @@ pub struct Committed {
 }
 
 pub fn commit(table: &Table) -> Committed {
-    let (commitment, data) = whir_commit(&table.lanes, table.layout.log_n, INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0);
+    let layout = &table.layout;
+    let (commitment, data) = whir_commit(&table.lanes, layout.log_n, layout.fold, LOG_INV_RATE_0);
     Committed {
         root: commitment.root,
         data,
@@ -144,7 +159,7 @@ fn powers(lambda: F192, count: usize) -> Vec<F192> {
 /// Prove every claim of `claims` on one committed table, in one opening.
 pub fn open(table: &Table, committed: &Committed, claims: &[Claim]) -> Proof {
     let layout = &table.layout;
-    let config = config_for_rate(layout.log_n, LOG_INV_RATE_0).expect("WHIR configuration");
+    let config = layout.config().expect("WHIR configuration");
     let [iv, statement] = seed(&committed.root, claims);
     let mut ps = ProverState::new(iv, statement);
     let lambdas = powers(ps.sample(), claims.len());
@@ -179,7 +194,7 @@ pub fn open(table: &Table, committed: &Committed, claims: &[Claim]) -> Proof {
 
 /// Check an opening of `claims` against `root`.
 pub fn verify(layout: &Layout, root: &Hash, claims: &[Claim], proof: &Proof) -> bool {
-    let Ok(config) = config_for_rate(layout.log_n, LOG_INV_RATE_0) else {
+    let Ok(config) = layout.config() else {
         return false;
     };
     if claims.iter().any(|claim| claim.point.len() != layout.vars) {

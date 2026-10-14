@@ -292,8 +292,13 @@ fn derive_ladder(
 /// [`RS_DOMAIN_INITIAL_REDUCTION_FACTOR`] bits after the initial fold, then
 /// exactly one bit per subsequent fold, so a fold of `k` variables raises the
 /// inverse-rate logarithm by `k - reduction`.
-fn derive_ladder_shape(log_n: usize, initial_k: usize, log_inv_rate: usize) -> Result<LadderShape, String> {
-    let mut domain_reduction = RS_DOMAIN_INITIAL_REDUCTION_FACTOR;
+fn derive_ladder_shape(
+    log_n: usize,
+    initial_k: usize,
+    initial_reduction: usize,
+    log_inv_rate: usize,
+) -> Result<LadderShape, String> {
+    let mut domain_reduction = initial_reduction;
     derive_ladder(log_n, initial_k, log_inv_rate, |rate_running, fold_running, _cols| {
         let rate_increase = fold_running.checked_sub(domain_reduction).ok_or_else(|| {
             format!("folding factor {fold_running} is smaller than RS domain reduction {domain_reduction}")
@@ -394,6 +399,8 @@ pub struct WhirSecurityConfig {
     /// L0 lane fold. Must equal the upstream `PcsParams::log_batch_size` so
     /// the L0 commit can be reused without re-committing.
     pub initial_k: usize,
+    /// How many bits the total Reed--Solomon domain shrinks by after the L0 fold.
+    pub initial_reduction: usize,
     /// Round-by-round security target (bits): `validate()` asserts that every
     /// error term associated with a verifier challenge clears at least this
     /// much. This is an RBR target, not a claim that the sum of all interactive
@@ -763,7 +770,7 @@ impl WhirSecurityConfig {
             // initial reduction and to one bit at every later transition.
             if let Some(next) = self.levels.get(i + 1) {
                 let domain_reduction = if i == 0 {
-                    RS_DOMAIN_INITIAL_REDUCTION_FACTOR
+                    self.initial_reduction
                 } else {
                     RS_DOMAIN_SUBSEQUENT_REDUCTION_FACTOR
                 };
@@ -885,18 +892,39 @@ impl WhirSecurityConfig {
     /// grinding, query + query grinding, OOD, and algebraic checks) clears the
     /// target individually.
     pub fn derive_config_with_log_inv_rate(m: usize, log_inv_rate: usize) -> Result<Self, String> {
+        Self::derive_config_with_shape(
+            m,
+            log_inv_rate,
+            INITIAL_FOLDING_FACTOR,
+            RS_DOMAIN_INITIAL_REDUCTION_FACTOR,
+        )
+    }
+
+    /// [`Self::derive_config_with_log_inv_rate`] with another first fold, `initial_k` variables, after
+    /// which the total Reed--Solomon domain shrinks by `initial_reduction` bits rather than
+    /// [`RS_DOMAIN_INITIAL_REDUCTION_FACTOR`]. The recursion guest assumes the production shape; an
+    /// opening checked elsewhere may take another.
+    pub fn derive_config_with_shape(
+        m: usize,
+        log_inv_rate: usize,
+        initial_k: usize,
+        initial_reduction: usize,
+    ) -> Result<Self, String> {
         validate_log_inv_rate(log_inv_rate)?;
+        if initial_reduction > initial_k || RESIDUAL_MAX_LOG > initial_k {
+            return Err(format!(
+                "no ladder folds {initial_k} variables first, reducing by {initial_reduction}"
+            ));
+        }
         let target_bits = SECURITY_BITS;
         let query_grind: usize = QUERY_GRINDING_BITS;
         let log_n = m
             .checked_sub(crate::LOG_PACKING)
             .ok_or_else(|| format!("m ({m}) < LOG_PACKING ({})", crate::LOG_PACKING))?;
-        let initial_k = INITIAL_FOLDING_FACTOR;
-
         // The ladder geometry is independent of eta. Exact block-length
         // feasibility is checked below by the same per-level optimizer that
         // supplies the production eta and query count.
-        let shape = derive_ladder_shape(log_n, initial_k, log_inv_rate)?;
+        let shape = derive_ladder_shape(log_n, initial_k, initial_reduction, log_inv_rate)?;
         let n_levels = shape.log_inv_rates.len();
 
         // Round-by-round target: every verifier-challenge error term (pg,
@@ -931,6 +959,7 @@ impl WhirSecurityConfig {
             m,
             log_n,
             initial_k,
+            initial_reduction,
             target_security_bits: target_bits,
             analysis_version: analysis_version.into(),
             levels,
