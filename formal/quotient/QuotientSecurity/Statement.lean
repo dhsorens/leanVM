@@ -15,11 +15,21 @@ these theorems mention are in `Setup.lean`, which is short and has no proof in i
 
 **What is not said.**
 * That the circuit is the one of `flock::quotient`: the theorems are for every wiring and every
-  weights. The Rust tests check that code's wiring is a permutation with no loop.
-* That the verifier's four claims on committed tables are what "accepts" means here: that is
-  `claims_iff_accepts_ofCantor`.
+  weights, and with a degenerate circuit the relation holds of every statement. The Rust tests
+  check that code's wiring is a permutation with no loop.
+* That the Rust `reduce` is this verifier. `claims_iff_accepts_ofCantor` proves that four claims
+  on committed tables, at given points with given values, are "accepts" here; that `reduce`
+  forms those points and values is by review. The verifier here accepts more than Rust's, which
+  also rejects a challenge `t` with some `1 + w_k(t) = 0`.
+* That the honest proof is accepted in the game of `soundness`. `completeness` is in the game of
+  zero knowledge, with random handles; `honest_messages_fit` shows the honest messages are
+  objects `soundness` speaks of, and no more.
+* That a witness over `K` of degree at most `2^20` exists for a given statement: it is a
+  hypothesis of zero knowledge and completeness.
 * Anything about the commitment the Rust code uses. Its tables are not padded and its roots are
   deterministic, so the zero knowledge theorem does not apply to it as built.
+* The adversary of `soundness` has no coins of its own; zero knowledge is for one proof, with a
+  simulator that writes in the oracle's table and is not shown efficient.
 -/
 
 set_option linter.unusedSectionVars false
@@ -65,7 +75,8 @@ end Soundness
 
 /-! ## Zero knowledge and completeness
 
-`K` is the field of the witness and `E`, of degree 3 over it, the field of the challenges. -/
+`K` is the field of the witness and `E` the field of the challenges; zero knowledge asks that
+`E` be of degree 3 over `K`. -/
 
 section ZeroKnowledge
 
