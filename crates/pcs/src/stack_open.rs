@@ -301,11 +301,10 @@ pub fn open_batch_mixed_whir_stacked(
         config,
         log_n,
         stack,
-        b_stack,
+        super::whir::InitialWeight::Dense(b_stack, Some(message)),
         target,
         &prover_data.codeword,
         &prover_data.merkle_tree,
-        Some(message),
         ps,
     );
 }

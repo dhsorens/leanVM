@@ -6,14 +6,13 @@ use fiat_shamir::digest_words;
 use fiat_shamir::merkle::Hash;
 use fiat_shamir::transcript::{Challenger, Proof, ProverState, VerifierState};
 use pcs::whir::{
-    INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0, ProverData, commit as whir_commit, config_for_rate,
-    recursive_prover_with_basis, recursive_verifier_with_basis_succinct,
+    INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0, LaneWeight, ProverData, commit as whir_commit, config_for_rate,
+    recursive_prover_with_lane_weights, recursive_verifier_with_basis_succinct,
 };
 use primitives::field::{F64, F192};
 use primitives::hash::hash;
-use primitives::multilinear::{eq_eval, eq_table};
+use primitives::multilinear::{eq_eval, eq_table, mle_eval_par};
 
-use super::Table;
 use crate::standalone::Claim;
 
 const LABEL: &[u8] = b"flock-quotient-opening";
@@ -56,25 +55,9 @@ impl Layout {
         self.log_n - INITIAL_FOLDING_FACTOR
     }
 
-    /// What is committed: the lanes of `table`, in order. Panics on an entry of `table` outside them.
-    pub fn message(&self, table: &Table) -> Vec<F64> {
-        assert_eq!((table.vars, table.log_chunk), (self.vars, self.log_chunk));
-        let lane = 1 << self.log_lane();
-        for (index, chunk) in &table.chunks {
-            let covered = self.lanes.iter().filter(|&&(c, _)| c == *index).count();
-            assert!(
-                chunk[covered * lane..].iter().all(|x| x.is_zero()),
-                "chunk {index} has entries outside its lanes"
-            );
-        }
-        let mut message = vec![F64::ZERO; self.lanes.len() * lane];
-        parallel::chunks_mut(&mut message, lane, |l, out| {
-            let (c, j) = self.lanes[l];
-            if let Some((_, chunk)) = table.chunks.iter().find(|(index, _)| *index == c) {
-                out.copy_from_slice(&chunk[j * lane..(j + 1) * lane]);
-            }
-        });
-        message
+    /// How many leading entries of `chunk` its lanes hold.
+    pub fn covered(&self, chunk: usize) -> usize {
+        self.lanes.iter().filter(|&&(c, _)| c == chunk).count() << self.log_lane()
     }
 
     /// Each lane's weight in a claim at `point`: `eq` on the coordinates above a lane's own.
@@ -93,19 +76,48 @@ impl Layout {
     }
 }
 
-/// A committed table, as its opening needs it.
+/// A table, as what is committed of it: the lanes of its layout, in order.
+pub struct Table {
+    pub layout: Layout,
+    pub lanes: Vec<F64>,
+}
+
+impl Table {
+    /// The table whose lane of chunk `c`, `j`-th in it, `fill(c, j, lane)` writes whole.
+    pub fn new(layout: Layout, fill: impl Fn(usize, usize, &mut [F64]) + Sync) -> Self {
+        let lane = 1 << layout.log_lane();
+        // SAFETY: `fill` writes every lane whole.
+        let mut lanes = unsafe { primitives::uninit_vec::<F64>(layout.lanes.len() * lane) };
+        parallel::chunks_mut(&mut lanes, lane, |l, out| {
+            let (c, j) = layout.lanes[l];
+            fill(c, j, out);
+        });
+        Self { layout, lanes }
+    }
+
+    /// Its multilinear extension at `point`.
+    pub fn eval(&self, point: &[F192]) -> F192 {
+        let log_lane = self.layout.log_lane();
+        let weights = self.layout.lane_weights(point);
+        self.lanes
+            .chunks_exact(1 << log_lane)
+            .zip(weights)
+            .fold(F192::ZERO, |acc, (lane, w)| {
+                acc + w * mle_eval_par(lane, &point[..log_lane])
+            })
+    }
+}
+
+/// What a commitment keeps for its openings.
 pub struct Committed {
     pub root: Hash,
-    message: Vec<F64>,
     data: ProverData,
 }
 
-pub fn commit(layout: &Layout, table: &Table) -> Committed {
-    let message = layout.message(table);
-    let (commitment, data) = whir_commit(&message, layout.log_n, INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0);
+pub fn commit(table: &Table) -> Committed {
+    let (commitment, data) = whir_commit(&table.lanes, table.layout.log_n, INITIAL_FOLDING_FACTOR, LOG_INV_RATE_0);
     Committed {
         root: commitment.root,
-        message,
         data,
     }
 }
@@ -130,7 +142,8 @@ fn powers(lambda: F192, count: usize) -> Vec<F192> {
 }
 
 /// Prove every claim of `claims` on one committed table, in one opening.
-pub fn open(layout: &Layout, committed: &Committed, claims: &[Claim]) -> Proof {
+pub fn open(table: &Table, committed: &Committed, claims: &[Claim]) -> Proof {
+    let layout = &table.layout;
     let config = config_for_rate(layout.log_n, LOG_INV_RATE_0).expect("WHIR configuration");
     let [iv, statement] = seed(&committed.root, claims);
     let mut ps = ProverState::new(iv, statement);
@@ -139,24 +152,23 @@ pub fn open(layout: &Layout, committed: &Committed, claims: &[Claim]) -> Proof {
         .iter()
         .zip(&lambdas)
         .fold(F192::ZERO, |acc, (c, &l)| acc + l * c.value);
-    let lows: Vec<Vec<F192>> = claims.iter().map(|c| eq_table(&c.point[..layout.log_lane()])).collect();
-    let lanes: Vec<Vec<F192>> = claims.iter().map(|c| layout.lane_weights(&c.point)).collect();
-    // SAFETY: every lane is written whole.
-    let mut weight = unsafe { primitives::uninit_vec::<F192>(committed.message.len()) };
-    parallel::chunks_mut(&mut weight, 1 << layout.log_lane(), |l, out| {
-        let scales: Vec<F192> = lanes.iter().zip(&lambdas).map(|(w, &lambda)| lambda * w[l]).collect();
-        for (x, w) in out.iter_mut().enumerate() {
-            *w = scales
-                .iter()
-                .zip(&lows)
-                .fold(F192::ZERO, |acc, (&s, low)| acc + s * low[x]);
-        }
-    });
-    recursive_prover_with_basis(
+    let weights: Vec<LaneWeight> = claims
+        .iter()
+        .zip(&lambdas)
+        .map(|(claim, &lambda)| LaneWeight {
+            lanes: layout
+                .lane_weights(&claim.point)
+                .into_iter()
+                .map(|w| lambda * w)
+                .collect(),
+            block: eq_table(&claim.point[..layout.log_lane()]),
+        })
+        .collect();
+    recursive_prover_with_lane_weights(
         &config,
         layout.log_n,
-        &committed.message,
-        weight,
+        &table.lanes,
+        &weights,
         target,
         &committed.data.codeword,
         &committed.data.merkle_tree,

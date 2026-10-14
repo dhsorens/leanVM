@@ -10,7 +10,6 @@
 use fiat_shamir::merkle::{Hash, scalars_to_hash};
 use fiat_shamir::transcript::{Challenger, Proof, ProverState, Transmitter, VerifierState};
 use primitives::field::{F64, F192};
-use primitives::multilinear::mle_eval_par;
 
 use crate::membership::{Channel, Scalar, Statement, Stream, VerifyError};
 use crate::standalone::Claim;
@@ -22,81 +21,52 @@ pub mod opening;
 use circuit::Circuit;
 use domain::{beta, chain, coordinates, point, row_vanishing};
 use opening::Layout;
+pub use opening::Table;
 
 /// The public bits are cells of the span of this many basis vectors: the `X` and `Y` cells of
 /// [`circuit::PUBLIC_ROWS`] rows.
 const REGION: usize = 11;
 
-/// A table as the chunks of it that are not zero, each `2^log_chunk` long at its index.
-pub struct Table {
-    pub vars: usize,
-    pub log_chunk: usize,
-    pub chunks: Vec<(usize, Vec<F64>)>,
-}
-
-impl Table {
-    /// Its multilinear extension at `point`.
-    pub fn eval(&self, point: &[F192]) -> F192 {
-        assert_eq!(point.len(), self.vars);
-        let (low, high) = point.split_at(self.log_chunk);
-        self.chunks.iter().fold(F192::ZERO, |acc, (index, chunk)| {
-            let weight = high.iter().enumerate().fold(F192::ONE, |w, (k, &p)| {
-                w * if (index >> k) & 1 == 1 { p } else { F192::ONE + p }
-            });
-            acc + weight * mle_eval_par(chunk, low)
-        })
-    }
-
-    /// The whole table, as it is committed.
-    pub fn dense(&self) -> Vec<F64> {
-        let mut table = vec![F64::ZERO; 1 << self.vars];
-        for (index, chunk) in &self.chunks {
-            table[index << self.log_chunk..][..chunk.len()].copy_from_slice(chunk);
-        }
-        table
-    }
-}
-
 /// The circuit as the verifier's commitment sees it: the coefficients of its wiring polynomial, which sends a
 /// cell's point to its successor's.
 pub struct Index {
     pub log_rows: usize,
-    sigma: Vec<F64>,
+    table: Table,
     /// Its values on the prover's coset.
     sigma_values: Vec<F64>,
 }
 
 impl Index {
     pub fn new(circuit: &Circuit) -> Self {
+        let m = circuit.log_rows + 2;
         let mut sigma = parallel::map_collect(circuit.sigma.len(), |i| point(circuit.sigma[i] as usize));
         domain::coefficients(&mut sigma, F64::ZERO);
+        let table = Table::new(Layout::new(m, m, m, &[(0, 64)]), |_, j, lane| {
+            lane.copy_from_slice(&sigma[j * lane.len()..(j + 1) * lane.len()])
+        });
         Self {
             log_rows: circuit.log_rows,
-            sigma_values: coset_values(&[&sigma]),
-            sigma,
+            sigma_values: coset_values(1 << m, &[&sigma]),
+            table,
         }
     }
 
-    pub fn layout(&self) -> Layout {
-        let m = self.log_rows + 2;
-        Layout::new(m, m, m, &[(0, 64)])
+    /// The wiring polynomial's table, as it is committed.
+    pub fn table(&self) -> &Table {
+        &self.table
     }
 
-    pub fn table(&self) -> Table {
-        Table {
-            vars: self.log_rows + 2,
-            log_chunk: self.log_rows + 2,
-            chunks: vec![(0, self.sigma.clone())],
-        }
+    fn sigma(&self) -> &[F64] {
+        &self.table.lanes
     }
 }
 
-/// The polynomial of coefficients `parts` (in order) on the quotients' coset, four times the cells.
-fn coset_values(parts: &[&[F64]]) -> Vec<F64> {
-    let n = parts[0].len();
+/// The polynomial of coefficients `parts`, the `k`-th from `k * n` on, on the quotients' coset four times the `n`
+/// cells.
+fn coset_values(n: usize, parts: &[&[F64]]) -> Vec<F64> {
     let mut data = vec![F64::ZERO; 4 * n];
     for (k, part) in parts.iter().enumerate() {
-        data[k * n..(k + 1) * n].copy_from_slice(part);
+        data[k * n..k * n + part.len()].copy_from_slice(part);
     }
     domain::values(&mut data, coset(n.trailing_zeros() as usize));
     data
@@ -242,7 +212,7 @@ pub struct Proved {
 }
 
 /// Prove `statement` from the cells of a witness, against the circuit committed as `index_root`. `masks` must be
-/// uniformly random, and `commit` returns the root of a table laid out as given. Panics on a challenge the verifier rejects.
+/// uniformly random, and `commit` returns a table's root. Panics on a challenge the verifier rejects.
 pub fn prove(
     circuit: &Circuit,
     index: &Index,
@@ -250,7 +220,7 @@ pub fn prove(
     statement: &Statement,
     cells: &[F64],
     masks: &[[F64; 3]; 4],
-    commit: &mut dyn FnMut(&Layout, &Table) -> Hash,
+    commit: &mut dyn FnMut(&Table) -> Hash,
 ) -> Proved {
     let m = circuit.log_rows + 2;
     let n = 1usize << m;
@@ -263,18 +233,24 @@ pub fn prove(
     let span = tracing::info_span!("Witness").entered();
     let mut w_hat = cells.to_vec();
     domain::coefficients(&mut w_hat, F64::ZERO);
-    let mut mask = vec![F64::ZERO; n];
+    let mut mask = [F64::ZERO; 16];
     for (j, coeffs) in masks.iter().enumerate() {
         for (i, &coeff) in coeffs.iter().enumerate() {
             mask[4 * i + j] = coeff;
         }
     }
-    let witness = Table {
-        vars: m + 1,
-        log_chunk: m,
-        chunks: vec![(0, w_hat), (1, mask)],
-    };
-    ps.add_root(&commit(&witness_layout(circuit.log_rows), &witness));
+    let witness = Table::new(witness_layout(circuit.log_rows), |c, j, lane| {
+        let len = lane.len();
+        if c == 0 {
+            lane.copy_from_slice(&w_hat[j * len..(j + 1) * len]);
+        } else {
+            lane.fill(F64::ZERO);
+            lane[..16].copy_from_slice(&mask);
+        }
+    });
+    drop(w_hat);
+    let w_hat = &witness.lanes[..n];
+    ps.add_root(&commit(&witness));
     drop(span);
     let [alpha, beta_, gamma] = [(); 3].map(|_| ps.sample());
 
@@ -307,7 +283,7 @@ pub fn prove(
     let big = 4 * n;
     let offset = coset(m);
     let offsets = chain(offset, m + 1);
-    let w_values = coset_values(&[&witness.chunks[0].1, &witness.chunks[1].1]);
+    let w_values = coset_values(n, &[w_hat, &mask]);
     let sigma_values = &index.sigma_values;
     let mut q = vec![F192::ZERO; big];
     q[..n].copy_from_slice(&h_hat);
@@ -360,42 +336,38 @@ pub fn prove(
     domain::coefficients(&mut q_gate, offset);
 
     // The quotient table: 22 variables of a polynomial, two more digits, `h` or `q`, that pair or the gate's
-    // quotient, and the extension's two.
-    let limbs = |values: &[F192], slot: usize| -> Vec<(usize, Vec<F64>)> {
-        [|v: &F192| v.c0, |v: &F192| v.c1, |v: &F192| v.c2]
-            .iter()
-            .enumerate()
-            .map(|(e, limb)| {
-                (
-                    slot + 16 * e,
-                    parallel::map_collect(values.len(), |i| F64(limb(&values[i]))),
-                )
-            })
-            .collect()
-    };
-    let mut chunks = limbs(&h_hat, 0);
-    for digit in 0..4 {
-        chunks.extend(limbs(&q[digit * n..(digit + 1) * n], digit + 4));
-        chunks.push((digit + 8, q_gate[digit * n..(digit + 1) * n].to_vec()));
-    }
-    let quotient = Table {
-        vars: m + 6,
-        log_chunk: m,
-        chunks,
-    };
-    ps.add_root(&commit(&quotient_layout(circuit.log_rows), &quotient));
+    // quotient, and the extension's two. `q`'s top digit holds only what the public weight's degree adds.
+    let layout = quotient_layout(circuit.log_rows);
+    let top = layout.covered(7);
+    assert!(q[3 * n + top..].iter().all(|v| v.is_zero()), "q above its layout");
+    let quotient = Table::new(layout, |c, j, lane| {
+        let len = lane.len();
+        let (digit, limb) = (c & 3, c >> 4);
+        let mut at = |values: &[F192]| {
+            let values = &values[digit * n + j * len..][..len];
+            for (out, v) in lane.iter_mut().zip(values) {
+                *out = F64([v.c0, v.c1, v.c2][limb]);
+            }
+        };
+        match c & 12 {
+            0 => at(&h_hat),
+            4 => at(&q),
+            _ => lane.copy_from_slice(&q_gate[digit * n + j * len..][..len]),
+        }
+    });
+    drop((h_hat, q, q_gate));
+    ps.add_root(&commit(&quotient));
     drop(span);
 
     let t = ps.sample();
     let digits: Vec<F192> = std::iter::successors(Some(t), |&w| Some(w * w + w))
         .take(m + 1)
         .collect();
-    let (base, mask) = (&witness.chunks[0].1, &witness.chunks[1].1);
     let a: [F192; 4] = std::array::from_fn(|j| {
-        domain::evaluate(base, j, 4, &digits[2..m]) + digits[m] * domain::evaluate(mask, j, 4, &digits[2..m])
+        domain::evaluate(w_hat, j, 4, &digits[2..m]) + digits[m] * domain::evaluate(&mask, j, 4, &digits[2..4])
     });
     ps.add_scalars(&a);
-    ps.add_scalar(domain::evaluate(&index.sigma, 0, 1, &digits[..m]));
+    ps.add_scalar(domain::evaluate(index.sigma(), 0, 1, &digits[..m]));
 
     let proof = ps.into_proof();
     let (_, claims) = verify(index_root, statement, &proof, circuit.log_rows).expect("a challenge to reject");
@@ -600,7 +572,7 @@ mod tests {
         let claims = &proved.claims;
         [
             holds(&proved.witness, &claims.witness),
-            holds(&index.table(), &claims.wiring),
+            holds(index.table(), &claims.wiring),
             holds(&proved.quotient, &claims.quotient),
             holds(&proved.quotient, &claims.sum),
         ]
@@ -608,7 +580,7 @@ mod tests {
 
     fn run(circuit: &Circuit, index: &Index, statement: &Statement, cells: &[F64], rng: &mut Rng) -> Proved {
         let mut roots = 0u8;
-        let mut commit = |_: &Layout, _: &Table| {
+        let mut commit = |_: &Table| {
             roots += 1;
             [roots; 32]
         };
@@ -724,13 +696,13 @@ mod tests {
         let mut rng = Rng::new(0x0E);
         let circuit = toy();
         let index = Index::new(&circuit);
-        let wiring = opening::commit(&index.layout(), &index.table());
+        let wiring = opening::commit(index.table());
         let x: Vec<bool> = (0..256).map(|_| rng.next_u64() & 1 == 1).collect();
         let statement = toy_statement(&x);
         let cells = circuit.cells(&x);
         let mut committed = vec![];
-        let mut commit = |layout: &Layout, table: &Table| {
-            let table = opening::commit(layout, table);
+        let mut commit = |table: &Table| {
+            let table = opening::commit(table);
             let root = table.root;
             committed.push(table);
             root
@@ -745,25 +717,23 @@ mod tests {
             &mut commit,
         );
         let (_, claims) = verify(&wiring.root, &statement, &proved.proof, circuit.log_rows).expect("a reduction");
-        let log_rows = circuit.log_rows;
-        let [witness, quotient] = [committed.remove(0), committed.remove(0)];
         let tables = [
-            (witness_layout(log_rows), &witness, vec![claims.witness.clone()]),
-            (index.layout(), &wiring, vec![claims.wiring.clone()]),
+            (&proved.witness, &committed[0], vec![claims.witness.clone()]),
+            (index.table(), &wiring, vec![claims.wiring.clone()]),
             (
-                quotient_layout(log_rows),
-                &quotient,
+                &proved.quotient,
+                &committed[1],
                 vec![claims.quotient.clone(), claims.sum.clone()],
             ),
         ];
-        for (layout, table, claims) in &tables {
-            let proof = opening::open(layout, table, claims);
-            assert!(opening::verify(layout, &table.root, claims, &proof));
+        for (table, committed, claims) in &tables {
+            let proof = opening::open(table, committed, claims);
+            assert!(opening::verify(&table.layout, &committed.root, claims, &proof));
 
             let mut wrong = claims.clone();
             wrong[0].value += F192::ONE;
-            let proof = opening::open(layout, table, &wrong);
-            assert!(!opening::verify(layout, &table.root, &wrong, &proof));
+            let proof = opening::open(table, committed, &wrong);
+            assert!(!opening::verify(&table.layout, &committed.root, &wrong, &proof));
         }
     }
 

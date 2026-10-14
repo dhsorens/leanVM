@@ -121,7 +121,6 @@ mod tests {
     use crate::machine::{call, transaction_gas};
     use flock::membership::{DEPTH, Secret};
     use flock::quotient::circuit::{membership, membership_inputs};
-    use flock::quotient::opening::Layout;
     use flock::quotient::{Index, Table, prove, verify};
     use primitives::field::F64;
     use primitives::test_rng::Rng;
@@ -140,7 +139,7 @@ mod tests {
         let cells = circuit.cells(&membership_inputs(&secret));
         let masks = std::array::from_fn(|_| std::array::from_fn(|_| F64(rng.next_u64())));
         let mut sent = 0;
-        let mut commit = |_: &Layout, _: &Table| {
+        let mut commit = |_: &Table| {
             sent += 1;
             roots[sent - 1]
         };

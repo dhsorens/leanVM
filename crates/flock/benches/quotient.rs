@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use bench::{Plan, Timing};
 use flock::membership::Secret;
-use flock::quotient::opening::{self, Committed, Layout};
+use flock::quotient::opening::{self, Committed};
 use flock::quotient::{self, Index, Table, circuit};
 use primitives::{field::F64, test_rng::Rng};
 
@@ -41,7 +41,7 @@ fn main() {
     let t = Instant::now();
     let circuit = circuit::membership();
     let index = Index::new(&circuit);
-    let wiring = opening::commit(&index.layout(), &index.table());
+    let wiring = opening::commit(index.table());
     let setup_s = t.elapsed().as_secs_f64();
     let log_rows = circuit.log_rows;
     let inputs = circuit::membership_inputs(&secret);
@@ -56,9 +56,9 @@ fn main() {
         let masks = std::array::from_fn(|_| std::array::from_fn(|_| F64(rng.next_u64())));
         let mut committed: Vec<Committed> = vec![];
         let mut commit_s = 0.0;
-        let mut commit = |layout: &Layout, table: &Table| {
+        let mut commit = |table: &Table| {
             let t = Instant::now();
-            let table = opening::commit(layout, table);
+            let table = opening::commit(table);
             commit_s += t.elapsed().as_secs_f64();
             let root = table.root;
             committed.push(table);
@@ -72,21 +72,17 @@ fn main() {
         let t = Instant::now();
         let claims = &proved.claims;
         let opened = [
+            (&proved.witness, &committed[0], vec![claims.witness.clone()]),
+            (index.table(), &wiring, vec![claims.wiring.clone()]),
             (
-                quotient::witness_layout(log_rows),
-                &committed[0],
-                vec![claims.witness.clone()],
-            ),
-            (index.layout(), &wiring, vec![claims.wiring.clone()]),
-            (
-                quotient::quotient_layout(log_rows),
+                &proved.quotient,
                 &committed[1],
                 vec![claims.quotient.clone(), claims.sum.clone()],
             ),
         ]
-        .map(|(layout, table, claims)| {
-            let proof = opening::open(&layout, table, &claims);
-            (layout, table.root, claims, proof)
+        .map(|(table, committed, claims)| {
+            let proof = opening::open(table, committed, &claims);
+            (&table.layout, committed.root, claims, proof)
         });
         secs[3] = t.elapsed().as_secs_f64();
 
@@ -95,6 +91,7 @@ fn main() {
             assert!(opening::verify(layout, root, claims, proof));
         }
         secs[4] = t.elapsed().as_secs_f64();
+        drop(opened);
         (proved.proof, secs)
     };
 

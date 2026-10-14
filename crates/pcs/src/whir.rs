@@ -882,6 +882,18 @@ impl<'a> SumcheckProver<'a> {
         (inst, msg)
     }
 
+    /// The prover after its first `round` rounds, `msg` answering `t_r`.
+    fn folded(f: Vec<F192>, b: Vec<F192>, t_r: F192, msg: SumcheckMessage, round: usize) -> Self {
+        Self {
+            f: Witness::Ext(f),
+            combined_basis: b,
+            t_r,
+            quad: RoundQuad::from_msg(msg, t_r),
+            round,
+            pending: Vec::new(),
+        }
+    }
+
     /// The claim that fixes the next message's linear coefficient.
     #[inline]
     fn claim(&self) -> F192 {
@@ -1003,6 +1015,127 @@ impl<'a> SumcheckProver<'a> {
     }
 }
 
+/// The lane rounds of [`recursive_prover_with_lane_weights`]. With `b = sum_i lanes_i (x) block_i`, a lane
+/// round's sum over a block is `sum_i lanes_i[l] * S_i[l]` for `S_i[l] = <f_l, block_i>`, and both factors
+/// fold like the witness, so the rounds run on those `2^initial_k`-entry vectors. Returns the prover
+/// after them, with the message of the first round past the lanes sent, and their challenges.
+fn lane_rounds<'a>(
+    f: &'a [F64],
+    weights: &[LaneWeight],
+    target: F192,
+    block: usize,
+    initial_k: usize,
+    ps: &mut impl Transmitter,
+) -> (SumcheckProver<'a>, Vec<F192>) {
+    let n_lanes = f.len() / block;
+    let width = 1usize << initial_k;
+    assert!(
+        weights
+            .iter()
+            .all(|w| w.lanes.len() == n_lanes && w.block.len() == block)
+    );
+
+    let per = block.div_ceil(ROUND_CHUNK);
+    let partial: Vec<Vec<F192Unreduced>> = parallel::map_collect(n_lanes * per, |t| {
+        let (l, x0) = (t / per, (t % per) * ROUND_CHUNK);
+        let len = ROUND_CHUNK.min(block - x0);
+        let row = &f[l * block + x0..l * block + x0 + len];
+        weights
+            .iter()
+            .map(|w| {
+                let mut acc = F192Unreduced::ZERO;
+                for (&x, &e) in row.iter().zip(&w.block[x0..x0 + len]) {
+                    acc ^= e.mul_base_unreduced(x);
+                }
+                acc
+            })
+            .collect()
+    });
+    let mut sums: Vec<Vec<F192>> = (0..weights.len())
+        .map(|i| {
+            let mut sum = vec![F192::ZERO; width];
+            for (l, s) in sum.iter_mut().enumerate().take(n_lanes) {
+                let mut acc = F192Unreduced::ZERO;
+                for p in &partial[l * per..(l + 1) * per] {
+                    acc ^= p[i];
+                }
+                *s = acc.reduce();
+            }
+            sum
+        })
+        .collect();
+    let mut lanes: Vec<Vec<F192>> = weights
+        .iter()
+        .map(|w| {
+            let mut lanes = w.lanes.clone();
+            lanes.resize(width, F192::ZERO);
+            lanes
+        })
+        .collect();
+
+    let message = |lanes: &[Vec<F192>], sums: &[Vec<F192>]| {
+        let (mut u_0, mut u_2) = (F192::ZERO, F192::ZERO);
+        for (c, s) in lanes.iter().zip(sums) {
+            for k in 0..c.len() / 2 {
+                u_0 += c[2 * k] * s[2 * k];
+                u_2 += (c[2 * k] + c[2 * k + 1]) * (s[2 * k] + s[2 * k + 1]);
+            }
+        }
+        SumcheckMessage { u_0, u_2 }
+    };
+    let mut claim = target;
+    let mut msg = message(&lanes, &sums);
+    send_msg(ps, msg, claim);
+    let mut rs = Vec::with_capacity(initial_k);
+    for j in 0..initial_k {
+        let r = ps.sample();
+        claim = RoundQuad::from_msg(msg, claim).eval(r);
+        for v in lanes.iter_mut().chain(sums.iter_mut()) {
+            *v = (0..v.len() / 2)
+                .map(|k| F192::fold_pair(v[2 * k], v[2 * k + 1], r))
+                .collect();
+        }
+        rs.push(r);
+        if j + 1 < initial_k {
+            msg = message(&lanes, &sums);
+            send_msg(ps, msg, claim);
+        }
+    }
+
+    // The folded witness, `sum_l eq(rs, l) f_l`, in one pass, and the folded weight.
+    let eq: Vec<F192> = (0..n_lanes)
+        .map(|l| {
+            rs.iter().enumerate().fold(F192::ONE, |e, (j, &r)| {
+                e * if (l >> j) & 1 == 1 { r } else { F192::ONE + r }
+            })
+        })
+        .collect();
+    const STAGE: usize = 256;
+    // SAFETY: every stage of the output is written whole.
+    let mut nf = unsafe { primitives::uninit_vec::<F192>(block) };
+    parallel::chunks_mut(&mut nf, STAGE, |c, out| {
+        let x0 = c * STAGE;
+        let mut acc = [F192Unreduced::ZERO; STAGE];
+        for (l, &e) in eq.iter().enumerate() {
+            for (a, &x) in acc.iter_mut().zip(&f[l * block + x0..l * block + x0 + out.len()]) {
+                *a ^= e.mul_base_unreduced(x);
+            }
+        }
+        for (o, a) in out.iter_mut().zip(acc) {
+            *o = a.reduce();
+        }
+    });
+    let nb: Vec<F192> = parallel::map_collect(block, |x| {
+        weights
+            .iter()
+            .zip(&lanes)
+            .fold(F192::ZERO, |acc, (w, c)| acc + c[0] * w.block[x])
+    });
+    msg = round_msg_lsb(&nf, &nb);
+    send_msg(ps, msg, claim);
+    (SumcheckProver::folded(nf, nb, claim, msg, initial_k), rs)
+}
+
 /// Sample `count` query positions in transcript order: no dedup, no sort.
 /// `block_len = 2^d`; each squeezed field element yields `⌊192/d⌋` positions as
 /// its disjoint d-bit chunks (low bits first), matching the scheme the recursive guest derives (fixed `192/d` per
@@ -1089,24 +1222,61 @@ pub fn recursive_prover_with_basis(
         config,
         log_n,
         witness,
-        b_initial,
+        InitialWeight::Dense(b_initial, None),
         target,
         l0_codeword,
         l0_tree,
-        None,
         ps,
     );
+}
+
+/// A weight that is one table on a lane block times one number per committed lane:
+/// `b(l, x) = lanes[l] * block[x]`.
+pub struct LaneWeight {
+    pub lanes: Vec<F192>,
+    pub block: Vec<F192>,
+}
+
+/// [`recursive_prover_with_basis`] for a weight that is a sum of [`LaneWeight`]s, which is never
+/// materialized: the lane rounds see the witness only through each lane's inner product with each
+/// block, and the witness is folded once, after them. The proof is the one the dense weight gives.
+pub fn recursive_prover_with_lane_weights(
+    config: &ProverConfig,
+    log_n: usize,
+    witness: &[F64],
+    weights: &[LaneWeight],
+    target: F192,
+    l0_codeword: &[F64],
+    l0_tree: &[Hash],
+    ps: &mut impl Transmitter,
+) {
+    recursive_prover_with_prepared_basis(
+        config,
+        log_n,
+        witness,
+        InitialWeight::Lanes(weights),
+        target,
+        l0_codeword,
+        l0_tree,
+        ps,
+    );
+}
+
+/// The weight an opening starts from: dense (with its first message when the caller built it), or
+/// one table per lane block.
+pub(crate) enum InitialWeight<'w> {
+    Dense(Vec<F192>, Option<SumcheckMessage>),
+    Lanes(&'w [LaneWeight]),
 }
 
 pub(crate) fn recursive_prover_with_prepared_basis(
     config: &ProverConfig,
     log_n: usize,
     witness: &[F64],
-    b_initial: Vec<F192>,
+    weight: InitialWeight<'_>,
     target: F192,
     l0_codeword: &[F64],
     l0_tree: &[Hash],
-    initial_message: Option<SumcheckMessage>,
     ps: &mut impl Transmitter,
 ) {
     let r = config.level_steps;
@@ -1135,7 +1305,6 @@ pub(crate) fn recursive_prover_with_prepared_basis(
         n_lanes >= 1 && n_lanes <= num_interleaved_0,
         "at most 2^initial_k lanes"
     );
-    assert_eq!(b_initial.len(), witness.len());
     assert_eq!(l0_codeword.len(), block_len_0 * n_lanes);
     assert_eq!(l0_tree.len(), 2 * block_len_0 - 1);
 
@@ -1166,17 +1335,25 @@ pub(crate) fn recursive_prover_with_prepared_basis(
     let ood_count = |lvl: usize| -> usize { config.ood_samples.get(lvl).copied().unwrap_or(0) };
 
     let sumcheck_span = tracing::info_span!("Sumcheck");
-    let (mut sc_prover, start_msg) =
-        sumcheck_span.in_scope(|| SumcheckProver::new(witness, b_initial, target, lane_block, initial_message));
-    send_msg(ps, start_msg, target);
-
-    let mut r_lane_fold = Vec::with_capacity(initial_k);
-    for j in 0..initial_k {
-        let r_j = ps.sample();
-        let msg = sumcheck_span.in_scope(|| sc_prover.fold_lane(r_j, lane_block, j + 1 == initial_k));
-        send_msg(ps, msg, sc_prover.claim());
-        r_lane_fold.push(r_j);
-    }
+    let (mut sc_prover, r_lane_fold) = match weight {
+        InitialWeight::Dense(b_initial, initial_message) => {
+            assert_eq!(b_initial.len(), witness.len());
+            let (mut sc_prover, start_msg) =
+                sumcheck_span.in_scope(|| SumcheckProver::new(witness, b_initial, target, lane_block, initial_message));
+            send_msg(ps, start_msg, target);
+            let mut r_lane_fold = Vec::with_capacity(initial_k);
+            for j in 0..initial_k {
+                let r_j = ps.sample();
+                let msg = sumcheck_span.in_scope(|| sc_prover.fold_lane(r_j, lane_block, j + 1 == initial_k));
+                send_msg(ps, msg, sc_prover.claim());
+                r_lane_fold.push(r_j);
+            }
+            (sc_prover, r_lane_fold)
+        }
+        InitialWeight::Lanes(weights) => {
+            sumcheck_span.in_scope(|| lane_rounds(witness, weights, target, lane_block, initial_k, ps))
+        }
+    };
     drop(sumcheck_span);
 
     // Commit f^1 = folded (now E-valued) witness as wtns_1.
@@ -2373,6 +2550,61 @@ mod tests {
     /// root, byte-identical transcript, and the dense verifier (which always sees
     /// the full `2^log_n` weight) accepts. That indistinguishability is what lets
     /// the verifier stay unaware of the lane count.
+    /// A weight given as tables on a lane block times numbers per lane gives the proof its dense form
+    /// gives, on whole and on truncated lanes.
+    #[test]
+    fn lane_weights_prove_as_their_dense_weight() {
+        for (log_n, n_lanes) in [(13usize, 5usize), (18, 64), (18, 35)] {
+            let pc = test_config_for(log_n);
+            let block = 1usize << (log_n - pc.initial_k);
+            let mut rng = Rng::new(0x1A4E + n_lanes as u64);
+            let witness: Vec<F64> = (0..n_lanes * block).map(|_| F64(rng.next_u64())).collect();
+            let weights: Vec<LaneWeight> = (0..2)
+                .map(|_| LaneWeight {
+                    lanes: (0..n_lanes).map(|_| rng.ext()).collect(),
+                    block: (0..block).map(|_| rng.ext()).collect(),
+                })
+                .collect();
+            let dense: Vec<F192> = (0..n_lanes * block)
+                .map(|i| {
+                    weights
+                        .iter()
+                        .fold(F192::ZERO, |acc, w| acc + w.lanes[i / block] * w.block[i % block])
+                })
+                .collect();
+            let target = inner_product_base_ext(&witness, &dense);
+            let (_, pd) = commit(&witness, log_n, pc.initial_k, pc.log_inv_rates[0]);
+            let mut ps = fiat_shamir::transcript::ProverState::from_label(b"whir-test");
+            recursive_prover_with_basis(
+                &pc,
+                log_n,
+                &witness,
+                dense,
+                target,
+                &pd.codeword,
+                &pd.merkle_tree,
+                &mut ps,
+            );
+            let expected = ps.into_proof();
+            let mut ps = fiat_shamir::transcript::ProverState::from_label(b"whir-test");
+            recursive_prover_with_lane_weights(
+                &pc,
+                log_n,
+                &witness,
+                &weights,
+                target,
+                &pd.codeword,
+                &pd.merkle_tree,
+                &mut ps,
+            );
+            assert_eq!(
+                ps.into_proof().stream,
+                expected.stream,
+                "log_n = {log_n}, n_lanes = {n_lanes}"
+            );
+        }
+    }
+
     #[test]
     fn truncated_lanes_match_an_explicit_zero_tail() {
         // `log_n = 18` puts the lane block over `ROUND_CHUNK`, so the fold runs several
