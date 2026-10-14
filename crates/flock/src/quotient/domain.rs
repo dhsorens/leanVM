@@ -164,6 +164,47 @@ fn layers<M: Module>(data: &mut [M], first: usize, offsets: &[F64], order: &[usi
     }
 }
 
+/// Layers `k` and `k - 1` in one pass: each entry of a block's four quarters meets both of its butterflies.
+fn fused<M: Module>(data: &mut [M], k: usize, offsets: &[F64], forward: bool) {
+    let block = 2 << k;
+    let quarter = block / 4;
+    let piece = quarter.min(LEAF);
+    let pieces = quarter / piece;
+    let base = parallel::SendPtr(data.as_mut_ptr());
+    parallel::for_each(data.len() / block * pieces, |task| {
+        let (j, p) = (task / pieces, task % pieces);
+        let (high, low) = (
+            offsets[k] + point(2 * j),
+            [offsets[k - 1] + point(4 * j), offsets[k - 1] + point(4 * j + 2)],
+        );
+        // SAFETY: a task touches its own piece of each quarter of its own block.
+        let [q0, q1, q2, q3] = [0, 1, 2, 3].map(|r| unsafe { base.slice(j * block + r * quarter + p * piece, piece) });
+        for i in 0..piece {
+            let (mut a0, mut a1, mut a2, mut a3) = (q0[i], q1[i], q2[i], q3[i]);
+            if forward {
+                a0 = a0 + a2.scale(high);
+                a2 = a2 + a0;
+                a1 = a1 + a3.scale(high);
+                a3 = a3 + a1;
+                a0 = a0 + a1.scale(low[0]);
+                a1 = a1 + a0;
+                a2 = a2 + a3.scale(low[1]);
+                a3 = a3 + a2;
+            } else {
+                a1 = a1 + a0;
+                a0 = a0 + a1.scale(low[0]);
+                a3 = a3 + a2;
+                a2 = a2 + a3.scale(low[1]);
+                a2 = a2 + a0;
+                a0 = a0 + a2.scale(high);
+                a3 = a3 + a1;
+                a1 = a1 + a3.scale(high);
+            }
+            (q0[i], q1[i], q2[i], q3[i]) = (a0, a1, a2, a3);
+        }
+    });
+}
+
 fn transform<M: Module>(data: &mut [M], offset: F64, forward: bool) {
     let m = data.len().trailing_zeros() as usize;
     assert_eq!(data.len(), 1 << m);
@@ -180,18 +221,25 @@ fn transform<M: Module>(data: &mut [M], offset: F64, forward: bool) {
         });
     };
     let wide = |data: &mut [M]| {
-        for &k in &large {
-            let block = 2 << k;
-            for (j, chunk) in data.chunks_exact_mut(block).enumerate() {
-                let lambda = offsets[k] + point(2 * j);
-                let (lo, hi) = chunk.split_at_mut(block / 2);
-                parallel::chunks_mut2(lo, hi, LEAF, |_, lo, hi| {
-                    if forward {
-                        forward_layer(lo, hi, lambda);
-                    } else {
-                        inverse_layer(lo, hi, lambda);
+        // Two layers a pass over memory where the layers allow it.
+        for pair in large.chunks(2) {
+            match *pair {
+                [a, b] => fused(data, a.max(b), &offsets, forward),
+                [k] => {
+                    let block = 2 << k;
+                    for (j, chunk) in data.chunks_exact_mut(block).enumerate() {
+                        let lambda = offsets[k] + point(2 * j);
+                        let (lo, hi) = chunk.split_at_mut(block / 2);
+                        parallel::chunks_mut2(lo, hi, LEAF, |_, lo, hi| {
+                            if forward {
+                                forward_layer(lo, hi, lambda);
+                            } else {
+                                inverse_layer(lo, hi, lambda);
+                            }
+                        });
                     }
-                });
+                }
+                _ => unreachable!(),
             }
         }
     };
@@ -276,6 +324,28 @@ mod tests {
         // The basis is a Cantor basis, as `formal/quotient`'s `CantorBasis` asks.
         assert_eq!(beta()[0], F64::ONE);
         assert!((0..BASIS - 1).all(|k| s(beta()[k + 1]) == beta()[k]));
+    }
+
+    /// Above one worker's block the layers are fused in pairs: the transform still matches the basis there.
+    #[test]
+    fn wide_transform_matches_the_basis() {
+        let mut rng = Rng::new(0xD2);
+        let (m, offset) = (19, beta()[21]);
+        let coeffs: Vec<F192> = (0..1 << m)
+            .map(|_| F192::new(rng.next_u64(), rng.next_u64(), rng.next_u64()))
+            .collect();
+        let mut data = coeffs.clone();
+        values(&mut data, offset);
+        for _ in 0..4 {
+            let i = rng.next_u64() as usize & ((1 << m) - 1);
+            let w: Vec<F192> = chain(offset + point(i), m).into_iter().map(F192::from).collect();
+            let direct = (0..1usize << m).fold(F192::ZERO, |acc, j| {
+                acc + (0..m).filter(|k| (j >> k) & 1 == 1).fold(coeffs[j], |p, k| p * w[k])
+            });
+            assert_eq!(data[i], direct);
+        }
+        coefficients(&mut data, offset);
+        assert_eq!(data, coeffs);
     }
 
     /// Digit `k` of a cell is its bit `k` plus a function of its higher bits, at the protocol's size: what

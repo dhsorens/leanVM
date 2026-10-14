@@ -62,6 +62,8 @@ impl Table {
 pub struct Index {
     pub log_rows: usize,
     sigma: Vec<F64>,
+    /// Its values on the prover's coset.
+    sigma_values: Vec<F64>,
 }
 
 impl Index {
@@ -70,6 +72,7 @@ impl Index {
         domain::coefficients(&mut sigma, F64::ZERO);
         Self {
             log_rows: circuit.log_rows,
+            sigma_values: coset_values(&[&sigma]),
             sigma,
         }
     }
@@ -86,6 +89,22 @@ impl Index {
             chunks: vec![(0, self.sigma.clone())],
         }
     }
+}
+
+/// The polynomial of coefficients `parts` (in order) on the quotients' coset, four times the cells.
+fn coset_values(parts: &[&[F64]]) -> Vec<F64> {
+    let n = parts[0].len();
+    let mut data = vec![F64::ZERO; 4 * n];
+    for (k, part) in parts.iter().enumerate() {
+        data[k * n..(k + 1) * n].copy_from_slice(part);
+    }
+    domain::values(&mut data, coset(n.trailing_zeros() as usize));
+    data
+}
+
+/// The offset of the quotients' coset, for `2^m` cells.
+fn coset(m: usize) -> F64 {
+    beta()[m + 2]
 }
 
 /// Where the witness table can be nonzero: the four polynomials, and the first lane of their masks.
@@ -286,18 +305,10 @@ pub fn prove(
     // Both quotients, on a coset four times the cells.
     let span = tracing::info_span!("Quotients").entered();
     let big = 4 * n;
-    let offset = beta()[m + 2];
+    let offset = coset(m);
     let offsets = chain(offset, m + 1);
-    let padded = |coeffs: &[&[F64]]| {
-        let mut data = vec![F64::ZERO; big];
-        for (k, part) in coeffs.iter().enumerate() {
-            data[k * n..(k + 1) * n].copy_from_slice(part);
-        }
-        domain::values(&mut data, offset);
-        data
-    };
-    let w_values = padded(&[&witness.chunks[0].1, &witness.chunks[1].1]);
-    let sigma_values = padded(&[&index.sigma]);
+    let w_values = coset_values(&[&witness.chunks[0].1, &witness.chunks[1].1]);
+    let sigma_values = &index.sigma_values;
     let mut q = vec![F192::ZERO; big];
     q[..n].copy_from_slice(&h_hat);
     domain::values(&mut q, offset);
@@ -344,7 +355,7 @@ pub fn prove(
             *q_gate = gate(theta, row) * row_vanishing[low & 3];
         }
     });
-    drop((w_values, sigma_values));
+    drop(w_values);
     domain::coefficients(&mut q, offset);
     domain::coefficients(&mut q_gate, offset);
 
@@ -354,7 +365,12 @@ pub fn prove(
         [|v: &F192| v.c0, |v: &F192| v.c1, |v: &F192| v.c2]
             .iter()
             .enumerate()
-            .map(|(e, limb)| (slot + 16 * e, values.iter().map(|v| F64(limb(v))).collect()))
+            .map(|(e, limb)| {
+                (
+                    slot + 16 * e,
+                    parallel::map_collect(values.len(), |i| F64(limb(&values[i]))),
+                )
+            })
             .collect()
     };
     let mut chunks = limbs(&h_hat, 0);

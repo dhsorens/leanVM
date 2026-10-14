@@ -60,21 +60,20 @@ impl Layout {
     pub fn message(&self, table: &Table) -> Vec<F64> {
         assert_eq!((table.vars, table.log_chunk), (self.vars, self.log_chunk));
         let lane = 1 << self.log_lane();
-        let mut message = vec![F64::ZERO; self.lanes.len() * lane];
         for (index, chunk) in &table.chunks {
-            let mut covered = 0;
-            for (out, &(c, j)) in message.chunks_exact_mut(lane).zip(&self.lanes) {
-                if c == *index {
-                    out.copy_from_slice(&chunk[j * lane..(j + 1) * lane]);
-                    covered += 1;
-                }
-            }
-            let outside = chunk
-                .iter()
-                .enumerate()
-                .any(|(i, x)| i >= covered * lane && !x.is_zero());
-            assert!(!outside, "chunk {index} has entries outside its lanes");
+            let covered = self.lanes.iter().filter(|&&(c, _)| c == *index).count();
+            assert!(
+                chunk[covered * lane..].iter().all(|x| x.is_zero()),
+                "chunk {index} has entries outside its lanes"
+            );
         }
+        let mut message = vec![F64::ZERO; self.lanes.len() * lane];
+        parallel::chunks_mut(&mut message, lane, |l, out| {
+            let (c, j) = self.lanes[l];
+            if let Some((_, chunk)) = table.chunks.iter().find(|(index, _)| *index == c) {
+                out.copy_from_slice(&chunk[j * lane..(j + 1) * lane]);
+            }
+        });
         message
     }
 
@@ -136,20 +135,23 @@ pub fn open(layout: &Layout, committed: &Committed, claims: &[Claim]) -> Proof {
     let [iv, statement] = seed(&committed.root, claims);
     let mut ps = ProverState::new(iv, statement);
     let lambdas = powers(ps.sample(), claims.len());
-    let lane = 1 << layout.log_lane();
-    let mut weight = vec![F192::ZERO; committed.message.len()];
-    let mut target = F192::ZERO;
-    for (claim, &lambda) in claims.iter().zip(&lambdas) {
-        target += lambda * claim.value;
-        let low = eq_table(&claim.point[..layout.log_lane()]);
-        let lanes = layout.lane_weights(&claim.point);
-        parallel::chunks_mut(&mut weight, lane, |l, out| {
-            let scale = lambda * lanes[l];
-            for (w, &e) in out.iter_mut().zip(&low) {
-                *w += scale * e;
-            }
-        });
-    }
+    let target = claims
+        .iter()
+        .zip(&lambdas)
+        .fold(F192::ZERO, |acc, (c, &l)| acc + l * c.value);
+    let lows: Vec<Vec<F192>> = claims.iter().map(|c| eq_table(&c.point[..layout.log_lane()])).collect();
+    let lanes: Vec<Vec<F192>> = claims.iter().map(|c| layout.lane_weights(&c.point)).collect();
+    // SAFETY: every lane is written whole.
+    let mut weight = unsafe { primitives::uninit_vec::<F192>(committed.message.len()) };
+    parallel::chunks_mut(&mut weight, 1 << layout.log_lane(), |l, out| {
+        let scales: Vec<F192> = lanes.iter().zip(&lambdas).map(|(w, &lambda)| lambda * w[l]).collect();
+        for (x, w) in out.iter_mut().enumerate() {
+            *w = scales
+                .iter()
+                .zip(&lows)
+                .fold(F192::ZERO, |acc, (&s, low)| acc + s * low[x]);
+        }
+    });
     recursive_prover_with_basis(
         &config,
         layout.log_n,
