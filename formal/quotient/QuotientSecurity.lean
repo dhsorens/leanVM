@@ -15,6 +15,7 @@ import QuotientSecurity.PublicWeight
 import QuotientSecurity.ConcreteZK
 import QuotientSecurity.Sequence
 import QuotientSecurity.Joint
+import QuotientSecurity.Statement
 
 /-- info: 'QuotientSecurity.verifier_rbrKnowledgeSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -283,3 +284,23 @@ import QuotientSecurity.Joint
 /-- info: 'QuotientSecurity.simulationSoundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms QuotientSecurity.simulationSoundness
+
+/-- info: 'QuotientSecurity.Membership.soundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Membership.soundness
+
+/-- info: 'QuotientSecurity.Membership.zero_knowledge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Membership.zero_knowledge
+
+/-- info: 'QuotientSecurity.Membership.completeness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Membership.completeness
+
+/-- info: 'QuotientSecurity.Membership.sat_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Membership.sat_iff
+
+/-- info: 'QuotientSecurity.Membership.nonempty' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Membership.nonempty

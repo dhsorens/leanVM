@@ -4,6 +4,16 @@ A Lean 4 development over [ArkLib](https://github.com/Verified-zkEVM/ArkLib) and
 
 ## What is proved
 
+**Start with `QuotientSecurity/Statement.lean`.** It states, on the protocol's own instance and with every size discharged, what the rest of this directory proves:
+
+- `Membership`: the fixed data, a Cantor basis of 22 vectors, a wiring, and the verifier's constants. `Membership.nonempty`: it exists over every field of `2^192` elements.
+- `Membership.Relation`: the relation on cells indexed by their 22 bits (every row a full adder, wired cells equal, eight public words). `Membership.sat_iff`: it is the model's `Params.Sat`. `Membership.cellsOf`: the cells a first message holds, its witness polynomial at each cell's point.
+- `Membership.soundness`: for every adversary making `Q` oracle queries, the verifier accepts while the committed cells do not satisfy the relation with probability at most `(Q + 3) / 2^128`.
+- `Membership.zero_knowledge`: for every event, the real experiment and the simulator's differ by at most `1 / 2^128 + |U| / |H|`.
+- `Membership.completeness`: the honest proof's verdict is false with probability at most `2 / 2^128 + |U| / |H|`.
+
+The sections below are the theorems these rest on, and what the model leaves out.
+
 **Knowledge soundness.**
 
 - `knowledgeSoundness` (`RandomOracle.lean`): the non-interactive proof in the random-oracle model. An adversary makes at most `Q` adaptive queries and outputs a statement and a proof; the verifier asks its three challenges of the same oracle. The probability that the verifier accepts while the cells read off the proof's first message do not satisfy the relation is at most `(Q + 3)` times the largest round error. `knowledgeSoundness_bits`: at the protocol's sizes (`q = 2^192`, `N = 2^22` cells, eight words, identities of degree at most `2^27`) that is `(Q + 3) / 2^128`. It is proved from the three round bounds below and VCVio's bound on fresh bad queries (`prEvent_randomOracle_le_of_bad_queries`), not from the next theorem: ArkLib states the implication from round-by-round soundness to the Fiat-Shamir transform with `sorry`.

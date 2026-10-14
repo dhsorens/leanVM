@@ -282,6 +282,13 @@ noncomputable def membershipParams : Params F :=
   Params.ofCantor B hm σ 8 (fun J => weightedSum (regionWeight c J))
     (pubProd b (regionMu c) 11 (20 + 2)) (membershipPub_hPub B b c hm hb0 hb)
 
+omit [Fintype F] [SampleableType F] in
+theorem membershipParams_wordSum (J : Fin 8)
+    (w : (membershipParams B hm σ b c hb0 hb).T × Fin 4 → F) :
+    (membershipParams B hm σ b c hb0 hb).wordSum J w
+      = ∑ x, regionWeight c J x * w (cantorCells (n := 20) B hm x) := by
+  exact weightedSum_apply (regionWeight c J) (LinearMap.funLeft F F (cantorCells (n := 20) B hm) w)
+
 noncomputable def membershipBounds : (membershipParams B hm σ b c hb0 hb).Bounds :=
   Params.ofCantorBounds B hm σ 8 _ _ (membershipPub_hPub B b c hm hb0 hb) _
     (natDegree_membershipPub_le b c)
