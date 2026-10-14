@@ -321,4 +321,26 @@ theorem membership_target (s : Fin 4 → F) (γ : F) :
 
 end Sizes
 
+/-! ## The constants that invert a basis -/
+
+/-- `b 0 = 1`, `b d = sum_{e < d} b e * beta (d - e)`: what `quotient::domain::coordinates`
+computes. -/
+noncomputable def invSeq {F : Type} [Field F] (β : ℕ → F) : ℕ → F
+  | 0 => 1
+  | d + 1 => ∑ e : Fin (d + 1), invSeq β e * β (d + 1 - e)
+decreasing_by exact e.2
+
+theorem invSeq_zero {F : Type} [Field F] (β : ℕ → F) : invSeq β 0 = 1 := by rw [invSeq]
+
+theorem invSeq_sum {F : Type} [Field F] [CharP F 2] (β : ℕ → F) (h0 : β 0 = 1) (d : ℕ)
+    (hd : 1 ≤ d) : ∑ e ∈ Finset.range (d + 1), invSeq β e * β (d - e) = 0 := by
+  obtain ⟨k, rfl⟩ : ∃ k, d = k + 1 := ⟨d - 1, by omega⟩
+  rw [Finset.sum_range_succ, Nat.sub_self, h0, mul_one]
+  conv_lhs => rw [invSeq]
+  rw [Fin.sum_univ_eq_sum_range (fun e => invSeq β e * β (k + 1 - e)) (k + 1)]
+  exact CharTwo.add_self_eq_zero _
+
+/-- The size of the instance, as an opaque proof: the unifier need not look inside it. -/
+theorem le22 : 20 + 2 ≤ 20 + 2 := Nat.le_refl _
+
 end QuotientSecurity

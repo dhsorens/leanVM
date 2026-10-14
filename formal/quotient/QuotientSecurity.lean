@@ -285,22 +285,30 @@ import QuotientSecurity.Statement
 #guard_msgs in
 #print axioms QuotientSecurity.simulationSoundness
 
-/-- info: 'QuotientSecurity.Membership.soundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'QuotientSecurity.Instance.soundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms QuotientSecurity.Membership.soundness
+#print axioms QuotientSecurity.Instance.soundness
 
-/-- info: 'QuotientSecurity.Membership.zero_knowledge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'QuotientSecurity.Instance.zero_knowledge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms QuotientSecurity.Membership.zero_knowledge
+#print axioms QuotientSecurity.Instance.zero_knowledge
 
-/-- info: 'QuotientSecurity.Membership.completeness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'QuotientSecurity.Instance.zero_knowledge_fresh' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms QuotientSecurity.Membership.completeness
+#print axioms QuotientSecurity.Instance.zero_knowledge_fresh
 
-/-- info: 'QuotientSecurity.Membership.sat_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'QuotientSecurity.Instance.completeness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms QuotientSecurity.Membership.sat_iff
+#print axioms QuotientSecurity.Instance.completeness
 
-/-- info: 'QuotientSecurity.Membership.nonempty' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'QuotientSecurity.Instance.honest_messages_fit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms QuotientSecurity.Membership.nonempty
+#print axioms QuotientSecurity.Instance.honest_messages_fit
+
+/-- info: 'QuotientSecurity.Instance.exists_instance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Instance.exists_instance
+
+/-- info: 'QuotientSecurity.Instance.sat_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms QuotientSecurity.Instance.sat_iff

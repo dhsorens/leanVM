@@ -4,13 +4,15 @@ A Lean 4 development over [ArkLib](https://github.com/Verified-zkEVM/ArkLib) and
 
 ## What is proved
 
-**Start with `QuotientSecurity/Statement.lean`.** It states, on the protocol's own instance and with every size discharged, what the rest of this directory proves:
+**Start with `QuotientSecurity/Setup.lean`, then `QuotientSecurity/Statement.lean`.** The first has the definitions and no proof; the second has the theorems, on that setting, with every size discharged, and says at its top what is assumed and what is not said.
 
-- `Membership`: the fixed data, a Cantor basis of 22 vectors, a wiring, and the verifier's constants. `Membership.nonempty`: it exists over every field of `2^192` elements.
-- `Membership.Relation`: the relation on cells indexed by their 22 bits (every row a full adder, wired cells equal, eight public words). `Membership.sat_iff`: it is the model's `Params.Sat`. `Membership.cellsOf`: the cells a first message holds, its witness polynomial at each cell's point.
-- `Membership.soundness`: for every adversary making `Q` oracle queries, the verifier accepts while the committed cells do not satisfy the relation with probability at most `(Q + 3) / 2^128`.
-- `Membership.zero_knowledge`: for every event, the real experiment and the simulator's differ by at most `1 / 2^128 + |U| / |H|`.
-- `Membership.completeness`: the honest proof's verdict is false with probability at most `2 / 2^128 + |U| / |H|`.
+- `Instance` (`Setup.lean`): a circuit, that is a Cantor basis of 22 vectors, a wiring and the weights of the public bits. The theorems hold for every one; `Instance.exists_instance`: there is one over every field of `2^192` elements, for any wiring and weights.
+- `Instance.Relation`: the relation on cells indexed by their 22 bits (every row satisfies the gate, wired cells are equal, eight public words). `Instance.sat_iff` (`SetupLemmas.lean`): it is the model's `Params.Sat`. `Instance.cellsOf`: the cells a first message holds, its witness polynomial at each cell's point.
+- `Instance.soundness`: for every adversary making `Q` oracle queries, the verifier accepts while the committed cells do not satisfy the relation with probability at most `(Q + 3) / 2^128`.
+- `Instance.zero_knowledge`: for every event on the view, the real experiment and the simulator's differ by at most `1 / 2^128 + |U| / |H|`; `Instance.zero_knowledge_fresh`: `1 / 2^128` from an oracle that was asked nothing.
+- `Instance.completeness`: the honest proof's verdict is false with probability at most `2 / 2^128 + |U| / |H|`. `Instance.honest_messages_fit`: the honest prover's two messages are within the degrees a proof may have (`Instance.honest_legal`, the degrees of the two quotients), so the honest proof is an object the soundness theorem speaks of.
+
+These are stated with VCVio's `Pr{let x ← mx}[p x]`; the files underneath use its older `Pr[p | mx]`, and `prEvent_eq_probEvent` (`Notation.lean`) is the bridge.
 
 The sections below are the theorems these rest on, and what the model leaves out.
 
