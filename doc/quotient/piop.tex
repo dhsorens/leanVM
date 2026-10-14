@@ -170,6 +170,6 @@ Call the \emph{table} of a polynomial $p$ of degree below $2^k$ its coefficients
 \[
   \widetilde{c}\,(u_0, \dots, u_{k-1}) = \frac{p(t)}{\prod_{j < k} (1 + w_j(t))} \qquad \text{at } u_j = \frac{w_j(t)}{1 + w_j(t)} ,
 \]
-where $\widetilde{c}$ is the multilinear extension of the table. So an evaluation of $p$ is one multilinear claim on its table, and the sum $\sum_{x \in H} p(x)$ is the last entry $c_{2^k - 1}$, the claim at the point $(1, \dots, 1)$. Extra coordinates stack several polynomials in one table and combine them linearly, which is how each of the four claims above is a single opening. Any multilinear commitment over these fields can be used.
+where $\widetilde{c}$ is the multilinear extension of the table. So an evaluation of $p$ is one multilinear claim on its table, and the sum $\sum_{x \in H} p(x)$ is the last entry $c_{2^k - 1}$, the claim at the point $(1, \dots, 1)$. Extra coordinates stack several polynomials in one table and combine them linearly, which is how each of the four claims above is a single opening. Any multilinear commitment over these fields can be used, and a table known to vanish outside fixed chunks can be committed as those chunks alone, its claims unchanged.
 
 \end{document}

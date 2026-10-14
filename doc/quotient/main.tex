@@ -191,7 +191,7 @@ floor under EIP-7976, $64\, b$, which binds then & & \textbf{15{,}872} \\
 
 \noindent Against the two-claim proof, 152{,}064 gas under EIP-7976, this is a tenth, for two more claims. If a claim costs 20{,}000 gas, the totals are 94{,}939 here and still 152{,}064 there, whose floor covers its two claims. The contract is 4{,}931 bytes; two fifths of its multiplications are the one inversion and the ones it serves.
 
-\paragraph{Prover.} $R_1$ has $2^{23}$ entries and $F$ $2^{22}$, but $R_2$ has $2^{28}$ (19 of its 64 chunks are not zero): the three polynomials need a quarter of that, and the rest is the price of one claim being one tensor of weights. The quotients are computed on a coset of $2^{24}$ points, with three additive transforms forward and two back.
+\paragraph{Prover.} $R_1$ has $2^{23}$ entries and $F$ $2^{22}$, but $R_2$ has $2^{28}$, of which only 19 chunks of $2^{22}$ can be nonzero: the price of one claim being one tensor of weights. The commitment does not pay it. A table known to vanish outside fixed chunks is committed as the WHIR lanes those chunks fill (\code{quotient::opening}), 35 lanes of $2^{21}$ for $R_2$, and a claim on the whole table is opened with its weight $\mathrm{eq}$ restricted to them; the two claims on $R_2$ are opened together. So the claims are unchanged, and the precompile is told which lanes a table has. Such a commitment holds fewer tables than the ideal one \code{formal/quotient} assumes, so the soundness proved there covers it. The quotients are computed on a coset of $2^{24}$ points, with two additive transforms forward and two back, the wiring polynomial's values there being computed with the circuit.
 
 \bibliographystyle{alpha}
 \bibliography{refs}
