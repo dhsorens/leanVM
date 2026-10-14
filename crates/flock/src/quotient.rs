@@ -17,9 +17,11 @@ use crate::standalone::Claim;
 
 pub mod circuit;
 pub mod domain;
+pub mod opening;
 
 use circuit::Circuit;
 use domain::{beta, chain, coordinates, point, row_vanishing};
+use opening::Layout;
 
 /// The public bits are cells of the span of this many basis vectors: the `X` and `Y` cells of
 /// [`circuit::PUBLIC_ROWS`] rows.
@@ -72,6 +74,11 @@ impl Index {
         }
     }
 
+    pub fn layout(&self) -> Layout {
+        let m = self.log_rows + 2;
+        Layout::new(m, m, m, &[(0, 64)])
+    }
+
     pub fn table(&self) -> Table {
         Table {
             vars: self.log_rows + 2,
@@ -79,6 +86,27 @@ impl Index {
             chunks: vec![(0, self.sigma.clone())],
         }
     }
+}
+
+/// Where the witness table can be nonzero: the four polynomials, and the first lane of their masks.
+pub fn witness_layout(log_rows: usize) -> Layout {
+    let m = log_rows + 2;
+    Layout::new(m + 1, m, m + 1, &[(0, 32), (1, 1)])
+}
+
+/// Where the quotient table can be nonzero: three limbs of `h` below `2^m`, of `q` below `3 * 2^m` plus what the
+/// public weight's degree adds, and the gate's quotient below `4 * 2^m`.
+pub fn quotient_layout(log_rows: usize) -> Layout {
+    let m = log_rows + 2;
+    let top = (1usize << 14).div_ceil(1 << (m - 1));
+    let mut chunks = vec![];
+    for e in 0..3 {
+        chunks.push((16 * e, 2));
+        chunks.extend((0..3).map(|digit| (16 * e + 4 + digit, 2)));
+        chunks.push((16 * e + 7, top));
+    }
+    chunks.extend((0..4).map(|digit| (8 + digit, 2)));
+    Layout::new(m + 6, m, m + 5, &chunks)
 }
 
 /// What a proof leaves: one claim on the witness table, one on the circuit's, two on the quotient table.
@@ -195,7 +223,7 @@ pub struct Proved {
 }
 
 /// Prove `statement` from the cells of a witness, against the circuit committed as `index_root`. `masks` must be
-/// uniformly random, and `commit` returns a table's root. Panics on a challenge the verifier rejects.
+/// uniformly random, and `commit` returns the root of a table laid out as given. Panics on a challenge the verifier rejects.
 pub fn prove(
     circuit: &Circuit,
     index: &Index,
@@ -203,7 +231,7 @@ pub fn prove(
     statement: &Statement,
     cells: &[F64],
     masks: &[[F64; 3]; 4],
-    commit: &mut dyn FnMut(&Table) -> Hash,
+    commit: &mut dyn FnMut(&Layout, &Table) -> Hash,
 ) -> Proved {
     let m = circuit.log_rows + 2;
     let n = 1usize << m;
@@ -227,7 +255,7 @@ pub fn prove(
         log_chunk: m,
         chunks: vec![(0, w_hat), (1, mask)],
     };
-    ps.add_root(&commit(&witness));
+    ps.add_root(&commit(&witness_layout(circuit.log_rows), &witness));
     drop(span);
     let [alpha, beta_, gamma] = [(); 3].map(|_| ps.sample());
 
@@ -339,7 +367,7 @@ pub fn prove(
         log_chunk: m,
         chunks,
     };
-    ps.add_root(&commit(&quotient));
+    ps.add_root(&commit(&quotient_layout(circuit.log_rows), &quotient));
     drop(span);
 
     let t = ps.sample();
@@ -564,7 +592,7 @@ mod tests {
 
     fn run(circuit: &Circuit, index: &Index, statement: &Statement, cells: &[F64], rng: &mut Rng) -> Proved {
         let mut roots = 0u8;
-        let mut commit = |_: &Table| {
+        let mut commit = |_: &Layout, _: &Table| {
             roots += 1;
             [roots; 32]
         };
@@ -670,6 +698,56 @@ mod tests {
             let truth = truth(&index, &run(&circuit, &index, &statement, &bad, &mut rng));
             assert!(truth.contains(&false), "{name}: {truth:?}");
             assert!(truth[0] && truth[1], "{name}: {truth:?}");
+        }
+    }
+
+    /// Each table's claims open against its commitment, the quotient table's two in one opening, and a claim with
+    /// another value does not.
+    #[test]
+    fn claims_open_against_the_commitments() {
+        let mut rng = Rng::new(0x0E);
+        let circuit = toy();
+        let index = Index::new(&circuit);
+        let wiring = opening::commit(&index.layout(), &index.table());
+        let x: Vec<bool> = (0..256).map(|_| rng.next_u64() & 1 == 1).collect();
+        let statement = toy_statement(&x);
+        let cells = circuit.cells(&x);
+        let mut committed = vec![];
+        let mut commit = |layout: &Layout, table: &Table| {
+            let table = opening::commit(layout, table);
+            let root = table.root;
+            committed.push(table);
+            root
+        };
+        let proved = prove(
+            &circuit,
+            &index,
+            &wiring.root,
+            &statement,
+            &cells,
+            &masks(&mut rng),
+            &mut commit,
+        );
+        let (_, claims) = verify(&wiring.root, &statement, &proved.proof, circuit.log_rows).expect("a reduction");
+        let log_rows = circuit.log_rows;
+        let [witness, quotient] = [committed.remove(0), committed.remove(0)];
+        let tables = [
+            (witness_layout(log_rows), &witness, vec![claims.witness.clone()]),
+            (index.layout(), &wiring, vec![claims.wiring.clone()]),
+            (
+                quotient_layout(log_rows),
+                &quotient,
+                vec![claims.quotient.clone(), claims.sum.clone()],
+            ),
+        ];
+        for (layout, table, claims) in &tables {
+            let proof = opening::open(layout, table, claims);
+            assert!(opening::verify(layout, &table.root, claims, &proof));
+
+            let mut wrong = claims.clone();
+            wrong[0].value += F192::ONE;
+            let proof = opening::open(layout, table, &wrong);
+            assert!(!opening::verify(layout, &table.root, &wrong, &proof));
         }
     }
 

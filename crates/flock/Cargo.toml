@@ -29,3 +29,7 @@ harness = false
 [[bench]]
 name = "membership"
 harness = false
+
+[[bench]]
+name = "quotient"
+harness = false
