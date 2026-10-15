@@ -143,6 +143,39 @@ theorem getD_sumTL (U u : ℕ) (hu : u ≤ U) : ∀ (d : ℕ) (a b : NT d),
         getD_zipWith_add _ _ (by simp [List.length_zipWith, length_sumTL])]
       simp only [getD_sumTL U u hu d]
 
+/-! The kernel's cache grows with the number of powers one declaration evaluates, so `H0FTab.lean`
+checks the powers `a ≤ u < a + n` in slices (`powsR`) and joins them with `sumTL_powsR_split`. -/
+
+/-- The powers `k^u dk` for `a ≤ u < a + n`. -/
+def powsR (a n : ℕ) (k dk : ℤ) : List ℤ := (List.range n).map fun i => k ^ (a + i) * dk
+
+theorem powsL_eq_powsR (U : ℕ) : powsL U = powsR 0 (U + 1) := by
+  funext k dk
+  simp [powsL, powsR]
+
+theorem length_sumTL_of (f : ℤ → ℤ → List ℤ) (n : ℕ) (hf : ∀ k dk, (f k dk).length = n) :
+    ∀ (d : ℕ) (a b : NT d), (sumTL d f a b).length = n
+  | 0, _, _ => hf _ _
+  | d + 1, a, b => by simp [sumTL, List.length_zipWith, length_sumTL_of f n hf d]
+
+theorem sumTL_append (f g : ℤ → ℤ → List ℤ) (n : ℕ) (hf : ∀ k dk, (f k dk).length = n) :
+    ∀ (d : ℕ) (a b : NT d), sumTL d (fun k dk => f k dk ++ g k dk) a b = sumTL d f a b ++ sumTL d g a b
+  | 0, _, _ => rfl
+  | d + 1, a, b => by
+      have hl := length_sumTL_of f n hf d
+      simp only [sumTL, sumTL_append f g n hf d]
+      rw [List.zipWith_append (by rw [hl, hl]), List.zipWith_append (by simp [List.length_zipWith, hl]),
+        List.zipWith_append (by simp [List.length_zipWith, hl]),
+        List.zipWith_append (by simp [List.length_zipWith, hl])]
+
+theorem sumTL_powsR_split (a n m : ℕ) {N : ℕ} (h : n + m = N) (d : ℕ) (x y : NT d) :
+    sumTL d (powsR a N) x y = sumTL d (powsR a n) x y ++ sumTL d (powsR (a + n) m) x y := by
+  subst h
+  have : powsR a (n + m) = fun k dk => powsR a n k dk ++ powsR (a + n) m k dk := by
+    funext k dk
+    simp [powsR, List.range_add, Nat.add_assoc]
+  rw [this, sumTL_append _ _ n (fun _ _ => by simp [powsR])]
+
 /-- The numerator of `f(u)`. -/
 def fNum (u : ℕ) : ℤ := sumT2 childChains (fun k dk => k ^ u * dk) KT DK
 
