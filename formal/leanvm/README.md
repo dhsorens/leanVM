@@ -16,6 +16,25 @@ right, and supplies an independent reference for validating the existing Rust im
 That validation begins with differential testing against pinned Rust revisions and may grow into
 formal verification of the relevant Rust code.
 
+## What is proved: `LeanerVM/Spec/`
+
+The end-to-end result is stated in one folder, [`LeanerVM/Spec/`](LeanerVM/Spec/README.md), which
+imports nothing else from the repository; everything else is proof or library code.
+
+| File | What it is |
+| --- | --- |
+| [`Field.lean`](LeanerVM/Spec/Field.lean) | the fields `K = GF(2^64)`, `E = GF(2^192)`, the generator `g` |
+| [`Blake2s.lean`](LeanerVM/Spec/Blake2s.lean) | BLAKE2s: the compression function and the hash of bytes |
+| [`Isa.lean`](LeanerVM/Spec/Isa.lean) | leanISA: memory, the six instructions, programs, one step, `ValidExecution` |
+| [`Verifier.lean`](LeanerVM/Spec/Verifier.lean) | the verifier, `python-verifier/verifier.py` transcribed section by section, for any hash function, with its constants and transcript |
+| [`Statement.lean`](LeanerVM/Spec/Statement.lean) | the statements: knowledge soundness in the random-oracle model against an adversary that chooses the program, the public input and the proof, and completeness up to a negligible probability |
+
+The proofs are `LeanVM.knowledgeSoundness_holds` and `LeanVM.completeness_holds`
+([`LeanerVM/Protocol/LeanVM.lean`](LeanerVM/Protocol/LeanVM.lean)). The verifier runs compiled on
+proofs of the Rust prover (`lake exe leanvm-verify`), and `scripts/fuzz-verifier.py` compares it
+with the Rust verifier on mutated proofs. See
+[`docs/roadmap/e2e-status.md`](docs/roadmap/e2e-status.md).
+
 ## Project status
 
 The repository baseline is in place: module boundaries, the test library, validation policy, CI
@@ -28,9 +47,8 @@ components, each sound and complete for the relation its row refines, and the th
 blocks; Layer 8 supplies the constraint statement `SatisfiedBy` and one hand-built witness.
 The reference `step` and `run` are noncomputable; fixed-image executable
 checkers are proved equivalent to them for exact and fuel-bounded runs. Finite traces and a
-pinned Rust comparison lane provide the first ISA validation boundary. The bus theorems and
-the two T1 theorems are the layers still to come, and no
-proof-system claim has landed. See the [checker guide](docs/leanisa-checker.md).
+pinned Rust comparison lane provide the first ISA validation boundary. On this branch the bus theorems, the two T1 theorems and the
+end-to-end proof-system theorems have landed (above). See the [checker guide](docs/leanisa-checker.md).
 
 Recursive CTE is an open research problem: the intended knowledge-soundness arguments for the
 concrete inner SNARKs live in the random-oracle model, while the known outer recursion-topology
@@ -114,7 +132,8 @@ it ([`docs/architecture.md`](docs/architecture.md)).
 
 | Layer | Responsibility |
 | --- | --- |
-| `LeanerVM/Semantics/` | ISA, state, memory, bytecode, transition relation, and executable interpreter |
+| `LeanerVM/Spec/` | The statements and what they mention: fields, BLAKE2s, leanISA, the verifier; imports no other layer |
+| `LeanerVM/Semantics/` | Lemmas about the ISA, and the executable interpreter |
 | `LeanerVM/Parameters/` | Versioned constants, encodings, layouts, and authoritative source bindings |
 | `LeanerVM/Arithmetization/` | Tables, buses, witness generation, constraints, and semantic refinement |
 | `LeanerVM/Applications/` | Guest specifications, exact programs, compiler boundaries, and application correctness |

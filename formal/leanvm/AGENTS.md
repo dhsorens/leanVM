@@ -36,13 +36,15 @@ python3 ./scripts/test-policy-checks.py
 
 ## Where To Work
 
-- `LeanerVM/Semantics/` — instruction set, state, memory, bytecode, transition relation, and
-  pure executable interpreter.
+- `LeanerVM/Spec/` — what is proved, for review: the fields, BLAKE2s, leanISA, the verifier and
+  the two statements, and the aggregation guest's statement (`NodeSpec`, with the signature
+  schemes and LeanDA). Definitions only; imports nothing else from `LeanerVM/`.
+- `LeanerVM/Semantics/` — lemmas about the instruction set, and the pure executable interpreter.
 - `LeanerVM/Parameters/` — versioned constants, encodings, layouts, and source bindings.
 - `LeanerVM/Arithmetization/` — tables, buses, witness generation, constraints, and refinement
   to the VM semantics.
-- `LeanerVM/Applications/` — guest specifications, exact programs, compiler boundaries, and
-  application-level correctness results. Create this layer with its first concrete module.
+- `LeanerVM/Applications/` — exact guest programs, compiler boundaries, and application-level
+  correctness results (the guest specifications they prove are in `Spec`). Create this layer with its first concrete module.
 - `LeanerVM/Protocol/` — leanVM-specific composition of reusable proof-system components.
 - `tests/` — executable behavior, boundary cases, mutations, and proof regressions.
 - `bench/` — benchmark contracts and reproducible workloads.
@@ -52,9 +54,11 @@ python3 ./scripts/test-policy-checks.py
 The allowed production dependency flow is:
 
 ```text
-Parameters ──→ Semantics ──→ Arithmetization ──→ Protocol
-                         └──→ Applications ────────┘
+Spec ──→ Parameters ──→ Semantics ──→ Arithmetization ──→ Protocol
+                                  └──→ Applications ────────┘
 ```
+
+Every layer may import `Spec`; `Spec` imports only `Spec`.
 
 ## Lean and Proof Guardrails
 

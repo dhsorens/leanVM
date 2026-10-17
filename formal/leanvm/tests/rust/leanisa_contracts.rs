@@ -6,8 +6,8 @@ use std::fmt::Write;
 
 #[test]
 fn blake2s_distinct_non_boolean_flag_words() {
-    // leanVM a386121f: flock::hash::blake2s_compress consumes both raw u32 words.
-    // The corresponding Lean vector is in Semantics/Blake2s.lean.
+    // leanVM 127510d1: flock::hash::blake2s_compress consumes both raw u32 words.
+    // The corresponding Lean vector is in tests/LeanerVMTests/Semantics/Blake2s.lean.
     let h = [7, 0, 0, 0, 11, 0, 0, 0];
     let m = [
         0x89abcdef, 0x01234567, 0x76543210, 0xfedcba98, 0x33334444, 0x11112222, 0x77778888,
@@ -248,7 +248,7 @@ fn emit_fixture(name: &str, p: &Program, e: &Execution, public_input: [F192; 2],
     let Some(directory) = std::env::var_os("LEANISA_EXPORT_DIR") else {
         return;
     };
-    let mut out = String::from("import LeanerVMTests.Semantics.RustExport\n\nopen LeanerVM.Parameters LeanerVM.Semantics\nopen LeanerVMTests.Semantics.RustExport\n\n");
+    let mut out = String::from("import LeanerVMTests.Arithmetization.Padding.RustExport\n\nopen LeanerVM.Parameters LeanerVM.Semantics\nopen LeanerVMTests.Arithmetization.Padding.RustExport\n\n");
     let encoded: Vec<_> = p.prog.iter().map(|op| instruction(*op)).collect();
     let mut blocks = Vec::new();
     let mut start = 0;

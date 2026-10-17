@@ -3,7 +3,8 @@
 - `validate.sh`: complete local gate and the command to run before handoff.
 - `audit-lean.sh`: first-party lexical policy for trust-sensitive constructs and local
   option overrides.
-- `audit-axioms.lean`: recursive axiom-closure audit of the production and test namespaces;
+- `audit-axioms.lean`: recursive axiom-closure audit of every declaration a first-party module
+  defines, whatever its namespace;
   `validate.sh` and CI run it after `lake test` through `test-axiom-audit.py`. Permits only
   `propext`, `Classical.choice` and `Quot.sound`. CI's lean-action audit independently covers
   the production namespace.
@@ -54,6 +55,18 @@
 - `dump-leanisa-layout-rust.sh <leanVM checkout>`: prints the stacked size and every column's
   offset in the stack the pinned verifier reconstructs for two announced size vectors, for the
   comparison in `tests/LeanerVMTests/Protocol/LeanIsa.lean`; requires `cargo`.
+
+- `export-verifier-fixtures-rust.sh <leanVM tree> <out>`: proves small guest programs with the
+  Rust prover at the pin and writes each proof as the four files `bytecode.bin`,
+  `public_input.bin`, `stream.bin`, `merkle_openings.bin` (the fixtures of
+  `tests/fixtures/verifier/`), each checked by the Rust verifier first; requires `cargo`.
+- `rust-verifier-cli/`: the deployed Rust verifier (`crates/verifier` at the pin) on the same four
+  files, one proof or a batch; `build.sh <leanVM tree>` checks the tree against the pin and builds
+  it (see its `README.md`).
+- `fuzz-verifier.py <leanVM tree> <fixtures>`: mutates the fixtures (structured and seeded random
+  edits of every phase's scalars, roots, nonces, Merkle openings, public input and bytecode) and
+  requires `lake exe leanvm-verify` and the Rust verifier to give the same verdict on every
+  mutated proof; keeps any divergent case.
 
 Keep scripts small and deterministic. Add specialized tooling only with the feature or
 artifact it validates.

@@ -1,5 +1,5 @@
 import LeanerVM.Arithmetization.Completeness.Bus
-import LeanerVMTests.Semantics.PaddedImageRefutation
+import LeanerVMTests.Arithmetization.Padding.PaddedImageRefutation
 
 /-!
 # Layer 10 tests: the rows of executed instructions
@@ -18,7 +18,7 @@ the chain's (`Completeness.Bus`): two rows reading one cell number its reads `0,
 namespace LeanerVMTests.Arithmetization.Completeness.Rows
 
 open LeanerVM.Parameters LeanerVM.Semantics LeanerVM.Arithmetization
-open LeanerVMTests.Semantics.PaddedImageRefutation
+open LeanerVMTests.Arithmetization.Padding.PaddedImageRefutation
 
 /-- The sentinel counter of a `2^11`-slot program, as a literal term (status finding E8). -/
 local notation "d₀" => (gpow 2047 : K)
@@ -45,9 +45,10 @@ example (rbc : K) (e : Vector K 8) (reads : List (K × K × Vector K 3)) :
 example : readAddrs zeroImage 1 (.xor (gpow 0) (gpow 1) (gpow 2)) =
     [1 * gpow 0, 1 * gpow 1, 1 * gpow 2] := by simp only [readAddrs]
 
-/-- A `DEREF` reads its target at `p · o₂`, with `p` the word at `fp · o₁`, not at `fp · o₂`. -/
+/-- A `DEREF` reads its target at `p · o₂`, with `p` the word at `fp · o₁`, not at `fp · o₂`; the
+pointer, the target, then the local cell, the deployed order (`tables.rs:642-647`). -/
 example {κ : ℕ} (mem : MemImage κ) (fp o1 o2 o3 : K) (m : DerefMode) :
-    readAddrs mem fp (.deref o1 o2 o3 m) = [fp * o1, fp * o3, (mem.limbsAt (fp * o1))[0] * o2] :=
+    readAddrs mem fp (.deref o1 o2 o3 m) = [fp * o1, (mem.limbsAt (fp * o1))[0] * o2, fp * o3] :=
   rfl
 
 /-! ## The execution is load-bearing -/

@@ -7,30 +7,31 @@
 
 module
 
-public import LeanerVM.Semantics.Instruction
+public import LeanerVM.Semantics.Lemmas
 
 /-!
 # The bytecode encoding
 
 leanISA roadmap Layer 4 (`docs/roadmap/leanisa-blueprint.md`), at leanVM pin
-`a386121f84292f6fa663aaa3e570c15bc0240ea2`. Category B, transcribed from:
+`127510d14c98ade4e8a97646c44fa7f1ff5e752d`. Category B, transcribed from:
 
 * specification §8.1 (`doc/leanvm/body/08-end-to-end-protocol.tex:4-24`): instruction `z` is
   sixteen `K` slots, the opcode in slot 3, the operands and immediate lanes in slots 4–10, zero
   elsewhere (`:8`); the table at `:12-23` gives every instruction's slots;
-* specification §6.4 (`06-bus-interactions.tex:90`): a bytecode entry on the bus is the opcode
+* specification §6.4 (`06-bus-interactions.tex:93`): a bytecode entry on the bus is the opcode
   plus seven operands, eight coordinates after the separator, the address, and the count; §5.1
   (`05-arithmetization.tex:12`): shorter tuples are zero-padded to the `m = 16` slots;
-* `crates/lean_vm/src/cpu/layout.rs:229-290` (`bytecode_columns`): the eight public program
+* `crates/leanvm_core/src/cpu/layout.rs:228-289` (`bytecode_columns`): the eight public program
   columns `(opcode, o1, o2, o3, fpc, ffp, extra0, extra1)`, with `SET_CONSTANT`'s immediate
-  lanes at `o2, o3, fpc` (`:252-271`) and `BLAKE2S`'s last four operands at `fpc, ffp, extra0,
-  extra1` (`:267-287`); the seed and finalize blocks carry them at `:385-395`;
-* `crates/lean_vm/src/cpu/isa.rs:58-75` and specification §7.4 (`07-instruction-tables.tex:76`):
+  lanes at `o2, o3, fpc` (`:251-270`) and `BLAKE2S`'s last four operands at `fpc, ffp, extra0,
+  extra1` (`:266-286`); the seed and finalize blocks carry them at `:384-394`;
+* `crates/leanvm_core/src/cpu/isa.rs:58-75` and specification §7.4 (`07-instruction-tables.tex:76`):
   the `DEREF` store mode as the flag pair `(f_pc, f_fp)`, `cell = (0, 0)`, `pc = (1, 0)`,
   `fp = (0, 1)`.
 
 `entry i` is the bus entry of an instruction, the row of `bytecode_columns`; `encodeSlots i` is
-its sixteen-slot row of §8.1, the entry at slots 3–10; `decode` consumes an eight-coordinate
+its sixteen-slot row of §8.1, the entry at slots 3–10. Both are defined in `LeanerVM.Spec.Isa`,
+since the verifier receives a program through them; `decode`, here, consumes an eight-coordinate
 entry. It is exact: `decode v = some i ↔ v = entry i` (`decode_eq_some_iff`); on a `DEREF`
 tuple with free flags it names the mode whose flags they are (`decode_deref_eq_some_iff`).
 Unknown opcodes, invalid `DEREF` flag pairs and nonzero spare entry coordinates decode to
@@ -49,7 +50,7 @@ loading/correspondence theorem. Those interfaces require separate coverage or re
 * The flag pair `(1, 1)` decodes to nothing, and so does every pair that is not one of the
   three (acceptance test 18).
 * A nonzero spare entry coordinate is not ignored. Each opcode table's bytecode tuple carries
-  literal zeros in its spare coordinates (`tables.rs:486-491`, `:553-558`, `:636`, `:742-747`),
+  literal zeros in its spare coordinates (`tables.rs:491-496`, `:558-563`, `:641`, `:747-752`),
   and `decode` rejects a tuple that violates that opcode's canonical entry shape. This is an
   eight-coordinate entry claim, not rejection by the typed program's address lookup.
 -/
@@ -62,13 +63,6 @@ open LeanerVM.Parameters LeanerVM.Semantics
 
 /-! ## The store-mode flags -/
 
-/-- The `DEREF` store-mode flags `(f_pc, f_fp)`: `cell ↦ (0, 0)`, `pc ↦ (1, 0)`, `fp ↦ (0, 1)`
-(`isa.rs:69-78`; specification §7.4). -/
-def derefFlags : DerefMode → K × K
-  | .cell => (0, 0)
-  | .pc => (1, 0)
-  | .fp => (0, 1)
-
 /-- The store mode of a flag pair, if it is one of the three (acceptance test 18). -/
 def derefMode? (fpc ffp : K) : Option DerefMode :=
   if fpc = 0 ∧ ffp = 0 then some .cell
@@ -77,23 +71,6 @@ def derefMode? (fpc ffp : K) : Option DerefMode :=
   else none
 
 /-! ## The bus entry and the sixteen slots -/
-
-/-- The bus entry of an instruction, `(opcode, op₁, …, op₇)`: slots 3–10 of specification §8.1,
-the eight public columns of `layout.rs:229-290`. -/
-def entry : Instr → Vector K 8
-  | .xor oA oB oC => #v[Opcode.xor.code, oA, oB, oC, 0, 0, 0, 0]
-  | .mulNative oA oB oC => #v[Opcode.mulNative.code, oA, oB, oC, 0, 0, 0, 0]
-  | .setConstant o k => #v[Opcode.setConstant.code, o, k.limb 0, k.limb 1, k.limb 2, 0, 0, 0]
-  | .deref o1 o2 o3 mode =>
-      #v[Opcode.deref.code, o1, o2, o3, (derefFlags mode).1, (derefFlags mode).2, 0, 0]
-  | .jump oc od of => #v[Opcode.jump.code, oc, od, of, 0, 0, 0, 0]
-  | .blake2s om ocv oout omd => #v[Opcode.blake2s.code, om 0, om 1, om 2, om 3, ocv, oout, omd]
-
-/-- The sixteen slots of an instruction (specification §8.1): the entry at slots 3–10, zero
-elsewhere. -/
-def encodeSlots (i : Instr) : Vector K 16 :=
-  let e := entry i
-  #v[0, 0, 0, e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], 0, 0, 0, 0, 0]
 
 /-! ## The decoder -/
 

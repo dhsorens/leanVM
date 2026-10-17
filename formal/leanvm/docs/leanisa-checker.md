@@ -2,9 +2,10 @@
 
 The checker validates a fixed final image against the existing Lean ISA. It does not generate
 memory, prove Rust correct, or check an executable proof verifier. The semantic reference
-remains pinned to leanVM `a386121f84292f6fa663aaa3e570c15bc0240ea2`. The optional Rust
-regression lane separately tests `48a904208d682848dac0e18ef8b01ebfc40df9ad`; it does
-not change that pin or claim coverage of every change between those revisions.
+remains pinned to leanVM `127510d14c98ade4e8a97646c44fa7f1ff5e752d`, whose ISA and memory
+semantics are those of the previous pin `a386121f84292f6fa663aaa3e570c15bc0240ea2`. The
+optional Rust regression lane separately tests `48a904208d682848dac0e18ef8b01ebfc40df9ad`; it
+does not change that pin or claim coverage of every change between those revisions.
 
 ## Proved interfaces
 
@@ -13,7 +14,7 @@ The reference semantics (`gLog?`, `MemImage.read`, `Program.fetch`, `execute`, `
 proved equal to it; its bodies may hold speedups and are not audited, only the equivalence
 statements are.
 
-- [`Step.lean`](../LeanerVM/Semantics/Step.lean) writes the six instruction arms once, in
+- [`Spec/Isa.lean`](../LeanerVM/Spec/Isa.lean) writes the six instruction arms once, in
   `executeWith` over a named reader; `execute L r` is `executeWith L.read r`. The carrier
   instantiates the same arms with its own reader, so there is no second copy of the semantics.
 - [`Executable.lean`](../LeanerVM/Semantics/Executable.lean) is the carrier. `addressIndex`
@@ -29,14 +30,14 @@ statements are.
   frame pointer, with no hypothesis and for every hint list. A `SentinelSafe` premise is
   unnecessary for semantic checking; it remains a separate premise of global constraint
   soundness.
-- [`RunTrace.lean`](../LeanerVM/Semantics/RunTrace.lean) gives relational steps and ordered
+- [`RunTrace.lean`](../LeanerVM/Arithmetization/Padding/RunTrace.lean) gives relational steps and ordered
   finite traces, equivalent to `run`. A failed step has no successor. The empty run has one
   state and zero transitions.
-- [`TraceInput.lean`](../LeanerVM/Semantics/TraceInput.lean) preserves the entire finite export,
+- [`TraceInput.lean`](../LeanerVM/Arithmetization/Padding/TraceInput.lean) preserves the entire finite export,
   checks its power-of-two memory shape and count accounting, and uses `sum(mainCounts)` as
   `Trace.steps`. `adapt_preserves` and `validateInput_eq_true_iff` specify these guarantees.
   Announced counts alone do not prove that the rows exist.
-- [`FillerRows.lean`](../LeanerVM/Semantics/FillerRows.lean) accepts unordered row starts when
+- [`FillerRows.lean`](../LeanerVM/Arithmetization/Padding/FillerRows.lean) accepts unordered row starts when
   every reference successor succeeds and the starting/successor multisets agree
   (`FillerRowsValid`, the audited statement; `checkFillerRows`, its carrier). This standalone
   interface does not take a main run or check memory/bytecode access-count columns or budgets.

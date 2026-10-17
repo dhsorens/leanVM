@@ -1,7 +1,7 @@
 module
 
-public import LeanerVM.Semantics.Instruction
-meta import LeanerVM.Semantics.Instruction
+public import LeanerVM.Semantics.Lemmas
+meta import LeanerVM.Spec.Isa
 
 /-!
 # Layer 2 tests: instructions, programs, and fetch

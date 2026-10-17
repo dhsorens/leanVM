@@ -10,12 +10,25 @@ behind specified interfaces as the implementation stabilizes.
 ## Lean layers
 
 ```text
-Parameters ──→ Semantics ──→ Arithmetization ──→ Protocol
-                         └──→ Applications ────────┘
+Spec ──→ Parameters ──→ Semantics ──→ Arithmetization ──→ Protocol
+                                  └──→ Applications ────────┘
 ```
 
 An arrow points from a lower layer to a layer allowed to depend on it.
 `scripts/check-layers.sh` enforces the forbidden reverse edges on every validation run.
+
+### Spec
+
+Owns what is proved, for review: the definitions the two end-to-end statements mention (the
+fields, BLAKE2s, leanISA, the instruction encoding, the fill blocks, the verifier with its
+constants and transcript, the random-oracle experiment) and the statements themselves, as
+propositions (`LeanerVM/Spec/Statement.lean`); and the aggregation guest's statement, `NodeSpec`,
+with the signature schemes (vendored from leanVM's `formal/`) and LeanDA (`Spec/Node.lean`,
+`Spec/Xmss.lean`, `Spec/Sphincs.lean`, `Spec/Da.lean`). It contains definitions only, plus the `@[csimp]`
+theorems of `Spec/Fast/` that make the compiled verifier fast, and imports nothing from
+`LeanerVM/` outside `Spec/`. Lemmas about these definitions live in the layer that owns the
+topic (`Parameters`, `Semantics`, `Protocol`). [`LeanerVM/Spec/README.md`](../LeanerVM/Spec/README.md)
+gives the reading order.
 
 ### Parameters
 
@@ -27,8 +40,8 @@ BLAKE2s constructions without making that selection permanent for future revisio
 
 ### Semantics
 
-Owns the ISA, state, memory, bytecode, transition relation, halting behavior, and pure
-executable interpreter. It must not import arithmetization or protocol code.
+Owns the lemmas about the ISA (defined in `Spec/Isa.lean`) and the pure executable interpreter.
+It must not import arithmetization or protocol code.
 Prefer generic machine definitions where practical; source-faithful leanVM semantics consume
 the versioned constants and encodings owned by `Parameters`.
 
@@ -40,8 +53,8 @@ should be upstreamed to Clean rather than duplicated here.
 
 ### Applications
 
-Owns the recursive signature-aggregation guest specification, the exact guest program and
-compiler or assembly boundary, and application-level correctness results. It may depend on
+Owns the exact recursive signature-aggregation guest program, the compiler or assembly boundary,
+and application-level correctness results; the guest's specification, `NodeSpec`, is in `Spec`. It may depend on
 `Parameters` and `Semantics`, but not on the arithmetization or protocol layers. Create the
 directory with its first concrete module rather than adding an empty placeholder.
 
@@ -61,7 +74,8 @@ instance of the arithmetization and imports nothing from `LeanerVM/Arithmetizati
 change to leanISA touches only the modules that meet it. Those are the fixed columns
 (`FixedColumns.lean`), the adaptor (`LeanIsa.lean` and the modules under `LeanIsa/`), the
 compiled verifier (`Transcript.lean`, `Proof.lean`, `Compile.lean`, `Verify.lean`) and the base
-theorems (`Soundness.lean`);
+theorems (`Soundness.lean`, and the end-to-end theorems under `EndToEnd/`, which compose the
+adaptor with leanISA's constraint soundness and completeness);
 `scripts/check-layers.sh` enforces the wall with that allow-list.
 
 The target-theorem ownership is:

@@ -55,3 +55,11 @@ name = "LeanerVM"
 name = "LeanerVMTests"
 srcDir = "tests"
 allowNonModules = true
+
+# The deployed verifier, compiled, on the four proof files of the Rust prover
+# (cli/LeanvmVerify.lean; scripts/fuzz-verifier.py compares it with the Rust verifier).
+# Not a default target; scripts/fuzz-verifier.py runs it against the Rust verifier.
+[[lean_exe]]
+name = "leanvm-verify"
+root = "LeanvmVerify"
+srcDir = "cli"

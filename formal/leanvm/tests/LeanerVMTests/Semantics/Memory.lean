@@ -1,8 +1,8 @@
 module
 
 public import LeanerVM.Parameters.Isa
-public import LeanerVM.Semantics.Memory
-meta import LeanerVM.Semantics.Memory
+public import LeanerVM.Semantics.Lemmas
+meta import LeanerVM.Spec.Isa
 
 /-!
 # Layer 2 tests: addressing, the image, and the public input

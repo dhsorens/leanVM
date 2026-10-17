@@ -93,11 +93,21 @@ def test_source_audit() -> None:
             ("set_option warningAsError false", "must not be overridden"),
             ("set_option linter.unusedVariables false", "must not be overridden"),
             ("set_option weak.linter.mathlibStandardSet false", "must not be overridden"),
+            ("set_option debug.skipKernelTC true", "must not be overridden"),
+            ("theorem t : 2 ^ 10 = 1024 := by decide +native", "Forbidden trust-sensitive"),
+            ("@[implemented_by id] def f (n : Nat) : Nat := n", "Forbidden trust-sensitive"),
+            ('@[extern "f"] opaque f : Nat → Nat', "Forbidden trust-sensitive"),
+            ("run_cmd Lean.addDecl default", "Forbidden trust-sensitive"),
         )
         for source, expected in cases:
             write(probe, f"module\n\n{source}\n")
             require_failure(run(root, "audit-lean.sh"), source, expected)
         probe.unlink()
+        # The executable's sources are audited too.
+        cli = root / "cli" / "Probe.lean"
+        write(cli, "axiom planted : True\n")
+        require_failure(run(root, "audit-lean.sh"), "cli source", "Forbidden trust-sensitive")
+        shutil.rmtree(cli.parent)
         # Every protected option must be caught across Lean whitespace/comments, in both
         # production and imported-test source trees, including locally scoped overrides.
         for relative in ("LeanerVM/Semantics/Violation.lean", "tests/LeanerVMTests/Violation.lean"):
@@ -196,6 +206,16 @@ def test_layer_gate() -> None:
         )
         loose.unlink()
 
+        # A layer's root module beside its directory belongs to the layer, under its rules.
+        rootmod = root / "LeanerVM" / "Semantics.lean"
+        write(rootmod, "module\n\npublic import LeanerVM.Parameters.Basic\n")
+        require_pass(run(root, "check-layers.sh"), "a layer's root module")
+        write(rootmod, "module\n\npublic import LeanerVM.Protocol.Basic\n")
+        require_failure(
+            run(root, "check-layers.sh"), "a layer's root module importing upward", "Semantics"
+        )
+        rootmod.unlink()
+
         # The wall: a protocol module importing the arithmetization is rejected unless it is one
         # of the modules the allow-list names.
         wall = root / "LeanerVM" / "Protocol" / "Spine" / "Phase.lean"
@@ -218,6 +238,28 @@ def test_layer_gate() -> None:
         write(sibling, "module\n\npublic import LeanerVM.Arithmetization.Basic\n")
         require_failure(run(root, "check-layers.sh"), "wall: a sibling of the adaptor", "the wall")
         sibling.unlink()
+        # The end-to-end theorems under `EndToEnd/` are inside the wall; a sibling is not.
+        endtoend = root / "LeanerVM" / "Protocol" / "EndToEnd" / "Front" / "Layout.lean"
+        write(endtoend, "module\n\npublic import LeanerVM.Arithmetization.Basic\n")
+        require_pass(run(root, "check-layers.sh"), "wall allow-list: the end-to-end directory")
+        endtoend.unlink()
+        shutil.rmtree(endtoend.parent.parent)
+        sibling = root / "LeanerVM" / "Protocol" / "EndToEndExtra.lean"
+        write(sibling, "module\n\npublic import LeanerVM.Arithmetization.Basic\n")
+        require_failure(run(root, "check-layers.sh"), "wall: a sibling of EndToEnd", "the wall")
+        sibling.unlink()
+        # The specification imports nothing of the repository outside `Spec/`.
+        spec = root / "LeanerVM" / "Spec" / "Violation.lean"
+        for declaration in import_forms:
+            write(spec, f"module\n\n{declaration.replace('Protocol', 'Parameters')}\n")
+            require_failure(
+                run(root, "check-layers.sh"), f"spec: {declaration}", "Forbidden Spec dependency"
+            )
+        for declaration in import_forms:
+            write(spec, f"module\n\n{declaration.replace('Protocol.Basic', 'Spec.Field')}\n")
+            require_pass(run(root, "check-layers.sh"), f"spec importing spec: {declaration}")
+        spec.unlink()
+        shutil.rmtree(spec.parent, ignore_errors=True)
         require_pass(run(root, "check-layers.sh"), "layer gate after cleanup")
 
 

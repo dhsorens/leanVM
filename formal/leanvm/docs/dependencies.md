@@ -6,7 +6,7 @@ The repository tracks eight upstreams and six direct Lake packages:
 | --- | --- | --- |
 | Lean | `v4.34.1` | Root toolchain |
 | Mathlib | `v4.34.1` (`d13f23b7`) | Algebra, finite types, probability measures, and tactics |
-| leanVM | `a386121f84292f6fa663aaa3e570c15bc0240ea2` | Audited Rust/specification target; not a Lake dependency |
+| leanVM | `a0ca7858f2533ce51abdc20bb635c007e19b26b3` (current main) | Audited Rust/specification target; not a Lake dependency |
 | CompPoly | `572f997390aa4fc131ef30b1186fa1dcf292ca10` (current main) | Computable polynomial and field infrastructure |
 | Clean | `42fe4b268132a46604d40cc73f642a1995f26547` (PR #474, includes current main) | Circuit, AIR, channel, and witness-generation infrastructure |
 | ArkLib | `7653a901ed466c88a2e61a3075011b73d7bb2316` (current main) | Oracle reductions, security definitions, composition, sumcheck, and multilinear theory |
@@ -29,6 +29,77 @@ Add a dependency only with a named first-party use and a narrow import. A depend
 6. delete every `LeanerVM/Protocol/To*/` file or declaration that the new pin contains, move its
    consumers to the upstream names, and update the protocol blueprint's upstream ledger and the
    status page's watch list.
+
+## leanVM `a0ca7858` review
+
+The previous pin was `127510d14c98ade4e8a97646c44fa7f1ff5e752d`; the new one is
+`a0ca7858f2533ce51abdc20bb635c007e19b26b3` (`main`, 2026-10-17), one commit later ("Guest: certify the native bus tiling order"). It
+changes only `crates/rec_aggregation/guests/lean_ethereum.py` and a comment of
+`crates/rec_aggregation/src/aggregation.rs`: the aggregation guest's in-circuit verifier,
+`verify_sub`, now checks that the hinted order of the bus blocks is the native verifier's
+(descending size, then ascending index), as the verifier does (`stack_offsets`,
+`crates/verifier/src/multilinear.rs:127-137`); before, it accepted any aligned tiling, so it
+accepted proofs the verifier rejects. No Lean definition changes. `python-verifier/verifier.py`,
+`crates/verifier`, the prover and the specification are identical at both pins, so the proof
+fixtures stand, the scripts' checksums are unchanged, and every citation of them keeps `127510d1`;
+citations of the guest name `a0ca7858`.
+
+## leanVM `127510d1` review
+
+The previous leanVM pin was `a386121f84292f6fa663aaa3e570c15bc0240ea2` (2026-09-03); the new one
+is `127510d14c98ade4e8a97646c44fa7f1ff5e752d` (`main`, 2026-10-15), 81 commits later. The review
+read `python-verifier/verifier.py`, the protocol's executable specification, whose diff between
+the pins is 52 lines, the new self-contained Rust verifier `crates/verifier` (8c31abd7, a
+line-for-line port of the Python that replaced the verifier halves of `gkr.rs`, `leaf.rs`,
+`constraints.rs`, `cpu/mod.rs`, Flock, the transcript and the stacked opener), and the
+specification's tex. The ISA, the memory model, the tables, the bus and its flushes, the Flock
+circuit and `R1CS_DIGEST`, the fields, BLAKE2s, the Merkle format, the Fiat–Shamir tags, seed
+and query sampling, and the WHIR ladder are unchanged.
+
+Semantic changes, each visible to the verifier, and what they change here:
+
+1. *The GKR combiner* (40bdeac6). Each layer draws its combiner first; nothing is drawn after the
+   roots or after the last layer, one challenge fewer per run (`verifier.py:438-452`,
+   `crates/verifier/src/bus.rs:21`). The transcription (`Verifier.lean`), the oracle protocol's
+   schedule (`gkrSpec`, without its trailing combiner; `gkrError`'s total is unchanged, the
+   trailing combiner having been charged `0`), the grand product (`gkr`, `gkrComplete`,
+   `gkrSecurity`), the program's doom (`EndToEnd/Front/BusGkr.lean`: a step goes from the layer
+   relation to the step's output relation, its combiner first), completeness and the cost (`2`
+   for the roots, the per-layer cost unchanged) follow. §5.3 now matches the verifiers.
+2. *The public input* (9084d317, #322). The verifier computes each memory limb's claim, the line
+   through that limb of the public input's two halves at the challenge; the prover sends nothing,
+   and the check `c₀ + y·c₁ = (1 + r)·w₀ + r·w₁` and `Y` are gone (`verifier.py:1390-1396`,
+   `crates/verifier/src/lib.rs:251-264`, §8.2 `08-end-to-end-protocol.tex:27-37`). The
+   specification and the deployed verifiers now coincide: the leanISA instance sends no public
+   line, the oracle protocol's public-input phase is the specification's (`publicInputPhase`;
+   the schedule `pubSpec` is kept, its message empty on leanISA, which the compiled program does
+   not read), and the deployed branch (`checkWords`, `deployedPublicInputPhase` and their
+   theorems) is deleted. The program's phase is a challenge and a return
+   (`EndToEnd/Front/PubPhase.lean`); its challenge joins Flock's first group, whose bound grows
+   from `L₀·1/|E|` and `L₀·(k+1)/|E|` to `L₀·47/|E|` at most (`pubLead_le`), still under `2^-128`.
+3. *The WHIR query table* (b977f5fa, #370). 25 of the 56 shapes need one to three queries fewer,
+   from the fold error without the row-union factor (Annex B, after Jo 2026). The certificates
+   are regenerated with the row-union bound this repository proves, which still covers every
+   shape at 128 bits (`Parameters/Whir.lean`, `Whir/Params/Deployed.lean`).
+
+The end-to-end theorems keep their statements but for the verifier's query count, `13213`
+(`leanVmQueryBound`; it was `13300`), at the same `2^-128` per query and with no new hypothesis.
+The pure refactors (`verify_bus_balance`'s hoisted values, `table_sumcheck`'s `table_point`,
+`verify_whir`'s dead `running_target`, `blake2s_row_values`) change no Lean definition.
+
+Mechanical porting, recorded separately: the crate `lean_vm` is now `leanvm_core` (01bf5283)
+and the Rust verifiers moved into `crates/verifier`, so source citations re-point: every
+citation of leanVM in the sources and the living documentation now names `127510d1`, with its
+paths and lines checked against that tree, and says so where the cited code is gone. The dated
+review records under `docs/reviews/` keep their pin, as does every record of something produced
+or observed at `a386121f`. The Rust executor's error contract, its read pinning (a fix of
+status finding R28) and its fill-frame placement changed, which bear on the leanISA status
+findings and the Rust contract harness, not on a Lean definition. The proof fixtures of
+`tests/fixtures/verifier` and the scripts that export them are at the old pin and must be
+regenerated at the new one (`scripts/export-verifier-fixtures-rust.sh`, compared with the Rust
+verifier by `scripts/fuzz-verifier.py`); the mock trace of
+`tests/LeanerVMTests/Protocol/Verifier/Replay.lean` and the vectors of `Helpers.lean` and
+`Compiled.lean` were rerun against the new `verifier.py`.
 
 ## Lean 4.34 port review
 
