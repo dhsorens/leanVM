@@ -3194,6 +3194,9 @@ fn compile_guest(kbc: usize) -> Program {
 }
 
 #[cfg(test)]
+mod node_vectors;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use leanvm_core::cpu::verify;
