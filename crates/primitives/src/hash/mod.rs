@@ -170,6 +170,17 @@ impl Hasher {
         self
     }
 
+    /// The input so far as the prefix of many inputs, a full buffered block
+    /// compressed now so that each of them pays for it once.
+    pub fn prefix(mut self) -> Prefix {
+        if self.buf_len == BLOCK_LEN {
+            self.counter += BLOCK_LEN as u64;
+            compress(&mut self.h, &block_words(&self.buf), self.counter, false);
+            self.buf_len = 0;
+        }
+        Prefix(self)
+    }
+
     pub fn finalize(&self) -> [u8; OUT_LEN] {
         let mut h = self.h;
         let mut block = self.buf;
@@ -177,6 +188,19 @@ impl Hasher {
         let t = self.counter + self.buf_len as u64;
         compress(&mut h, &block_words(&block), t, true);
         state_bytes(&h)
+    }
+}
+
+/// A [`Hasher::prefix`], hashed with each tail.
+#[derive(Clone)]
+pub struct Prefix(Hasher);
+
+impl Prefix {
+    /// The hash of the prefix then `tail`, which must not be empty: the prefix's last
+    /// block was compressed as not the last.
+    pub fn hash(&self, tail: &[u8]) -> [u8; OUT_LEN] {
+        assert!(!tail.is_empty(), "a prefix is followed by input");
+        self.0.clone().update(tail).finalize()
     }
 }
 
@@ -332,6 +356,23 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn prefix_hashes_the_whole_input() {
+        let data = pattern(200);
+        for prefix in [0usize, 50, 64, 128] {
+            let mut hasher = Hasher::new();
+            hasher.update(&data[..prefix]);
+            let hasher = hasher.prefix();
+            for rest in [1usize, 16, 64, 70] {
+                assert_eq!(
+                    hasher.hash(&data[prefix..prefix + rest]),
+                    hash(&data[..prefix + rest]),
+                    "prefix {prefix}, rest {rest}"
+                );
             }
         }
     }

@@ -142,22 +142,22 @@ fn node_spec_vectors() {
         "fs_seed is the Lean fiatShamirIv"
     );
 
-    let xmss_signers: Vec<XmssClaimGroup> = [(3u32, 3usize), (0x8000_0001, 1)]
+    // One pubkey under two messages: a claim is the pair, so it is two claims.
+    let xmss_key = LeanXmssPublicKey {
+        merkle_root: rng.random(),
+        public_param: rng.random(),
+    };
+    let other_key = LeanXmssPublicKey {
+        merkle_root: rng.random(),
+        public_param: rng.random(),
+    };
+    let xmss_signers: Vec<LeanXmssClaim> = [xmss_key, xmss_key, other_key]
         .into_iter()
-        .map(|(leaf_index, keys)| XmssClaimGroup {
-            leaf_index,
-            message: rng.random(),
-            keys: (0..keys)
-                .map(|_| XmssPublicKey {
-                    merkle_root: rng.random(),
-                    public_param: rng.random(),
-                })
-                .collect(),
-        })
+        .map(|key| (key, rng.random()))
         .collect();
-    let sphincs_signers: Vec<SphincsClaim> = (0..2)
+    let sphincs_signers: Vec<LeanSphincsClaim> = (0..2)
         .map(|_| {
-            let key = SphincsPublicKey {
+            let key = LeanSphincsPublicKey {
                 root: rng.random(),
                 public_param: rng.random(),
             };
@@ -202,35 +202,24 @@ fn node_spec_vectors() {
         "Digest",
         digest(&cells_bytes(&seed)),
     );
-    let groups = xmss_signers.iter().map(|g| {
-        let keys = g
-            .keys
-            .iter()
-            .map(|k| format!("⟨{}, {}⟩", bits(&k.merkle_root), bits(&k.public_param)));
-        format!(
-            "⟨{}, {},\n    {}⟩",
-            bits(&(g.leaf_index as u128).to_le_bytes()),
-            bits(&g.message),
-            list(keys)
-        )
-    });
-    out.def("The XMSS groups.", "xmss", "List XmssGroup", list(groups));
-    let key_digests = xmss_signers
+    let claims = xmss_signers
         .iter()
-        .map(|g| digest(&cells_bytes(&key_list_digest(&g.keys))));
+        .map(|(k, m)| format!("(⟨{}, {}⟩, {})", bits(&k.merkle_root), bits(&k.public_param), bits(m)));
+    out.def("The leanXMSS claims.", "xmss", "List XmssClaim", list(claims));
+    let xmss_digest = cells_bytes(&claim_list_digest(xmss_signers.iter().map(lean_xmss_claim_cells)));
     out.def(
-        "`key_list_digest` of each group.",
-        "keyListDigests",
-        "List Digest",
-        list(key_digests),
+        "`claim_list_digest` of the leanXMSS claims.",
+        "xmssListDigest",
+        "Digest",
+        digest(&xmss_digest),
     );
     let claims = sphincs_signers
         .iter()
         .map(|(k, m)| format!("(⟨{}, {}⟩, {})", bits(&k.root), bits(&k.public_param), bits(m)));
-    out.def("The SPHINCS claims.", "sphincs", "List SphincsClaim", list(claims));
-    let sphincs_digest = cells_bytes(&sphincs_list_digest(&sphincs_signers));
+    out.def("The leanSPHINCS claims.", "sphincs", "List SphincsClaim", list(claims));
+    let sphincs_digest = cells_bytes(&claim_list_digest(sphincs_signers.iter().map(lean_sphincs_claim_cells)));
     out.def(
-        "`sphincs_list_digest`.",
+        "`claim_list_digest` of the leanSPHINCS claims.",
         "sphincsListDigest",
         "Digest",
         digest(&sphincs_digest),
