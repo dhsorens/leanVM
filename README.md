@@ -127,11 +127,11 @@ cargo leanvm recursion --n 2 --xmss-per-leaf 900 --log-inv-rate 2 --repeat 3
 
 ```
 recursion 2→1, over leaves of 900 leanXMSS signatures
-  cycles (VM steps)           : 598,600 = 2^19.191
-    details                   : MUL 2^17.876 (40.2%)  DEREF 2^17.089 (23.3%)  XOR 2^16.799 (19.0%)  SET 2^15.955 (10.6%)  JUMP 2^14.505 (3.9%)  BLAKE2S 2^14.127 (3.0%)  MEMORY 2^19.555  BYTECODE 2^17.965  TOTAL_COMMITTED 2^24.533
-  proof size                  : 200.5 KiB
-  proving time                : 0.293 s      peak memory 14.69 GiB
-  verifying                   : 6.2 ms
+  cycles (VM steps)           : 599,460 = 2^19.193
+    details                   : MUL 2^17.877 (40.2%)  DEREF 2^17.091 (23.3%)  XOR 2^16.807 (19.1%)  SET 2^15.956 (10.6%)  JUMP 2^14.494 (3.8%)  BLAKE2S 2^14.126 (3.0%)  MEMORY 2^19.559  BYTECODE 2^17.901  TOTAL_COMMITTED 2^24.533
+  proof size                  : 201.5 KiB
+  proving time                : 0.291 s ± 3.4%      peak memory 14.749 GiB
+  verifying                   : 6.271 ms
 ```
 
 ### hashing

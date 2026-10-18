@@ -1,9 +1,4 @@
 //! Proof-level properties of the VM: that its channels carry everything, and that a malformed input is an error rather than a panic.
-//!
-//! These live here rather than beside the prover because a provable program's tables
-//! must all be powers of two, which is the compiler's fill blocks' job
-//! (`lean_compiler::filler`). A hand-written bytecode program would have to fill itself,
-//! duplicating their knowledge of what a dummy row looks like.
 
 use lean_compiler::{compile, parse};
 use leanvm_core::cpu::{CpuError, Proof, ProveError, prove, verify};
@@ -67,4 +62,26 @@ fn an_unsupported_rate_is_an_error() {
         prove(&program, hashing_pi(), rate).err(),
         Some(ProveError::InvalidRate { log_inv_rate: rate })
     );
+}
+
+/// A BLAKE2s table of any height proves and verifies, below eight compressions
+/// included, where flock's batch has one partial lincheck stripe.
+#[test]
+fn any_number_of_compressions_proves() {
+    for n in [0usize, 1, 2, 3, 8] {
+        let mut source = String::from("def main():\n    h0 = StackBuf(2)\n    h0[0] = 5\n    h0[1] = 7\n");
+        for i in 0..n {
+            source += &format!("    h{} = StackBuf(2)\n    blake2s(h{i}, h{i}, h{})\n", i + 1, i + 1);
+        }
+        source += &format!("    p = 1\n    p[1] = h{n}[0]\n    p[GEN] = h{n}[1]\n    return\n");
+        let mut h = [F64(5), F64(0), F64(7), F64(0)];
+        for _ in 0..n {
+            h = compress(h, h);
+        }
+        let pi = [F192::new(h[0].0, h[1].0, 0), F192::new(h[2].0, h[3].0, 0)];
+        let program = compile(&parse(&source).expect("parse"));
+        let (proof, stats) = prove(&program, pi, leanvm_core::pcs::TEST_LOG_INV_RATE).unwrap();
+        assert_eq!(stats.rows[5], n, "{n} compressions");
+        verify(&program, &pi, &proof).unwrap_or_else(|e| panic!("{n} compressions: {e:?}"));
+    }
 }

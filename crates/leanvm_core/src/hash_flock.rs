@@ -177,6 +177,24 @@ pub fn digest(block: &Compression) -> [F64; 4] {
     std::array::from_fn(|k| pack_words([h[2 * k], h[2 * k + 1]]))
 }
 
+/// The eighteen VM-visible words of flock's padding instance, `blake2s(0^64)`, in
+/// [`SLOTS`] order: what the `BLAKE2s` table's value columns hold on a padding row,
+/// since those columns ARE the `q_flock` slots of the instance at that row.
+pub fn padding_words() -> [F64; 18] {
+    let block = flock::hash::padding_block();
+    let (cv, m, counter, f0, f1) = block;
+    let pair = |w: &[u32], k: usize| pack_words([w[2 * k], w[2 * k + 1]]);
+    let c = digest(&block);
+    let md = metadata(counter, f0, f1);
+    std::array::from_fn(|i| match i {
+        0..8 => pair(&m, i),
+        8..12 => c[i - 8],
+        12..16 => pair(&cv, i - 12),
+        16 => F64(md.c0),
+        _ => F64(md.c1),
+    })
+}
+
 /// Lift flock's packed witness (64 bits per word, bit `i` at position `i`) into
 /// the committed `F64` column: word for word, which is exactly `pcs::pack`'s
 /// LSB-first convention on the same bit string.
@@ -277,5 +295,15 @@ mod tests {
         }
         assert_eq!(slot(0, 18), pack_words([PINNED_T as u32, 0]));
         assert_eq!(slot(0, 19), pack_words([FINAL_FLAG, 0]));
+    }
+
+    /// The padding row every verifier evaluates the `BLAKE2s` table's bus forms at is
+    /// what `q_flock` holds at a padding instance.
+    #[test]
+    fn padding_words_are_the_padding_instance() {
+        let q_flock = build_qflock(&[]);
+        for (&s, w) in SLOTS.iter().zip(padding_words()) {
+            assert_eq!(q_flock[s], w, "slot {s}");
+        }
     }
 }

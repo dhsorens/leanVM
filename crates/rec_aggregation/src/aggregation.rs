@@ -46,6 +46,7 @@ use lean_da::{BLOB_SYMBOLS, CELL_SYMBOLS, CELLS_PER_ROW, CODEWORD_SYMBOLS};
 pub use lean_da::{DA_LOG_CELL, DA_LOG_K, DA_MAX_ROWS};
 use leanvm_core::cpu::{Program, ProveError, from_scalar, prove, public_input_bytes, scalar_proof, to_scalar};
 use leanvm_core::leaf::{Block, Coord};
+use leanvm_core::tables::N_TABLES;
 use leanvm_core::transcript::FiatShamirState;
 use primitives::field::{F64, F192, G, g_pow};
 use primitives::multilinear::mle_eval_par;
@@ -1447,8 +1448,8 @@ fn gen_verify(
 ) -> Result<(SubHints, DeferredSubproof), AggregationError> {
     let layout = leanvm_core::cpu::layout(
         &program.prog,
-        proof_stream[0].c0 as usize,
-        std::array::from_fn(|i| proof_stream[1 + i].c0 as usize),
+        summary.log_memory,
+        std::array::from_fn(|t| summary.table_rows[t] as usize),
         public_input,
     );
     let sides: [&[Block]; 3] = [&layout.push, &layout.pull, &layout.count];
@@ -1649,6 +1650,8 @@ fn gen_verify(
             "zc_tau_max",
             vec![F192::new(g_pow(*taus.iter().max().unwrap()).0, 0, 0)],
         ),
+        // Every table's log height, which the guest certifies against its row count.
+        ("table_logs", taus.iter().map(|&t| count(t)).collect()),
         ("col_sort_order", col_sort_order),
         ("sort_order", sort_order),
     ];
@@ -2234,6 +2237,8 @@ pub fn aggregate_with_stats(
 struct CoordinateDescriptor {
     kind: usize,
     constant: u128,
+    /// Its value on its table's padding row; zero for a framework coordinate.
+    padding: u64,
     fresh: usize,
     claim_slot: usize,
     terms: Range<usize>,
@@ -2288,12 +2293,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     // Only block and coordinate structure is used here; dummy instructions and
     // table sizes let us derive it before the guest's bytecode exists.
     let stand_in = vec![leanvm_core::cpu::Op::Xor { a: 0, b: 0, c: 0 }; 1 << kbc];
-    let layout = leanvm_core::cpu::layout(
-        &stand_in,
-        20,
-        [10; leanvm_core::tables::N_TABLES],
-        [F192::ZERO, F192::ZERO],
-    );
+    let layout = leanvm_core::cpu::layout(&stand_in, 20, [1 << 10; N_TABLES], [F192::ZERO, F192::ZERO]);
     let sides: [&[Block]; 3] = [&layout.push, &layout.pull, &layout.count];
     let lcrounds = flock::hash::K_LOG - 6;
 
@@ -2321,7 +2321,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
             block_coords.push(coordinates.len()..coordinates.len() + blk.coords.len());
             let owner = owner_pm[nblocks];
             nblocks += 1;
-            for c in &blk.coords {
+            for (i, c) in blk.coords.iter().enumerate() {
                 // One COORD_FRESH/COORD_CLAIM_SLOT entry PER coord (the guest
                 // indexes them by global coord offset); only a framework block's
                 // Col/GCol raises a claim.
@@ -2345,6 +2345,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
                 coordinates.push(CoordinateDescriptor {
                     kind: coord_kind(c),
                     constant: dsl_u128(coord_scale(c)),
+                    padding: blk.padding.get(i).map_or(0, |v| v.0),
                     fresh,
                     claim_slot: slot,
                     terms: start..terms.len(),
@@ -2423,7 +2424,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("MIN_LOG_MEM", leanvm_core::cpu::MIN_LOG_MEM.to_string());
     ps("INV_GEN", dsl_u128(F192::new(G.inv().0, 0, 0)).to_string());
     ps("MU_CAP", MU_CAP.to_string());
-    ps("NO_TABLE", layout.taus.len().to_string());
+    ps("NO_TABLE", N_TABLES.to_string());
     ps("GKR_ROUNDS_CAP", (MU_CAP * (MU_CAP + 1) / 2 + MU_CAP + 2).to_string());
     ps("GKR_POINTS_CAP", ((MU_CAP + 1) * MU_CAP).to_string());
     ps("SIDE_BLOCK_START", literals(&sblk));
@@ -2437,11 +2438,21 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
         bks[sblk[1]..sblk[2]],
         "push/pull kappa sources must match"
     );
+    // The guest also reuses push's padding term for pull, which needs the same padding
+    // tuples (a padding row's counts are zero, so a count's `g·` changes nothing).
+    assert!(
+        layout
+            .push
+            .iter()
+            .zip(&layout.pull)
+            .all(|(a, b)| a.padding == b.padding),
+        "push/pull padding tuples must match"
+    );
     ps("BLOCK_KAPPA_SRC", literals(bks.iter().map(|&(s, _)| s)));
     ps("BLOCK_KAPPA_ADJ", literals(bks.iter().map(|&(_, a)| a)));
     ps(
         "BLOCK_TABLE",
-        literals(bks.iter().map(|&(s, _)| if s >= 2 { s - 2 } else { layout.taus.len() })),
+        literals(bks.iter().map(|&(s, _)| if s >= 2 { s - 2 } else { N_TABLES })),
     );
     let mut block_side = Vec::new();
     for (s, blocks) in sides.iter().enumerate() {
@@ -2452,6 +2463,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
     ps("BLOCK_COORD_COUNT", literals(block_coords.iter().map(|r| r.len())));
     ps("COORD_TYPE", literals(coordinates.iter().map(|c| c.kind)));
     ps("COORD_CONST", literals(coordinates.iter().map(|c| c.constant)));
+    ps("COORD_PADDING", literals(coordinates.iter().map(|c| c.padding)));
     ps("COORD_FRESH", literals(coordinates.iter().map(|c| c.fresh)));
     ps("COORD_CLAIM_SLOT", literals(coordinates.iter().map(|c| c.claim_slot)));
     ps("COORD_TERM_OFF", literals(coordinates.iter().map(|c| c.terms.start)));
@@ -2472,7 +2484,7 @@ fn placeholder_map(kbc: usize) -> BTreeMap<String, String> {
         .collect();
     ps("INDEX_MLE_FACTORS", literals(&idxc));
     ps("N_CLAIMS", ncl.to_string());
-    ps("N_TABLES", layout.taus.len().to_string());
+    ps("N_TABLES", N_TABLES.to_string());
     // The table sumcheck's xi layout, from the native verifier's own numbers:
     // a disjoint range of identities per table, then THREE powers shared by every
     // table, one per bus side. Sharing is what lets the target be derived from the
@@ -4161,9 +4173,7 @@ def main():
     /// prover-chosen (write-once memory constrains only what something writes), so
     /// a compression whose metadata nothing writes would hand the prover that
     /// hash's byte counter and both flags, and every guest digest rests on those
-    /// being the ones the scheme specifies. The fill blocks are the deliberate
-    /// exception: their dummy reads a cell nothing writes, and nothing reads what
-    /// they compress (`leanvm_core::cpu::filler`).
+    /// being the ones the scheme specifies.
     ///
     /// This is a scan by pc, not a dominance check: a writer sitting in a branch
     /// nobody took would satisfy it. What makes naming such a cell impossible is
@@ -4189,11 +4199,6 @@ def main():
             Op::Jump { .. } => vec![],
         };
         let program = unified_guest();
-        let fill: Vec<std::ops::Range<usize>> = program
-            .filler
-            .iter()
-            .map(|b| b.pc as usize..(b.pc + b.size) as usize)
-            .collect();
         let mut unwritten = Vec::new();
         for (name, entry, len) in &program.fn_ranges {
             let range = *entry as usize..(*entry + *len) as usize;
@@ -4201,9 +4206,6 @@ def main():
                 let Op::Blake2s { md, .. } = program.prog[pc] else {
                     continue;
                 };
-                if fill.iter().any(|f| f.contains(&pc)) {
-                    continue;
-                }
                 if !program.prog[range.start..pc].iter().any(|op| written(op).contains(&md)) {
                     unwritten.push(format!("{name} pc {pc} md fp[{md}]"));
                 }

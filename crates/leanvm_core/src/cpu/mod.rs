@@ -23,7 +23,6 @@ use crate::witness;
 use primitives::field::{F64, F192, g_pow};
 
 mod execute;
-pub mod filler;
 pub mod hints;
 mod isa;
 pub mod layout;
@@ -101,20 +100,16 @@ fn digest_words(halves: &[F192; 2]) -> [F64; 4] {
     ]
 }
 
-/// Announce the prover's sizes (`log_mem`, every table's log height, the PCS rate)
-/// by writing them onto the scalar stream, which binds them into the state and lets
-/// the verifier reconstruct the layout. The public statement (program + input) is not
-/// announced here; it seeds the transcript at construction (see [`fs_seed`]).
-/// The boundary states are derived from the program, so they need no binding.
-///
-/// Log heights, not row counts: every table's rows are real rows, the fill blocks
-/// having run each count up to a power of two (`filler`), so a height is all there is
-/// to say. That also spares both sides a `log2_ceil`, which
-/// in-circuit is a bit decomposition against a hinted exponent rather than a shift.
-fn announce_public(ps: &mut ProverState, log_mem: usize, taus: [usize; tables::N_TABLES], log_inv_rate: usize) {
+/// Announce the prover's sizes (`log_mem`, every table's row count, the PCS rate) by
+/// writing them onto the scalar stream, which binds them into the state and lets the
+/// verifier reconstruct the layout, every table's height following from its rows
+/// ([`layout::table_logs`]). The public statement (program + input) is not announced
+/// here; it seeds the transcript at construction (see [`fs_seed`]). The boundary
+/// states are derived from the program, so they need no binding.
+fn announce_public(ps: &mut ProverState, log_mem: usize, rows: [usize; tables::N_TABLES], log_inv_rate: usize) {
     ps.add_scalar(F192::new(log_mem as u64, 0, 0));
-    for t in taus {
-        ps.add_scalar(F192::new(t as u64, 0, 0));
+    for n in rows {
+        ps.add_scalar(F192::new(n as u64, 0, 0));
     }
     ps.add_scalar(F192::new(log_inv_rate as u64, 0, 0));
 }
@@ -139,12 +134,6 @@ pub struct Program {
     /// hinted many times); each call pops the next entry, whose length must
     /// match its destination. Prover-side only; verification ignores them.
     pub(crate) witness: HashMap<String, Vec<Vec<F192>>>,
-    /// The fill blocks in the bytecode ([`filler`]): the cycles the interpreter
-    /// traverses, after the program halts, to bring every table's row count to a power
-    /// of two. Set by the compiler, prover-side only, and no program code reaches them,
-    /// so a missing or wrong entry costs the prover a run that does not fill rather than
-    /// anything a verifier would accept.
-    pub filler: Vec<filler::Block>,
     /// Function pc-ranges `(name, entry, len)` from the compiler, for the
     /// `DBG_PROF=1` per-function cycle profile ([`Program::execute`]). Purely
     /// diagnostic; empty for hand-assembled programs.
@@ -160,10 +149,9 @@ pub struct Program {
     /// A consumer can need a proof to be no smaller than some size even when the
     /// run is: the recursion guest holds one WHIR opening arm per committed size
     /// it was compiled for, and has none below the first. A run that falls short
-    /// buys the difference in fill rows ([`crate::cpu::filler`]) rather than in a
-    /// padded commitment, which keeps the committed size a function of the
-    /// announced table heights, so neither the verifier nor the guest needs a new
-    /// parameter to certify. Prover-side only.
+    /// buys the difference in unused memory cells rather than in a padded commitment,
+    /// which keeps the committed size a function of the announced sizes, so neither
+    /// the verifier nor the guest needs a new parameter to certify. Prover-side only.
     pub min_log_committed: usize,
 }
 
@@ -190,7 +178,6 @@ impl Program {
             hints,
             main_frame,
             witness: HashMap::new(),
-            filler: Vec::new(),
             fn_ranges: Vec::new(),
             src_lines: Vec::new(),
             min_log_committed: 0,
@@ -199,7 +186,7 @@ impl Program {
 
     /// Where `pc` came from: `"verify_sub (line 2204)"` when the compiler left a
     /// line for it, the function name alone otherwise (a hand-assembled program,
-    /// a fill block, or padding). This is what a run-time failure reports, so
+    /// or padding). This is what a run-time failure reports, so
     /// the reader gets a line instead of a pc to disassemble around.
     pub fn site_at(&self, pc: u32) -> String {
         match self.src_lines.get(pc as usize) {
@@ -418,18 +405,13 @@ fn blake2s_value_slot(col: usize) -> Option<usize> {
 }
 
 /// Run statistics returned alongside the proof: the cycle count (total executed
-/// instructions), the per-opcode counts
-/// `[XOR, MUL, SET, DEREF, JUMP, BLAKE2s]`, and the
-/// committed witness size, the sum of the column lengths, i.e. the real data
+/// instructions), the per-opcode row counts `[XOR, MUL, SET, DEREF, JUMP, BLAKE2s]`,
+/// and the committed witness size, the sum of the column lengths, i.e. the real data
 /// before the stacked witness is zero-padded to a power of two `2^m`.
 pub struct Stats {
-    pub cycles: usize, // including the padding to make every instruction count a power of two
-    /// Rows per table as proven: each an exact power of two, the fill blocks having
-    /// filled them (`filler`).
-    pub counts: [usize; tables::N_TABLES],
-    /// Rows per table before that filling, i.e. the work the program itself does.
-    /// What a cost measurement wants.
-    pub base_counts: [usize; tables::N_TABLES],
+    pub cycles: usize,
+    /// Rows per table the program executed.
+    pub rows: [usize; tables::N_TABLES],
     pub committed: usize,
     /// Data memory is `2^log_mem` cells (the padded write-once image).
     pub log_mem: usize,
@@ -441,14 +423,11 @@ pub struct Stats {
 }
 
 impl Stats {
-    /// Table names in `counts` order.
+    /// Table names in `rows` order.
     pub const TABLES: [&'static str; tables::N_TABLES] = ["XOR", "MUL", "SET", "DEREF", "JUMP", "BLAKE2S"];
 
     /// One line of per-table instruction counts and shares, largest first, followed by memory, bytecode and committed-witness sizes.
     ///
-    /// The counts are `base_counts`, the work the program itself does, since the proven
-    /// `counts` are all exact powers of two once the fill blocks have run (`filler`) and
-    /// so say nothing about the workload.
     /// `log_mem` holds the padded memory size the commitment covers. Zero-count
     /// tables are omitted.
     #[must_use]
@@ -456,10 +435,9 @@ impl Stats {
         if self.cycles == 0 {
             return "-".to_string();
         }
-        let base_cycles: usize = self.base_counts.iter().sum();
         let mut shares: Vec<(&str, usize)> = Self::TABLES
             .iter()
-            .zip(&self.base_counts)
+            .zip(&self.rows)
             .filter(|&(_, &c)| c > 0)
             .map(|(&name, &c)| (name, c))
             .collect();
@@ -467,7 +445,7 @@ impl Stats {
         let mut parts: Vec<String> = shares
             .iter()
             .map(|&(name, c)| {
-                let pct = 100.0 * c as f64 / base_cycles as f64;
+                let pct = 100.0 * c as f64 / self.cycles as f64;
                 format!("{name} 2^{} ({pct:.1}%)", primitives::pretty_f64((c as f64).log2()))
             })
             .collect();
@@ -504,7 +482,6 @@ pub fn prove(program: &Program, public_input: [F192; 2], log_inv_rate: usize) ->
             log_committed: w.layout.shape.mu,
         });
     }
-    let counts = w.layout.taus.map(|t| 1usize << t);
     let committed_size = w.committed_size();
     // The public statement (program digest + input) seeds the transcript, so
     // every challenge depends on the exact program and public input.
@@ -515,7 +492,7 @@ pub fn prove(program: &Program, public_input: [F192; 2], log_inv_rate: usize) ->
     let mut ps = ProverState::new(digest_words(&fs_seed(program)), digest_words(&public_input));
 
     // Announce the prover's sizes, then commit, before sampling any challenge.
-    announce_public(&mut ps, w.log_mem, w.layout.taus, log_inv_rate);
+    announce_public(&mut ps, w.log_mem, w.layout.rows, log_inv_rate);
     let committed = crate::stage!("Commit", || {
         pcs::commit(&mut ps, &w.q, w.layout.shape, log_inv_rate)
     });
@@ -587,8 +564,7 @@ pub fn prove(program: &Program, public_input: [F192; 2], log_inv_rate: usize) ->
         ps.into_proof(),
         Stats {
             cycles,
-            counts,
-            base_counts: exec.base_counts,
+            rows: w.layout.rows,
             committed: committed_size,
             log_mem: w.log_mem,
             mem_used: exec.mem_used,
@@ -806,9 +782,9 @@ mod tests {
     }
 
     /// The opcode's execution semantics: the digest of the two message pairs under
-    /// the public input's chaining value lands in the output pair. Proving a program
-    /// is exercised from `lean_compiler`'s tests, which can compile one whose tables
-    /// come out powers of two.
+    /// the public input's chaining value lands in the output pair. Hand-assembled,
+    /// the program is provable all the same: its `SET` and `BLAKE2s` tables are not
+    /// powers of two, and its other tables are padding rows only.
     #[test]
     fn blake2s_computes_the_compression() {
         let a: [F64; 4] = [
@@ -833,6 +809,9 @@ mod tests {
         let d = blake2s_compress(a, b, cv_lanes(pi[0], pi[1]), md());
         assert_eq!(exec.mem[6], cell(d[0], d[1]));
         assert_eq!(exec.mem[7], cell(d[2], d[3]));
+
+        let (proof, _) = prove(&program, pi, crate::pcs::TEST_LOG_INV_RATE).unwrap();
+        verify(&program, &pi, &proof).expect("a hand-assembled program verifies");
     }
 
     /// A self-hash `BLAKE2s(h, h)` (the hash-chain step) passes the *same* input

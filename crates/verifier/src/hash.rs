@@ -6,6 +6,12 @@ use crate::{VerifierError, require};
 pub const BLAKE2S_IV: [u32; 8] = [
     0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
 ];
+/// The IV with the parameter block of an unkeyed 32-byte hash (fanout and depth 1) folded into word 0.
+pub const PARAM_IV: [u32; 8] = {
+    let mut iv = BLAKE2S_IV;
+    iv[0] ^= 0x0101_0020;
+    iv
+};
 #[rustfmt::skip]
 pub const BLAKE2S_SIGMA: [[usize; 16]; 10] = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
@@ -69,8 +75,7 @@ fn compression(h: &mut [u32; 8], block: &[u8; 64], counter: u64, last: bool) {
 
 /// Standard 32-byte unkeyed BLAKE2s-256 hash.
 pub fn blake2s_hash(data: &[u8]) -> Digest {
-    let mut h = BLAKE2S_IV;
-    h[0] ^= 0x0101_0020;
+    let mut h = PARAM_IV;
     // The last block is the one compressed with the final flag, and is never empty unless the input is.
     let last_start = data.len().saturating_sub(1) / 64 * 64;
     for (index, block) in data[..last_start].as_chunks().0.iter().enumerate() {

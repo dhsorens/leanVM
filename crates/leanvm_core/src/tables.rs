@@ -195,9 +195,10 @@ pub struct FillCtx<'a> {
     pub(crate) mem: &'a [F192],
     pub(crate) gpow: &'a [F64],
     pub(crate) prog: &'a [Op],
-    /// This table's height `2^tau`, the length of every window in `out`, and its row
-    /// count too: every row is a row the program executed (`cpu::filler`).
-    pub(crate) rows: usize,
+    /// This table's height `2^tau`, the length of every window in `out`. Rows past the
+    /// trace's are padding rows, each holding `padding` ([`Table::padding`]).
+    height: usize,
+    padding: Vec<F64>,
     /// Which local columns [`Self::col`] / [`Self::cols`] have written. A fill that
     /// misses one would leave the stacked witness holding uninitialized slots, so
     /// [`fill_table`] checks the whole set was covered.
@@ -209,13 +210,21 @@ pub struct FillCtx<'a> {
 pub type ColumnOut<'a> = &'a mut [F64];
 
 impl<'a> FillCtx<'a> {
-    pub(crate) fn new(trace: &'a Trace, mem: &'a [F192], gpow: &'a [F64], prog: &'a [Op], rows: usize) -> Self {
+    pub(crate) fn new(
+        trace: &'a Trace,
+        mem: &'a [F192],
+        gpow: &'a [F64],
+        prog: &'a [Op],
+        height: usize,
+        padding: Vec<F64>,
+    ) -> Self {
         Self {
             trace,
             mem,
             gpow,
             prog,
-            rows,
+            height,
+            padding,
             written: std::sync::atomic::AtomicU64::new(0),
         }
     }
@@ -235,7 +244,7 @@ impl<'a> FillCtx<'a> {
         }
     }
 
-    /// Write local column `at`: `f` over the trace rows, then its pad value to the
+    /// Write local column `at`: `f` over the trace rows, then its padding value to the
     /// end of the window.
     fn col<R: Sync>(&self, out: &mut [ColumnOut], rows: &[R], at: usize, f: impl Fn(&R) -> F64 + Sync) {
         self.cols(out, rows, at, |r| [f(r)]);
@@ -264,18 +273,17 @@ impl<'a> FillCtx<'a> {
         at: usize,
         f: impl Fn(usize) -> [F64; N] + Sync,
     ) {
-        let n = self.rows;
+        let n = self.height;
         let dst: [parallel::SendPtr<F64>; N] = std::array::from_fn(|k| {
             assert_eq!(out[at + k].len(), n, "column {} has the wrong window length", at + k);
             self.written
                 .fetch_or(1 << (at + k), std::sync::atomic::Ordering::Relaxed);
             parallel::SendPtr(out[at + k].as_mut_ptr())
         });
-        // Every row is a row the program executed: a table's height is its row
-        // count (`cpu::filler`), so there is nothing to pad with.
-        assert_eq!(n_rows, n, "a table's rows must fill its cube");
+        assert!(n_rows <= n, "a table's rows must fit its cube");
+        let padding: [F64; N] = std::array::from_fn(|k| self.padding[at + k]);
         parallel::for_each(n, |i| {
-            let v = f(i);
+            let v = if i < n_rows { f(i) } else { padding };
             for (k, p) in dst.iter().enumerate() {
                 // SAFETY: distinct `i` write disjoint in-bounds slots of each of the
                 // `N` windows, each exactly once, and the dispatch blocks until
@@ -314,8 +322,15 @@ pub trait Table: Sync {
     /// Local indices of this table's read-count columns: the `g^{count}` values
     /// recording how many times each accessed cell (and the pc) was read. The
     /// framework treats them specially: each gets its own single-column "count"
-    /// bus block, and padding rows fill them with `1` (= g^0) instead of `0`.
+    /// bus block.
     fn count_columns(&self) -> &'static [usize];
+    /// The row a padding row holds, past the rows the program executed
+    /// (§sec:e2e-pad). Public, since every verifier evaluates the table's bus forms
+    /// at it, and it has to satisfy the table's constraint. All zeros by default,
+    /// which satisfies `JUMP`'s.
+    fn padding(&self) -> Vec<F64> {
+        vec![F64::ZERO; self.n_committed_columns()]
+    }
     /// How many identities [`eval_constraint`](Table::eval_constraint) folds.
     /// Sizes this table's slice of the batch's disjoint `xi`-range (§constraints).
     /// Defaults to none, which is every table but `JUMP`: a relation whose value
@@ -874,6 +889,15 @@ impl Table for Blake2sTable {
     fn count_columns(&self) -> &'static [usize] {
         use blake2st::*;
         &[R_M0, R_M1, R_M2, R_M3, R_CV0, R_CV1, R_OUT0, R_OUT1, R_MD, RBC]
+    }
+    /// Zeros, but for the value columns: those are `q_flock`'s slots, and a padding
+    /// row's instance is flock's padding instance.
+    fn padding(&self) -> Vec<F64> {
+        let mut row = vec![F64::ZERO; blake2st::N];
+        for (&c, w) in BLAKE2S_VALUE_COLS.iter().zip(crate::hash_flock::padding_words()) {
+            row[c] = w;
+        }
+        row
     }
     fn flushes(&self, f: &mut FlushBuilder) {
         use blake2st::*;

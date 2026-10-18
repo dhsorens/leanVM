@@ -159,22 +159,22 @@ where
         n_blocks <= n_total,
         "{n_blocks} blocks > 2^{n_blocks_log} = {n_total} slots"
     );
-    assert!(
-        n_total >= 8 && n_total.is_multiple_of(8),
-        "lincheck stripe layout requires n_total ≥ 8 and divisible by 8"
-    );
+    // A group is one stripe's eight blocks; below eight, one group holds them all and its stripe's other bits stay zero.
+    let group_blocks = n_total.min(8);
+    let n_groups = n_total / group_blocks;
 
     let total_words = n_total * u64_per_block;
     // SAFETY (x4): group `g` publishes chunk `g` of every table in full below, and the chunk counts match.
-    // The z/a/b chunks are 8 blocks of packed words, and the stripe chunk is the transpose's k bytes.
+    // The z/a/b chunks are a group's blocks of packed words, and the stripe chunk is the transpose's k bytes.
     let mut z = unsafe { primitives::uninit_vec::<u64>(total_words) };
     let mut a = unsafe { primitives::uninit_vec::<u64>(total_words) };
     let mut b = unsafe { primitives::uninit_vec::<u64>(total_words) };
-    let mut z_lincheck = unsafe { primitives::uninit_vec::<u8>((n_total / 8) * k) };
+    let mut z_lincheck = unsafe { primitives::uninit_vec::<u8>(n_groups * k) };
 
     // Four output tables at two widths, indexed by the same group: `z`/`a`/`b`
-    // take eight blocks' packed words, `z_lincheck` takes one byte stripe.
-    let group_words = 8 * u64_per_block;
+    // take the group's blocks' packed words, `z_lincheck` takes one byte stripe.
+    let group_words = group_blocks * u64_per_block;
+    let scratch_words = 8 * u64_per_block;
     let z_chunks = parallel::Chunks::new(&mut z, group_words);
     let a_chunks = parallel::Chunks::new(&mut a, group_words);
     let b_chunks = parallel::Chunks::new(&mut b, group_words);
@@ -189,13 +189,13 @@ where
     // Building in place instead would fetch every output line before writing it.
     parallel::map_reduce_with_state(
         z_chunks.count(),
-        || (vec![0u64; 3 * group_words], vec![0u8; k]),
+        || (vec![0u64; 3 * scratch_words], vec![0u8; k]),
         || (),
         |(scratch, stripe), (), g| {
             scratch.fill(0);
-            let (z_grp, rest) = scratch.split_at_mut(group_words);
-            let (a_grp, b_grp) = rest.split_at_mut(group_words);
-            for k_in in 0..8 {
+            let (z_grp, rest) = scratch.split_at_mut(scratch_words);
+            let (a_grp, b_grp) = rest.split_at_mut(scratch_words);
+            for k_in in 0..group_blocks {
                 let global_idx = 8 * g + k_in;
                 let init: &S = if global_idx < n_blocks {
                     &initial_states[global_idx]
@@ -226,9 +226,9 @@ where
             // all four tables stay borrowed for the whole dispatch.
             let stream = Stream::new();
             unsafe {
-                stream.copy(z_chunks.get(g), z_grp);
-                stream.copy(a_chunks.get(g), a_grp);
-                stream.copy(b_chunks.get(g), b_grp);
+                stream.copy(z_chunks.get(g), &z_grp[..group_words]);
+                stream.copy(a_chunks.get(g), &a_grp[..group_words]);
+                stream.copy(b_chunks.get(g), &b_grp[..group_words]);
                 stream.copy(stripe_chunks.get(g), stripe);
             }
         },

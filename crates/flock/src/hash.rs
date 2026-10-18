@@ -276,11 +276,10 @@ pub const R1CS_DIGEST: [u8; 32] = [
     0x71, 0xe3, 0xd5, 0x3c, 0x30, 0x61, 0x3d, 0xd0, 0x4d, 0x87, 0xc0, 0xb7, 0xea,
 ];
 
-/// Minimum `n_blocks_log` needed to prove `n_blocks` compressions, subject to
-/// the lincheck floor of `n_blocks_log ≥ 3` (`n_outer ≥ 8`).
+/// Minimum `n_blocks_log` needed to prove `n_blocks` compressions.
 pub fn min_n_blocks_log(n_blocks: usize) -> usize {
     assert!(n_blocks >= 1, "n_blocks must be ≥ 1");
-    n_blocks.max(8).next_power_of_two().trailing_zeros() as usize
+    n_blocks.next_power_of_two().trailing_zeros() as usize
 }
 
 // ---------------------------------------------------------------------------
@@ -865,8 +864,11 @@ impl Blake2sSetup {
         ps: &mut fiat_shamir::transcript::ProverState,
     ) -> SliceClaim {
         let _span = tracing::info_span!("Lincheck").entered();
-        let packed_len = 1usize << (self.m() - 6);
-        assert_eq!(z_packed_lincheck.len(), packed_len * 8, "wrong lincheck stripe length");
+        assert_eq!(
+            z_packed_lincheck.len(),
+            K << self.n_blocks_log.saturating_sub(3),
+            "wrong lincheck stripe length"
+        );
 
         let ZerocheckStage { x_ab } = stage;
         let lc_claim = crate::lincheck::prove_padded_capture_s_hat_v(
@@ -996,10 +998,12 @@ mod tests {
         }
     }
 
+    /// At every batch size, eight instances or fewer included, the witness
+    /// satisfies the R1CS and its lincheck stripes are its transpose.
     #[test]
     fn honest_witness_satisfies_r1cs() {
         let mut rng = Rng::new(0xB25A7157);
-        for n_blocks in [1usize, 5, 8] {
+        for n_blocks in [1usize, 2, 3, 5, 8, 9] {
             let blocks: Vec<Compression> = (0..n_blocks)
                 .map(|i| {
                     (
@@ -1011,9 +1015,19 @@ mod tests {
                     )
                 })
                 .collect();
-            let z = generate_witness(&blocks, 3);
-            assert_eq!(z.len(), K << 3);
-            assert!(satisfies(&z, 3), "witness for {n_blocks} compressions fails R1CS");
+            let n_blocks_log = min_n_blocks_log(n_blocks);
+            let (z_packed, _, _, z_lincheck) = generate_witness_with_ab_packed_and_lincheck(&blocks, n_blocks_log);
+            let z = unpack_bits(&z_packed, K << n_blocks_log);
+            assert!(
+                satisfies(&z, n_blocks_log),
+                "witness for {n_blocks} compressions fails R1CS"
+            );
+            let m = K_LOG + n_blocks_log;
+            assert_eq!(
+                z_lincheck,
+                crate::lincheck::pack_z_lincheck(&z, m, K_LOG),
+                "{n_blocks} compressions"
+            );
         }
     }
 

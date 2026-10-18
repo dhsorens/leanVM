@@ -71,7 +71,8 @@
 //!   Equivalently: `z_packed` is organized in `n_outer/8` *stripes* of `k`
 //!   contiguous bytes each. Stripe `byte_idx` covers all `i_inner ∈ {0,..,k}`
 //!   for the same outer batch `i_outer ∈ {8·byte_idx, …, 8·byte_idx + 7}`.
-//!   Each byte holds 8 outer bits for one i_inner.
+//!   Each byte holds 8 outer bits for one i_inner. Below 8 instances there is
+//!   one stripe, whose bits `r ≥ n_outer` are zero.
 //!
 //!   In bit-position terms, the bit-index decomposes as:
 //!   ```text
@@ -792,58 +793,15 @@ fn build_sum_table(eq8: &[F192], table: &mut [F192]) {
 #[cfg(test)]
 pub fn pack_z_lincheck(z_logical: &[bool], m: usize, k_log: usize) -> Vec<u8> {
     let k = 1usize << k_log;
-    let n_total = 1usize << m;
-    assert_eq!(z_logical.len(), n_total);
-    let n_outer = n_total / k;
-    assert_eq!(n_outer % 8, 0, "need n_outer ≥ 8 for byte stripes");
-    let n_stripes = n_outer / 8;
-
-    let mut z_packed = Box::new_uninit_slice(n_total / 8).into_vec();
-    for byte_idx in 0..n_stripes {
-        for i_inner in 0..k {
-            let mut byte = 0u8;
-            for r in 0..8 {
-                let i_outer = 8 * byte_idx + r;
-                let logical_idx = i_inner + i_outer * k;
-                if z_logical[logical_idx] {
-                    byte |= 1u8 << r;
-                }
-            }
-            z_packed[byte_idx * k + i_inner].write(byte);
+    assert_eq!(z_logical.len(), 1usize << m);
+    let n_outer = 1usize << (m - k_log);
+    let mut z_packed = vec![0u8; n_outer.div_ceil(8) * k];
+    for (i_outer, block) in z_logical.chunks(k).enumerate() {
+        for (i_inner, &bit) in block.iter().enumerate() {
+            z_packed[(i_outer / 8) * k + i_inner] |= (bit as u8) << (i_outer % 8);
         }
     }
-    // SAFETY: the nested loops write every output byte exactly once.
-    unsafe { z_packed.into_boxed_slice().assume_init() }.into_vec()
-}
-
-/// Same output as `pack_z_lincheck`, but reads bits from the bit-packed `u64`
-/// witness: logical bit `i` is bit `i % 64` of `z_packed_words[i / 64]`.
-#[cfg(test)]
-pub fn pack_z_lincheck_from_packed(z_packed_words: &[u64], m: usize, k_log: usize) -> Vec<u8> {
-    let k = 1usize << k_log;
-    let n_total = 1usize << m;
-    assert_eq!(z_packed_words.len(), n_total / 64);
-    let n_outer = n_total / k;
-    assert_eq!(n_outer % 8, 0, "need n_outer ≥ 8 for byte stripes");
-
-    let mut z_packed = Box::new_uninit_slice(n_total / 8).into_vec();
-    // Each stripe (byte_idx) writes a disjoint k-byte chunk, so process them in
-    // parallel. Inside one stripe, k independent output bytes.
-    parallel::chunks_mut(&mut z_packed, k, |byte_idx, chunk| {
-        for i_inner in 0..k {
-            let mut byte = 0u8;
-            for r in 0..8 {
-                let i_outer = 8 * byte_idx + r;
-                let logical_idx = i_inner + i_outer * k;
-                if (z_packed_words[logical_idx / 64] >> (logical_idx % 64)) & 1 == 1 {
-                    byte |= 1u8 << r;
-                }
-            }
-            chunk[i_inner].write(byte);
-        }
-    });
-    // SAFETY: every parallel chunk writes each of its output bytes exactly once.
-    unsafe { z_packed.into_boxed_slice().assume_init() }.into_vec()
+    z_packed
 }
 
 /// Build the **quirky eq table** for a claim point on the inner half:
@@ -1082,9 +1040,12 @@ pub fn prove_padded_capture_s_hat_v(
     comb_vec[circuit.const_pin_col()] += beta;
 
     // 5. Partial fold of z at the shared outer half (length-k F192 vector).
+    //    Below 8 instances the one stripe is partial: its absent instances'
+    //    bits are zero, and so are their weights.
     let mut z_vec = tracing::info_span!("Partial fold").in_scope(|| {
-        let eq_x_outer = build_eq(&x_ab.x_outer);
-        partial_fold_packed_z_best(z_packed, m, k_log, useful_bits, &eq_x_outer)
+        let mut eq_x_outer = build_eq(&x_ab.x_outer);
+        eq_x_outer.resize(eq_x_outer.len().max(8), F192::ZERO);
+        partial_fold_packed_z_best(z_packed, k_log + n_log.max(3), k_log, useful_bits, &eq_x_outer)
     });
 
     let span = tracing::info_span!("Sumcheck").entered();
@@ -1459,10 +1420,14 @@ mod tests {
     ///   k_skip = 0 (no skip)     : reduces to multilinear lincheck
     ///   k_skip = k_log (max)     : only univariate inner
     ///   k_skip < k_log (typical) : protocol-realistic case
+    /// and below 8 instances, where the one stripe is partial.
     #[test]
     fn claimed_slices_are_true_evaluations() {
         for &(m, k_log, k_skip) in &[
-            (10usize, 4, 0),
+            (8usize, 8, 6),
+            (9, 8, 6),
+            (6, 4, 2),
+            (10, 4, 0),
             (10, 4, 2),
             (10, 4, 4),
             (12, 5, 3),

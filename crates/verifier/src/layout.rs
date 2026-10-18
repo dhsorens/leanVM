@@ -2,7 +2,8 @@
 
 use crate::bytecode::Bytecode;
 use crate::field::{E, GEN, ONE, ZERO};
-use crate::multilinear::{Placement, log2_strict, stack_offsets};
+use crate::hash::{PARAM_IV, blake2s_hash};
+use crate::multilinear::{Placement, log2_ceil, log2_strict, stack_offsets};
 use crate::{VerifierError, require};
 use std::collections::BTreeMap;
 use std::ops::Add;
@@ -53,7 +54,8 @@ impl Add for Form {
 /// One block of a bus side, always owned by a table. The three blocks no table owns are the framework, on `BusLayout`.
 #[derive(Clone, Debug)]
 pub struct BusBlock {
-    pub log_rows: usize,        // the owner's height: this block flushes 2^log_rows rows
+    pub log_rows: usize,        // the owner's height: the block spans 2^log_rows rows
+    pub rows: u64,              // ...of which the first `rows` flush, the rest being padding rows, whose leaves are 1
     pub coordinates: Vec<Form>, // the tuple flushed, over the owner's OWN local column indices; stays symbolic until its table sumcheck
     pub owner: usize,           // whose block it is, by opcode
 }
@@ -176,6 +178,7 @@ impl Flushes {
 pub struct Table {
     pub opcode: usize, // also its index in the table list, so g^opcode is its bytecode tag
     pub columns: &'static [&'static str],
+    pub padding: Vec<E>, // the row a padding row holds
     pub flushes: Flushes,
     pub constraints: fn(&[E]) -> Vec<E>,
 }
@@ -335,10 +338,35 @@ const BLAKE2S_COLUMNS: &[&str] = &[
     "cnt_m0", "cnt_m1", "cnt_m2", "cnt_m3", "cnt_cv0", "cnt_cv1", "cnt_out0", "cnt_out1", "cnt_md", "cnt_bc",
 ];
 
+/// Flock's padding instance, blake2s(0^64), in BLAKE2S_SLOTS order: the parameterized IV, the digest, then a zero
+/// message and the one-block final metadata (counter 64, f0 set).
+fn padding_instance() -> [u64; 20] {
+    let digest = blake2s_hash(&[0; 64]).words();
+    std::array::from_fn(|slot| match slot {
+        0..4 => PARAM_IV[2 * slot] as u64 | (PARAM_IV[2 * slot + 1] as u64) << 32,
+        4..8 => digest[slot - 4],
+        18 => 64,
+        19 => 0xFFFF_FFFF,
+        _ => 0,
+    })
+}
+
 pub fn tables() -> Vec<Table> {
-    let table = |opcode, columns, flushes, constraints| Table {
+    // A padding row is zero, but for BLAKE2s's value limbs: those are q_flock's slots, so they hold its padding instance.
+    let instance = padding_instance();
+    let table = |opcode, columns: &'static [&'static str], flushes, constraints| Table {
         opcode,
         columns,
+        padding: columns
+            .iter()
+            .map(|&name| {
+                let slot = BLAKE2S_SLOTS
+                    .iter()
+                    .position(|&s| s == Some(name))
+                    .filter(|_| opcode == OP_BLAKE2S);
+                E::new(slot.map_or(0, |s| instance[s]), 0, 0)
+            })
+            .collect(),
         flushes,
         constraints,
     };
@@ -381,32 +409,28 @@ pub const GLOBAL_COLUMN_BASES: [usize; N_TABLES] = {
 pub fn build_layout<'a>(
     bytecode: &'a Bytecode,
     log_memory: u64,
-    table_log_heights: &[u64],
+    table_rows: &[u64],
 ) -> Result<Layout<'a>, VerifierError> {
     let log_bytecode = log2_strict(bytecode.len() as u64)?;
     require(
         (16..=32).contains(&log_memory)
-            && table_log_heights
-                .iter()
-                .all(|&log_height| log_height <= MAX_TABLE_LOG as u64)
-            && table_log_heights[OP_BLAKE2S] >= 3
+            && table_rows.iter().all(|&rows| rows <= 1 << MAX_TABLE_LOG)
             && (BUS_BITS..=32 + BUS_BITS).contains(&log_bytecode),
         VerifierError::AnnouncedTableSizes,
     )?;
     let log_bytecode = log_bytecode - BUS_BITS;
     let log_memory = log_memory as usize;
-    let table_log_heights: Vec<usize> = table_log_heights
-        .iter()
-        .map(|&log_height| log_height as usize)
-        .collect();
+    // A table's height is the least power of two holding its rows.
+    let table_log_heights: Vec<usize> = table_rows.iter().map(|&rows| log2_ceil(rows)).collect();
 
     let tables = tables();
     let mut push = Vec::new();
     let mut pull = Vec::new();
     let mut count = Vec::new();
-    for (table, &height) in tables.iter().zip(&table_log_heights) {
+    for ((table, &height), &rows) in tables.iter().zip(&table_log_heights).zip(table_rows) {
         let block = |coordinates: &Vec<Form>| BusBlock {
             log_rows: height,
+            rows,
             coordinates: coordinates.clone(),
             owner: table.opcode,
         };

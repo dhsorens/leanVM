@@ -25,7 +25,7 @@ We also enforce the position $512$ of every block to be $1$ (preventing the all-
 z(0,0,0,0,0,0,0,0,0,1,0,0,0,0,\,t)=1\qquad\text{for every }t\in\cube{\kbatch}
 \end{equation}
 
-This second condition is enforced by lincheck (\S\ref{flock:lincheck}), and position $512=\jconst$ is where every circuit below puts its constant wire. Since it is asked of every block, the prover pads the batch out to $2^{\kbatch}$ with copies of a genuine witness block rather than with zeros.
+This second condition is enforced by lincheck (\S\ref{flock:lincheck}), and position $512=\jconst$ is where every circuit below puts its constant wire. Since it is asked of every block, the prover pads the batch out to $2^{\kbatch}$ with copies of a genuine witness block (the hash of $64$ zero bytes) rather than with zeros.
 
 Set $\kskip=6$ and $\nflock=\kbool-\kskip$. The prover commits to $z$ by packing its low $\kskip$ coordinates, $64$ bits, to a $\K$-element, following Ring-Switching (Annex~\ref{annex:rs}). The resulting multilinear $\qflock:\cube{\nflock}\to\K$ is committed as one region of the stack (\S\ref{sec:stacking}).
 
