@@ -1,0 +1,363 @@
+-- [rec_aggregation]: external functions.
+-- Seeded by hax from Extraction/FunsExternal_Template.lean: fill the holes.
+-- hax never modifies this file; after re-extraction, compare it against the
+-- regenerated template to see what changed.
+module
+public import Aeneas
+public import CoreModels
+public import RecAggregation.Extraction.Types
+@[expose] public section
+open CoreModels Aeneas
+open Aeneas.Std hiding namespace core alloc
+open RustM ControlFlow Error
+open Std.Do
+set_option linter.dupNamespace false
+set_option linter.hashCommand false
+set_option linter.unusedVariables false
+set_option linter.style.whitespace false
+set_option linter.style.setOption false
+set_option linter.style.longLine false
+set_option linter.internalConstructors false
+
+/- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
+set_option maxHeartbeats 1000000
+
+/- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
+set_option maxRecDepth 2048
+open rec_aggregation
+
+/-- [rec_aggregation::aggregation::f192_literal]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 168:0-170:1 -/
+axiom aggregation.f192_literal
+  : primitives.field.gf2_64x3.F192 → RustM alloc.string.String
+
+/-- [rec_aggregation::aggregation::{impl core::fmt::Debug for rec_aggregation::aggregation::DeferredClaim}::fmt]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 260:16-260:21
+    Visibility: public -/
+axiom aggregation.DeferredClaim.Insts.CoreFmtDebug.fmt
+  :
+  aggregation.DeferredClaim → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [rec_aggregation::aggregation::stacked_bytecode]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 734:0-737:1 -/
+axiom aggregation.stacked_bytecode : RustM (Slice primitives.field.gf2_64.F64)
+
+/-- [rec_aggregation::aggregation::{impl core::fmt::Debug for rec_aggregation::aggregation::AggregateVerifyError}::fmt]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 408:16-408:21
+    Visibility: public -/
+axiom aggregation.AggregateVerifyError.Insts.CoreFmtDebug.fmt
+  :
+  aggregation.AggregateVerifyError → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::DeferredClaim}::recompute]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 274:4-279:5 -/
+axiom aggregation.DeferredClaim.recompute
+  :
+  alloc.vec.Vec primitives.field.gf2_64x3.F192 → RustM (core.result.Result
+    aggregation.DeferredClaim aggregation.AggregateVerifyError)
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::DeferredClaim}::recompute_scalar]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 282:4-292:5 -/
+axiom aggregation.DeferredClaim.recompute_scalar
+  :
+  alloc.vec.Vec primitives.field.gf2_64x3.F192 → RustM (core.result.Result
+    aggregation.DeferredClaim aggregation.AggregateVerifyError)
+
+/-- [rec_aggregation::aggregation::unified_guest]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 2665:0-2679:1
+    Visibility: public -/
+axiom aggregation.unified_guest : RustM leanvm_core.cpu.Program
+
+/-- [rec_aggregation::aggregation::{impl core::fmt::Debug for rec_aggregation::aggregation::EthereumProof}::fmt]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 393:16-393:21
+    Visibility: public -/
+axiom aggregation.EthereumProof.Insts.CoreFmtDebug.fmt
+  :
+  aggregation.EthereumProof → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [rec_aggregation::aggregation::{impl core::fmt::Debug for rec_aggregation::aggregation::AggregationError}::fmt]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 422:16-422:21
+    Visibility: public -/
+axiom aggregation.AggregationError.Insts.CoreFmtDebug.fmt
+  :
+  aggregation.AggregationError → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [rec_aggregation::aggregation::{impl core::fmt::Display for rec_aggregation::aggregation::AggregateVerifyError}::fmt]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 454:4-462:5
+    Visibility: public -/
+axiom aggregation.AggregateVerifyError.Insts.CoreFmtDisplay.fmt
+  :
+  aggregation.AggregateVerifyError → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [rec_aggregation::aggregation::{impl core::fmt::Display for rec_aggregation::aggregation::AggregationError}::fmt]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 468:4-500:5
+    Visibility: public -/
+axiom aggregation.AggregationError.Insts.CoreFmtDisplay.fmt
+  :
+  aggregation.AggregationError → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [rec_aggregation::aggregation::{impl core::fmt::Debug for rec_aggregation::aggregation::SignatureClaims}::fmt]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 517:16-517:21
+    Visibility: public -/
+axiom aggregation.SignatureClaims.Insts.CoreFmtDebug.fmt
+  :
+  aggregation.SignatureClaims → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [rec_aggregation::aggregation::check_signer_set]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 563:0-574:1 -/
+axiom aggregation.check_signer_set
+  :
+  Slice (signatures.lean_xmss.scheme.LeanXmssPublicKey × (Array Std.U8
+    32#usize)) → Slice (signatures.lean_sphincs.scheme.LeanSphincsPublicKey
+    × (Array Std.U8 32#usize)) → RustM (core.result.Result Unit
+    aggregation.AggregateVerifyError)
+
+/-- [rec_aggregation::aggregation::check_da_roots]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 576:0-581:1 -/
+axiom aggregation.check_da_roots
+  :
+  Slice (Array Std.U8 32#usize) → RustM (core.result.Result Unit
+    aggregation.AggregateVerifyError)
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::EthereumProof}::to_bytes]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 621:4-625:5
+    Visibility: public -/
+axiom aggregation.EthereumProof.to_bytes
+  : aggregation.EthereumProof → RustM (alloc.vec.Vec Std.U8)
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::EthereumProof}::from_bytes]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 629:4-634:5
+    Visibility: public -/
+axiom aggregation.EthereumProof.from_bytes
+  :
+  Slice Std.U8 → RustM (core.result.Result aggregation.EthereumProof
+    aggregation.AggregateVerifyError)
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::EthereumProof}::to_bytes_without_pubkeys]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 638:4-640:5
+    Visibility: public -/
+axiom aggregation.EthereumProof.to_bytes_without_pubkeys
+  : aggregation.EthereumProof → RustM (alloc.vec.Vec Std.U8)
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::EthereumProof}::from_bytes_without_pubkeys]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 648:4-655:5
+    Visibility: public -/
+axiom aggregation.EthereumProof.from_bytes_without_pubkeys
+  :
+  Slice Std.U8 → aggregation.SignatureClaims → RustM (core.result.Result
+    aggregation.EthereumProof aggregation.AggregateVerifyError)
+
+/-- [rec_aggregation::aggregation::scalar_bytecode]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 723:0-729:1 -/
+axiom aggregation.scalar_bytecode : RustM verifier.bytecode.Bytecode
+
+/-- [rec_aggregation::aggregation::bytecode_window]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 745:0-758:1 -/
+axiom aggregation.bytecode_window : RustM (core.ops.range.Range Std.Usize)
+
+/-- [rec_aggregation::aggregation::round_msg_base]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 762:0-789:1 -/
+axiom aggregation.round_msg_base
+  :
+  Slice primitives.field.gf2_64.F64 → Slice primitives.field.gf2_64x3.F192
+    → RustM (primitives.field.gf2_64x3.F192 ×
+    primitives.field.gf2_64x3.F192)
+
+/-- [rec_aggregation::aggregation::fold_lsb_base]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 792:0-797:1 -/
+axiom aggregation.fold_lsb_base
+  :
+  Slice primitives.field.gf2_64.F64 → primitives.field.gf2_64x3.F192 →
+    RustM (alloc.vec.Vec primitives.field.gf2_64x3.F192)
+
+/-- [rec_aggregation::aggregation::slot_weights]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 832:0-850:1 -/
+axiom aggregation.slot_weights
+  :
+  Slice (alloc.vec.Vec primitives.field.gf2_64x3.F192) → Slice
+    primitives.field.gf2_64x3.F192 → Slice primitives.field.gf2_64x3.F192 →
+    Std.Usize → RustM (alloc.vec.Vec primitives.field.gf2_64x3.F192)
+
+/-- [rec_aggregation::aggregation::fold_lsb]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 831:0-846:1 -/
+axiom aggregation.fold_lsb
+  :
+  alloc.vec.Vec primitives.field.gf2_64x3.F192 →
+    primitives.field.gf2_64x3.F192 → RustM (alloc.vec.Vec
+    primitives.field.gf2_64x3.F192)
+
+/-- [rec_aggregation::aggregation::round_msg]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 850:0-874:1 -/
+axiom aggregation.round_msg
+  :
+  Slice primitives.field.gf2_64x3.F192 → Slice primitives.field.gf2_64x3.F192
+    → RustM (primitives.field.gf2_64x3.F192 ×
+    primitives.field.gf2_64x3.F192)
+
+/-- [rec_aggregation::aggregation::weighted_eq_table]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 904:0-931:1 -/
+axiom aggregation.weighted_eq_table
+  :
+  Slice (alloc.vec.Vec primitives.field.gf2_64x3.F192) → Slice
+    primitives.field.gf2_64x3.F192 → Std.Usize → core.ops.range.Range
+    Std.Usize → RustM (alloc.vec.Vec primitives.field.gf2_64x3.F192)
+
+/-- [rec_aggregation::aggregation::aggregate_deferred_claims]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 939:0-1041:1 -/
+axiom aggregation.aggregate_deferred_claims
+  :
+  Slice aggregation.DeferredSubproof → Slice aggregation.DeferredClaim →
+    RustM ((alloc.vec.Vec (Str × (alloc.vec.Vec
+    primitives.field.gf2_64x3.F192))) × aggregation.DeferredClaim)
+
+/-- [rec_aggregation::aggregation::whir_shape]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1081:0-1092:1 -/
+axiom aggregation.whir_shape
+  : Std.Usize → Std.Usize → RustM aggregation.WhirShape
+
+/-- [rec_aggregation::aggregation::coord_kind]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1086:0-1096:1 -/
+axiom aggregation.coord_kind : leanvm_core.leaf.Coord → RustM Std.Usize
+
+/-- [rec_aggregation::aggregation::coord_scale]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1100:0-1106:1 -/
+axiom aggregation.coord_scale
+  : leanvm_core.leaf.Coord → RustM primitives.field.gf2_64x3.F192
+
+/-- [rec_aggregation::aggregation::push_coord_terms]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1111:0-1130:1 -/
+axiom aggregation.push_coord_terms
+  :
+  leanvm_core.leaf.Coord → Std.Usize → alloc.vec.Vec aggregation.Term →
+    RustM (alloc.vec.Vec aggregation.Term)
+
+/-- [rec_aggregation::aggregation::walk_claims]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1136:0-1179:1 -/
+axiom aggregation.walk_claims
+  {T0 : Type _} (coreopsfunctionFnMutT0TupleClaimSiteTupleInst :
+  core.ops.function.FnMut T0 aggregation.ClaimSite Unit) :
+  leanvm_core.cpu.layout.Layout → Std.Usize → T0 → RustM Unit
+
+/-- [rec_aggregation::aggregation::gen_verify]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1186:0-1341:1 -/
+axiom aggregation.gen_verify
+  :
+  leanvm_core.cpu.Program → Array primitives.field.gf2_64x3.F192 2#usize →
+    Slice primitives.field.gf2_64x3.F192 → verifier.Summary → RustM
+    (core.result.Result ((alloc.vec.Vec (Str × (alloc.vec.Vec
+    primitives.field.gf2_64x3.F192))) × aggregation.DeferredSubproof)
+    aggregation.AggregationError)
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::Hints}::push]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1376:4-1381:5 -/
+axiom aggregation.Hints.push
+  :
+  aggregation.Hints → Str → alloc.vec.Vec primitives.field.gf2_64x3.F192
+    → RustM aggregation.Hints
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::Region<K>}::plan]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1438:4-1479:5 -/
+axiom aggregation.Region.plan
+  {K : Type _} {T2 : Type _} (corecmpOrdInst : core.cmp.Ord K)
+  (corecloneCloneInst : core.clone.Clone K)
+  (coreitertraitsiteratorIteratorT2SharedASliceInst :
+  core.iter.traits.iterator.Iterator T2 (Slice K)) (corecloneCloneInst1 :
+  core.clone.Clone T2) :
+  Slice K → T2 → core.option.Option (Slice K) → RustM (core.result.Result
+    (aggregation.Region K) aggregation.AggregationError)
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::Region<K>}::n_slots]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1505:4-1507:5 -/
+axiom aggregation.Region.n_slots
+  {K : Type _} (corecmpOrdInst : core.cmp.Ord K) (corecloneCloneInst :
+  core.clone.Clone K) :
+  aggregation.Region K → RustM Std.Usize
+
+/-- [rec_aggregation::aggregation::{rec_aggregation::aggregation::Coverage}::n_total]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1511:4-1513:5 -/
+axiom aggregation.Coverage.n_total : aggregation.Coverage → RustM Std.Usize
+
+/-- [rec_aggregation::aggregation::plan_coverage]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1507:0-1529:1 -/
+axiom aggregation.plan_coverage
+  :
+  Slice (signatures.lean_xmss.scheme.LeanXmssPublicKey × (Array Std.U8
+    32#usize)) → Slice (signatures.lean_sphincs.scheme.LeanSphincsPublicKey
+    × (Array Std.U8 32#usize)) → Slice aggregation.EthereumProof →
+    core.option.Option aggregation.SignatureClaims → RustM
+    (core.result.Result aggregation.Coverage aggregation.AggregationError)
+
+/-- [rec_aggregation::aggregation::digit_hints]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1558:0-1566:1 -/
+axiom aggregation.digit_hints
+  :
+  Slice Std.U8 → RustM (core.iter.adapters.map.Map (core.slice.iter.Chunks
+    Std.U8) aggregation.digit_hints.closure)
+
+/-- [rec_aggregation::aggregation::digit_hints::{impl core::ops::function::FnMut<(&'_0 [u8],), alloc::vec::Vec<primitives::field::gf2_64x3::F192>> for rec_aggregation::aggregation::digit_hints::{closure}}::call_mut]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1559:37-1565:5 -/
+axiom
+  aggregation.digit_hints.closure.Insts.CoreOpsFunctionFnMutTupleShared0SliceU8VecF192.call_mut
+  :
+  aggregation.digit_hints.closure → Slice Std.U8 → RustM ((alloc.vec.Vec
+    primitives.field.gf2_64x3.F192) × aggregation.digit_hints.closure)
+
+/-- [rec_aggregation::aggregation::lean_xmss_hints]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1547:0-1570:1 -/
+axiom aggregation.lean_xmss_hints
+  :
+  signatures.lean_xmss.scheme.LeanXmssPublicKey →
+    signatures.lean_xmss.scheme.LeanXmssSignature → Array Std.U8 32#usize →
+    RustM (core.result.Result (alloc.vec.Vec (Str × (alloc.vec.Vec
+    primitives.field.gf2_64x3.F192))) aggregation.AggregationError)
+
+/-- [rec_aggregation::aggregation::push_lean_sphincs_hints]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1581:0-1641:1 -/
+axiom aggregation.push_lean_sphincs_hints
+  :
+  aggregation.Hints → (signatures.lean_sphincs.scheme.LeanSphincsPublicKey ×
+    (Array Std.U8 32#usize)) →
+    signatures.lean_sphincs.scheme.LeanSphincsSignature → RustM
+    ((core.result.Result Unit aggregation.AggregationError) ×
+    aggregation.Hints)
+
+/-- [rec_aggregation::aggregation::aggregate_with_stats]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1675:0-1942:1
+    Visibility: public -/
+axiom aggregation.aggregate_with_stats
+  :
+  Slice aggregation.EthereumProof → alloc.vec.Vec
+    (signatures.lean_xmss.scheme.LeanXmssPublicKey × (Array Std.U8 32#usize)
+    × signatures.lean_xmss.scheme.LeanXmssSignature) → alloc.vec.Vec
+    (signatures.lean_sphincs.scheme.LeanSphincsPublicKey × (Array Std.U8
+    32#usize) × signatures.lean_sphincs.scheme.LeanSphincsSignature) → Slice
+    Std.U64 → core.option.Option aggregation.ClaimSelection → Std.Usize →
+    RustM (core.result.Result (aggregation.EthereumProof ×
+    leanvm_core.cpu.Stats) aggregation.AggregationError)
+
+/-- [rec_aggregation::aggregation::literals]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 2000:0-2005:1 -/
+axiom aggregation.literals
+  {T0 : Type _} {T1 : Type _} {Clause1_IntoIter : Type _} (corefmtDisplayInst :
+  core.fmt.Display T0) (coreitertraitscollectIntoIteratorInst :
+  core.iter.traits.collect.IntoIterator T1 T0 Clause1_IntoIter) :
+  T1 → RustM alloc.string.String
+
+/-- [rec_aggregation::aggregation::placeholder_map]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 2008:0-2648:1 -/
+axiom aggregation.placeholder_map
+  :
+  Std.Usize → RustM (alloc.collections.btree.map.BTreeMap alloc.string.String
+    alloc.string.String alloc.alloc.Global)
+
+/-- [rec_aggregation::aggregation::compile_guest]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 2681:0-2708:1 -/
+axiom aggregation.compile_guest : Std.Usize → RustM leanvm_core.cpu.Program
+

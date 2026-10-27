@@ -6,3 +6,4 @@ public import CoreModelsExt.Verifier
 public import CoreModelsExt.LeanCompiler
 public import CoreModelsExt.LeanvmCore
 public import CoreModelsExt.Pcs
+public import CoreModelsExt.RecAggregation
