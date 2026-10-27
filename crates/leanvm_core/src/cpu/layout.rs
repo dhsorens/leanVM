@@ -289,21 +289,7 @@ pub const BYTECODE_OPERANDS: usize = 10;
 /// the operand slots. The program is not committed, so these ride the seed/finalize blocks as
 /// `Coord::Public` and stack into the polynomial [`bytecode_table`] returns.
 pub fn bytecode_columns(prog: &[Op]) -> [Vec<F64>; 1 + BYTECODE_OPERANDS] {
-    let max_op = prog
-        .iter()
-        .map(|op| match *op {
-            Op::Xor { a, b, c } | Op::Mul { a, b, c } => a.max(b).max(c),
-            Op::Set { o, .. } => o,
-            Op::Deref { o1, o2, o3, .. } => o1.max(o2).max(o3),
-            Op::Jump { oc, od, of } => oc.max(od).max(of),
-            Op::Keccak {
-                m, tail, b8, cap, out, ..
-            } => m.into_iter().chain([tail, b8, cap, out]).max().expect("operands"),
-        })
-        .max()
-        .unwrap_or(0) as usize;
-    let gpow = primitives::field::g_powers((max_op + 1).max(2));
-    let g_at = |i: u32| gpow[i as usize]; // operand g-power
+    let g_at = primitives::field::g_pow32_by_lookup;
 
     // The opcode, then the operand slots: offsets as g-powers, a `SET` immediate as its three
     // limbs, the `DEREF` store-mode flags and `KECCAK`'s layout flags as 0 or 1. Unused slots
@@ -401,9 +387,6 @@ pub fn layout(prog: &[Op], log_mem: usize, rows: [usize; tables::N_TABLES], pi: 
     let final_pc = (bytecode_size - 1) as u32;
 
     let one = F64::ONE;
-    // The bytecode columns map operand *offsets* (small, ≤ frame size) to
-    // g-powers (not memory addresses), so precompute only up to the largest
-    // operand, an O(1) lookup each, rather than over the whole 2^log_mem memory.
     // Shared between the seed and finalize blocks: at kbc = 19 a copy is tens of
     // megabytes per column.
     let prog_cols: [std::sync::Arc<Vec<F64>>; 1 + BYTECODE_OPERANDS] = bytecode_columns(prog).map(std::sync::Arc::new);
