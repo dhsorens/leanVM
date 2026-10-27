@@ -1,0 +1,13 @@
+diff --git a/crates/lean_da/src/commit.rs b/crates/lean_da/src/commit.rs
+index 9526f9e9..1f6a177a 100644
+--- a/crates/lean_da/src/commit.rs
++++ b/crates/lean_da/src/commit.rs
+@@ -115,7 +115,7 @@ fn hash_cells(codewords: &[u64]) -> Vec<Hash> {
+     for i in 0..n_rows {
+         hash_many(
+             as_bytes(&codewords[i * m..(i + 1) * m]),
+-            CELL_SYMBOLS * size_of::<u64>(),
++            CELL_SYMBOLS * (u64::BITS / 8) as usize,
+             digests[i * cells..(i + 1) * cells].as_flattened_mut(),
+         );
+     }

@@ -1,0 +1,17 @@
+diff --git a/crates/lean_da/src/membership.rs b/crates/lean_da/src/membership.rs
+index 16527467..300151ca 100644
+--- a/crates/lean_da/src/membership.rs
++++ b/crates/lean_da/src/membership.rs
+@@ -32,9 +32,9 @@ const LABEL: &[u8] = b"leanDA/rs-membership/v1";
+ /// avoiding a circular dependency between the challenges and the vector.
+ pub fn membership_challenges(root: &[u8; 32]) -> Vec<F192> {
+     let mut fs = FiatShamirState::from_label(LABEL);
+-    for scalar in hash_to_scalars(root) {
+-        fs.observe(scalar);
+-    }
++    let [low, high] = hash_to_scalars(root);
++    fs.observe(low);
++    fs.observe(high);
+     fs.sample_vec(DA_LOG_K)
+ }
+ 

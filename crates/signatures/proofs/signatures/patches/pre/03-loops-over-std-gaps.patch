@@ -1,0 +1,249 @@
+diff --git a/crates/signatures/src/lean_sphincs/forest.rs b/crates/signatures/src/lean_sphincs/forest.rs
+index f42354c5..37c8fc82 100644
+--- a/crates/signatures/src/lean_sphincs/forest.rs
++++ b/crates/signatures/src/lean_sphincs/forest.rs
+@@ -145,9 +145,10 @@ impl KeyPos {
+     /// halves of one hash of the seed.
+     fn secrets(&self, pp: &PublicParam, master: &MasterSecret) -> [Digest; FOREST_CHAINS] {
+         let mut secrets = [[0u8; N]; FOREST_CHAINS];
+-        for (t, pair) in secrets.as_chunks_mut::<2>().0.iter_mut().enumerate() {
++        for t in 0..FOREST_CHAINS / 2 {
+             let tw = tweak(TWEAK_FOREST_PRF, self.slot() + 2048 * t as u32, self.idx);
+-            *pair = th_pair(pp, &tw, master);
++            let [a, b] = th_pair(pp, &tw, master);
++            (secrets[2 * t], secrets[2 * t + 1]) = (a, b);
+         }
+         secrets
+     }
+@@ -213,11 +214,12 @@ fn ordered(bit: usize, node: Digest, sibling: Digest) -> [Digest; 2] {
+ 
+ /// The two top nodes a leaf at `at` and its path reach.
+ fn fold(leaf: Digest, at: usize, path: &[Digest], node: impl Fn(usize, usize, &[Digest; 2]) -> Digest) -> [Digest; 2] {
+-    let (last, below) = path.split_last().unwrap();
+-    let top = below.iter().enumerate().fold(leaf, |current, (level, sibling)| {
+-        node(level + 1, at >> (level + 1), &ordered(at >> level, current, *sibling))
+-    });
+-    ordered(at >> below.len(), top, *last)
++    let height = path.len() - 1;
++    let mut top = leaf;
++    for level in 0..height {
++        top = node(level + 1, at >> (level + 1), &ordered(at >> level, top, path[level]));
++    }
++    ordered(at >> height, top, path[height])
+ }
+ 
+ /// `Fts.key` and `Fts.open` together, the forest of instance `idx` being built
+diff --git a/crates/signatures/src/lean_sphincs/scheme.rs b/crates/signatures/src/lean_sphincs/scheme.rs
+index 2b0c9fa3..f38b8b34 100644
+--- a/crates/signatures/src/lean_sphincs/scheme.rs
++++ b/crates/signatures/src/lean_sphincs/scheme.rs
+@@ -153,12 +153,12 @@ impl LeanSphincsSignature {
+             at += bytes.len();
+         };
+         put(&self.randomizer);
+-        for tree in &self.forest {
+-            for subtree in &tree.subtrees {
+-                put(subtree.values.as_flattened());
+-                put(subtree.path.as_flattened());
++        for c in 0..FOREST_TREES {
++            for j in 0..SUBTREES {
++                put(self.forest[c].subtrees[j].values.as_flattened());
++                put(self.forest[c].subtrees[j].path.as_flattened());
+             }
+-            put(tree.path.as_flattened());
++            put(self.forest[c].path.as_flattened());
+         }
+         put(&self.counter.to_le_bytes());
+         put(self.wots.as_flattened());
+@@ -393,7 +393,21 @@ pub fn sign(sk: &LeanSphincsSecretKey, message: &Message) -> Result<LeanSphincsS
+ 
+ /// `Tree.fold`: the root a leaf and its path reach.
+ pub fn tree_fold(pp: &PublicParam, idx: u64, leaf: Digest, path: &[Digest; H]) -> Digest {
+-    tree_fold_with(pp, idx, leaf, path, |_| ())
++    let mut current = leaf;
++    for level in 0..H {
++        let children = tree_children(idx, level, current, path[level]);
++        current = node(pp, level + 1, idx >> (level + 1), &children);
++    }
++    current
++}
++
++/// The two children of the node at `level + 1` above `idx`, the walk's node and its sibling.
++fn tree_children(idx: u64, level: usize, current: Digest, sibling: Digest) -> [Digest; 2] {
++    if (idx >> level) & 1 == 0 {
++        [current, sibling]
++    } else {
++        [sibling, current]
++    }
+ }
+ 
+ /// [`tree_fold`], showing `visit` the two children of every node on the way up.
+@@ -404,15 +418,13 @@ pub fn tree_fold_with(
+     path: &[Digest; H],
+     mut visit: impl FnMut(&[Digest; 2]),
+ ) -> Digest {
+-    path.iter().enumerate().fold(leaf, |current, (level, sibling)| {
+-        let children = if (idx >> level) & 1 == 0 {
+-            [current, *sibling]
+-        } else {
+-            [*sibling, current]
+-        };
++    let mut current = leaf;
++    for level in 0..H {
++        let children = tree_children(idx, level, current, path[level]);
+         visit(&children);
+-        node(pp, level + 1, idx >> (level + 1), &children)
+-    })
++        current = node(pp, level + 1, idx >> (level + 1), &children);
++    }
++    current
+ }
+ 
+ /// `Ver`.
+diff --git a/crates/signatures/src/lean_sphincs/wots.rs b/crates/signatures/src/lean_sphincs/wots.rs
+index 4bb4c447..38a4df47 100644
+--- a/crates/signatures/src/lean_sphincs/wots.rs
++++ b/crates/signatures/src/lean_sphincs/wots.rs
+@@ -14,8 +14,9 @@ use crate::lean_sphincs::*;
+ /// seed gives two of them: chains `2t` and `2t + 1` are its two halves.
+ pub fn wots_secrets(pp: &PublicParam, master: &MasterSecret, e: u32) -> [Digest; V] {
+     let mut secrets = [[0u8; N]; V];
+-    for (t, pair) in secrets.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+-        *pair = th_pair(pp, &tweak(TWEAK_PRF, t as u32, e), master);
++    for t in 0..V / 2 {
++        let [a, b] = th_pair(pp, &tweak(TWEAK_PRF, t as u32, e), master);
++        (secrets[2 * t], secrets[2 * t + 1]) = (a, b);
+     }
+     secrets
+ }
+@@ -58,7 +59,11 @@ pub fn encode(pp: &PublicParam, e: u32, key: &ForestKey, c: u32) -> Option<[u8;
+ fn codeword(digest: &Digest) -> Option<[u8; V]> {
+     let d = u128::from_le_bytes(*digest);
+     let x: [u8; V] = std::array::from_fn(|i| ((d >> (W * i)) & (CHAIN_LEN as u128 - 1)) as u8);
+-    (x.iter().map(|&chunk| chunk as usize).sum::<usize>() == TARGET_SUM).then_some(x)
++    let mut sum = 0;
++    for i in 0..V {
++        sum += x[i] as usize;
++    }
++    (sum == TARGET_SUM).then_some(x)
+ }
+ 
+ /// `Ots.sign`: the LEAST admissible counter, and the chain value each chunk
+diff --git a/crates/signatures/src/lean_xmss/mod.rs b/crates/signatures/src/lean_xmss/mod.rs
+index 360b8557..75a7cb02 100644
+--- a/crates/signatures/src/lean_xmss/mod.rs
++++ b/crates/signatures/src/lean_xmss/mod.rs
+@@ -65,7 +65,7 @@ pub const LAYER_HEIGHT: usize = 16;
+ pub const LOG_LIFETIME: usize = 2 * LAYER_HEIGHT;
+ 
+ pub const PUB_KEY_SIZE: usize = N + PUBLIC_PARAM_LEN;
+-pub const LEAF_INDEX_SIZE: usize = size_of::<LeafIndex>();
++pub const LEAF_INDEX_SIZE: usize = (LeafIndex::BITS / 8) as usize;
+ /// One layer's signature: the randomizer, the chain values and the path.
+ pub const LAYER_SIG_SIZE: usize = RANDOMIZER_LEN + V * N + LAYER_HEIGHT * N;
+ /// The leaf index, then the bottom layer's signature, then the top one's.
+diff --git a/crates/signatures/src/lean_xmss/scheme.rs b/crates/signatures/src/lean_xmss/scheme.rs
+index e7952963..d6fa8c09 100644
+--- a/crates/signatures/src/lean_xmss/scheme.rs
++++ b/crates/signatures/src/lean_xmss/scheme.rs
+@@ -206,7 +206,7 @@ impl LeanXmssSecretKey {
+     /// Builds the bottom tree `leaf_index` is in, and signs its root, ahead of
+     /// [`sign`]: the first signature in a bottom tree pays for both.
+     pub fn prepare(&self, leaf_index: LeafIndex) -> Result<(), LeanXmssSignError> {
+-        self.bottom_tree(leaf_index, ALL_LEAVES).map(drop)
++        self.bottom_tree(leaf_index, ALL_LEAVES).map(|_| ())
+     }
+ 
+     /// [`sign`], for a key whose trees hold only the leaf indices `leaves`.
+@@ -289,9 +289,9 @@ pub fn verify(
+ ) -> Result<(), LeanXmssVerifyError> {
+     let pp = &pk.public_param;
+     let leaf_index = signature.leaf_index;
+-    let (_, bottom_root) = layer_root(pp, 0, layer_index(leaf_index, 0), message, &signature.bottom, |_| {})
++    let (_, bottom_root) = layer_root_of(pp, 0, layer_index(leaf_index, 0), message, &signature.bottom)
+         .ok_or(LeanXmssVerifyError::InvalidEncoding)?;
+-    let (_, root) = layer_root(pp, 1, layer_index(leaf_index, 1), &bottom_root, &signature.top, |_| {})
++    let (_, root) = layer_root_of(pp, 1, layer_index(leaf_index, 1), &bottom_root, &signature.top)
+         .ok_or(LeanXmssVerifyError::InvalidEncoding)?;
+     if root == pk.merkle_root {
+         Ok(())
+@@ -312,18 +312,37 @@ pub fn layer_root(
+     mut on_children: impl FnMut(&[Digest; 2]),
+ ) -> Option<([u8; V], Digest)> {
+     let (codeword, leaf) = wots_leaf(pp, layer, e, message, &signature.randomizer, &signature.chain_values)?;
+-    let root = signature
+-        .path
+-        .iter()
+-        .enumerate()
+-        .fold(leaf, |current, (level, sibling)| {
+-            let children = if (e >> level) & 1 == 0 {
+-                [current, *sibling]
+-            } else {
+-                [*sibling, current]
+-            };
+-            on_children(&children);
+-            node(pp, layer, level + 1, e >> (level + 1), &children)
+-        });
+-    Some((codeword, root))
++    let mut current = leaf;
++    for level in 0..LAYER_HEIGHT {
++        let children = layer_children(e, level, current, signature.path[level]);
++        on_children(&children);
++        current = node(pp, layer, level + 1, e >> (level + 1), &children);
++    }
++    Some((codeword, current))
++}
++
++/// [`layer_root`], seeing no children.
++fn layer_root_of(
++    pp: &PublicParam,
++    layer: usize,
++    e: u32,
++    message: &[u8],
++    signature: &LayerSignature,
++) -> Option<([u8; V], Digest)> {
++    let (codeword, leaf) = wots_leaf(pp, layer, e, message, &signature.randomizer, &signature.chain_values)?;
++    let mut current = leaf;
++    for level in 0..LAYER_HEIGHT {
++        let children = layer_children(e, level, current, signature.path[level]);
++        current = node(pp, layer, level + 1, e >> (level + 1), &children);
++    }
++    Some((codeword, current))
++}
++
++/// The two children of the node at `level + 1` above `e`, the walk's node and its sibling.
++fn layer_children(e: u32, level: usize, current: Digest, sibling: Digest) -> [Digest; 2] {
++    if (e >> level) & 1 == 0 {
++        [current, sibling]
++    } else {
++        [sibling, current]
++    }
+ }
+diff --git a/crates/signatures/src/lean_xmss/wots.rs b/crates/signatures/src/lean_xmss/wots.rs
+index dab90eb5..34d57c79 100644
+--- a/crates/signatures/src/lean_xmss/wots.rs
++++ b/crates/signatures/src/lean_xmss/wots.rs
+@@ -23,8 +23,9 @@ pub fn tree_leaf(leaf_index: LeafIndex) -> u32 {
+ /// two of them: chains `2t` and `2t + 1` are its two halves.
+ pub fn wots_secrets(pp: &PublicParam, seed: &Seed, layer: usize, e: u32) -> [Digest; V] {
+     let mut secrets = [[0u8; N]; V];
+-    for (t, pair) in secrets.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+-        *pair = th_pair(pp, &tweak(TWEAK_PRF, layer_hi(layer, t as u32), e), seed);
++    for t in 0..V / 2 {
++        let [a, b] = th_pair(pp, &tweak(TWEAK_PRF, layer_hi(layer, t as u32), e), seed);
++        (secrets[2 * t], secrets[2 * t + 1]) = (a, b);
+     }
+     secrets
+ }
+@@ -67,7 +68,10 @@ fn digest_prefix(pp: &PublicParam, layer: usize, e: u32, message: &[u8]) -> prim
+ pub fn codeword(digest: &Digest) -> Option<[u8; V]> {
+     let d = u128::from_le_bytes(*digest);
+     let x: [u8; V] = std::array::from_fn(|i| ((d >> (W * i)) & (CHAIN_LEN as u128 - 1)) as u8);
+-    let sum: usize = x.iter().map(|&digit| digit as usize).sum();
++    let mut sum = 0;
++    for i in 0..V {
++        sum += x[i] as usize;
++    }
+     (d >> (W * V) == 0 && sum == TARGET_SUM).then_some(x)
+ }
+ 
