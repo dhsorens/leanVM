@@ -3,6 +3,7 @@
 module
 public import Aeneas
 public import CoreModels
+public import Parallel.Extraction.TypesExternal
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -30,5 +31,11 @@ namespace parallel
 structure topology.Topology where
   perf : Std.Usize
   efficiency : Std.Usize
+
+/-- [parallel::SendPtr]
+    Source: 'crates/parallel/src/lib.rs', lines 308:0-308:34
+    Visibility: public -/
+@[reducible]
+def SendPtr (T : Type _) := MutRawPtr T
 
 end parallel

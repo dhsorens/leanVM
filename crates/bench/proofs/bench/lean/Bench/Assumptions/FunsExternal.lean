@@ -25,9 +25,10 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open bench
+namespace bench
 
 /-- [bench::mean_and_ci]:
     Source: 'crates/bench/src/lib.rs', lines 84:0-94:1 -/
 axiom mean_and_ci : Slice F64 → RustM (F64 × F64)
 
+end bench

@@ -76,8 +76,8 @@ def aggregation._DA_ROOTS_BELOW_KEYS : RustM Unit := do
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 95:0-96:88 -/
 @[global_simps, irreducible]
 def aggregation._TUPLE_BITS_ARE_SELECTORS : RustM Unit := do
-  let i ← leanvm_core.leaf.N_TUPLE_BITS
-  let i1 ← leanvm_core.leaf.N_BYTECODE_SELECTORS
+  let i ← (pure leanvm_core.leaf.N_TUPLE_BITS)
+  let i1 ← (pure leanvm_core.leaf.N_BYTECODE_SELECTORS)
   massert (i = i1)
 
 /-- [rec_aggregation::aggregation::DIGIT_GROUP]
@@ -88,8 +88,8 @@ def aggregation._TUPLE_BITS_ARE_SELECTORS : RustM Unit := do
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 102:0-103:92 -/
 @[global_simps, irreducible]
 def aggregation._SPHINCS_DIGIT_GROUPS : RustM Unit := do
-  let i ← signatures.lean_sphincs.W
-  let i1 ← signatures.lean_sphincs.V
+  let i ← (pure signatures.lean_sphincs.W)
+  let i1 ← (pure signatures.lean_sphincs.V)
   let i2 ← i * i1
   massert (i2 = 128#usize)
   let i3 ← i1 % aggregation.DIGIT_GROUP
@@ -99,8 +99,8 @@ def aggregation._SPHINCS_DIGIT_GROUPS : RustM Unit := do
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 104:0-104:107 -/
 @[global_simps, irreducible]
 def aggregation._XMSS_DIGIT_GROUPS : RustM Unit := do
-  let i ← signatures.lean_xmss.W
-  let i1 ← signatures.lean_sphincs.W
+  let i ← (pure signatures.lean_xmss.W)
+  let i1 ← (pure signatures.lean_sphincs.W)
   massert (i = i1)
   let i2 ← signatures.lean_xmss.V
   let i3 ← i2 % aggregation.DIGIT_GROUP
@@ -129,16 +129,16 @@ def aggregation._SPHINCS_FIELDS_IN_LANES_loop.body
   («at» : Std.Usize) (k : Std.Usize) :
   RustM (ControlFlow (Std.Usize × Std.Usize) Unit)
   := do
-  let i ← signatures.lean_sphincs.SUBTREES
+  let i ← (pure signatures.lean_sphincs.SUBTREES)
   let i1 ← 1#usize + i
-  let i2 ← signatures.lean_sphincs.FOREST_TREES
+  let i2 ← (pure signatures.lean_sphincs.FOREST_TREES)
   let i3 ← i2 * i1
   if k < i3
   then
     let bits ←
       if k < i2
-      then signatures.lean_sphincs.TREE_HEIGHT
-      else signatures.lean_sphincs.SUBTREE_HEIGHT
+      then (pure signatures.lean_sphincs.TREE_HEIGHT)
+      else (pure signatures.lean_sphincs.SUBTREE_HEIGHT)
     let i4 ← «at» / 64#usize
     let i5 ← «at» + bits
     let i6 ← i5 - 1#usize
@@ -161,14 +161,14 @@ def aggregation._SPHINCS_FIELDS_IN_LANES_loop
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 112:0-125:2 -/
 @[global_simps, irreducible]
 def aggregation._SPHINCS_FIELDS_IN_LANES : RustM Unit := do
-  let «at» ← signatures.lean_sphincs.H
+  let «at» ← (pure signatures.lean_sphincs.H)
   aggregation._SPHINCS_FIELDS_IN_LANES_loop «at» 0#usize
 
 /-- [rec_aggregation::aggregation::_SPHINCS_INDEX_AND_REST_IN_LANES]
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 128:0-128:117 -/
 @[global_simps, irreducible]
 def aggregation._SPHINCS_INDEX_AND_REST_IN_LANES : RustM Unit := do
-  let i ← signatures.lean_sphincs.H
+  let i ← (pure signatures.lean_sphincs.H)
   massert (i <= 64#usize)
   let i1 ← signatures.lean_sphincs.DIGEST_BITS
   let i2 ← i1 - 128#usize
@@ -178,20 +178,20 @@ def aggregation._SPHINCS_INDEX_AND_REST_IN_LANES : RustM Unit := do
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 130:0-130:77 -/
 @[global_simps, irreducible]
 def aggregation._SPHINCS_FOREST_CHAINS : RustM Unit := do
-  let i ← signatures.lean_sphincs.FOREST_CHAINS
+  let i ← (pure signatures.lean_sphincs.FOREST_CHAINS)
   massert (i = 6#usize)
 
 /-- [rec_aggregation::aggregation::_SPHINCS_ENCODING_BLOCKS]
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 133:0-136:2 -/
 @[global_simps, irreducible]
 def aggregation._SPHINCS_ENCODING_BLOCKS : RustM Unit := do
-  let i ← signatures.lean_sphincs.FOREST_TREES
+  let i ← (pure signatures.lean_sphincs.FOREST_TREES)
   massert (i = 8#usize)
   let i1 ← 1#usize + i
   let i2 ← 2#usize * i1
-  let i3 ← signatures.tweak.N
+  let i3 ← (pure signatures.tweak.N)
   let i4 ← i2 * i3
-  let i5 ← signatures.lean_sphincs.COUNTER_LEN
+  let i5 ← (pure signatures.lean_sphincs.COUNTER_LEN)
   let i6 ← i4 + i5
   massert (i6 = 292#usize)
 
@@ -199,19 +199,19 @@ def aggregation._SPHINCS_ENCODING_BLOCKS : RustM Unit := do
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 140:0-140:115 -/
 @[global_simps, irreducible]
 def aggregation._SPHINCS_FOREST_ADDRESSES : RustM Unit := do
-  let i ← signatures.lean_sphincs.SUBTREES
+  let i ← (pure signatures.lean_sphincs.SUBTREES)
   massert (i = 2#usize)
   let i1 ← 1#usize <<< 3#i32
-  let i2 ← signatures.lean_sphincs.FOREST_TREES
+  let i2 ← (pure signatures.lean_sphincs.FOREST_TREES)
   massert (i2 <= i1)
 
 /-- [rec_aggregation::aggregation::_SPHINCS_TREE_HEIGHTS]
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 141:0-141:111 -/
 @[global_simps, irreducible]
 def aggregation._SPHINCS_TREE_HEIGHTS : RustM Unit := do
-  let i ← signatures.lean_sphincs.TREE_HEIGHT
+  let i ← (pure signatures.lean_sphincs.TREE_HEIGHT)
   massert (i <= 4#usize)
-  let i1 ← signatures.lean_sphincs.SUBTREE_HEIGHT
+  let i1 ← (pure signatures.lean_sphincs.SUBTREE_HEIGHT)
   massert (i1 <= 3#usize)
 
 /-- [rec_aggregation::aggregation::count]:
@@ -295,14 +295,14 @@ def aggregation.exponent_bytes
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 158:0-160:89 -/
 @[global_simps, irreducible]
 def aggregation.LEAN_SPHINCS_USED_BITS : RustM Std.Usize := do
-  let i ← signatures.lean_sphincs.FOREST_TREES
-  let i1 ← signatures.lean_sphincs.TREE_HEIGHT
+  let i ← (pure signatures.lean_sphincs.FOREST_TREES)
+  let i1 ← (pure signatures.lean_sphincs.TREE_HEIGHT)
   let i2 ← i * i1
-  let i3 ← signatures.lean_sphincs.H
+  let i3 ← (pure signatures.lean_sphincs.H)
   let i4 ← i3 + i2
-  let i5 ← signatures.lean_sphincs.SUBTREES
+  let i5 ← (pure signatures.lean_sphincs.SUBTREES)
   let i6 ← i5 * i
-  let i7 ← signatures.lean_sphincs.SUBTREE_HEIGHT
+  let i7 ← (pure signatures.lean_sphincs.SUBTREE_HEIGHT)
   let i8 ← i6 * i7
   i4 + i8
 
@@ -452,7 +452,7 @@ def aggregation.CLAIM_GROUP : Std.Usize := 17#usize
 @[global_simps, irreducible]
 def aggregation._CLAIM_GROUP_BLOCK_PAIRS : RustM Unit := do
   let i ← aggregation.CLAIM_GROUP * 64#usize
-  let i1 ← primitives.hash.RATE
+  let i1 ← (pure primitives.hash.RATE)
   let i2 ← 2#usize * i1
   let b ← core.num.Usize.is_multiple_of i i2
   massert b
@@ -782,7 +782,7 @@ def aggregation.AggregateVerifyError.Insts.CoreFmtDebug : core.fmt.Debug
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 283:4-285:5 -/
 def aggregation.DeferredClaim.leaf : RustM aggregation.DeferredClaim := do
   let i ← aggregation.bytecode_vars
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let v ←
     alloc.vec.from_elem primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f i
   let r ← aggregation.DeferredClaim.recompute v
@@ -803,7 +803,7 @@ def aggregation.DeferredClaim.evaluate_loop.body
   match o with
   | core.option.Option.None => ok (done all_zero)
   | core.option.Option.Some x =>
-    let f ← primitives.field.gf2_64x3.F192.ZERO
+    let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
     let b ← primitives.field.gf2_64x3.F192.Insts.CoreCmpPartialEqF192.eq x f
     ok (cont (iter1, all_zero && b))
 
@@ -1014,7 +1014,7 @@ def aggregation.statement_digest
     then ok cells
     else
       do
-      let f6 ← primitives.field.gf2_64x3.F192.ZERO
+      let f6 ← (pure primitives.field.gf2_64x3.F192.ZERO)
       alloc.vec.Vec.push cells f6
   let lanes ← alloc.vec.Vec.new Std.U64
   let iter ← core.slice.Slice.iter s
@@ -1780,13 +1780,13 @@ def aggregation.merkle_cap_depth
 /-- [rec_aggregation::aggregation::MU_MAX]
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1378:0-1378:47 -/
 @[global_simps, irreducible]
-def aggregation.MU_MAX : RustM Std.Usize := leanvm_core.pcs.MAX_MU
+def aggregation.MU_MAX : RustM Std.Usize := (pure leanvm_core.pcs.MAX_MU)
 
 /-- [rec_aggregation::aggregation::_MU_MIN_ABOVE_FLOOR]
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1380:0-1380:76 -/
 @[global_simps, irreducible]
 def aggregation._MU_MIN_ABOVE_FLOOR : RustM Unit := do
-  let i ← leanvm_core.pcs.MIN_MU
+  let i ← (pure leanvm_core.pcs.MIN_MU)
   massert (aggregation.MU_MIN >= i)
 
 /-- [rec_aggregation::aggregation::MU_CAP]

@@ -173,7 +173,7 @@ def
 @[global_simps, irreducible]
 def primitives.field.gf2_64.F64.Insts.Leanvm_coreColvalColValF192Unreduced.ONE
   : RustM primitives.field.gf2_64.F64 :=
-  primitives.field.gf2_64.F64.ONE
+  (pure primitives.field.gf2_64.F64.ONE)
 
 /-- [leanvm_core::colval::{impl leanvm_core::colval::ColVal<primitives::field::gf2_64x3::F192Unreduced> for primitives::field::gf2_64::F64}::ZERO]
     Source: 'crates/leanvm_core/src/colval.rs', lines 38:4-38:33
@@ -181,7 +181,7 @@ def primitives.field.gf2_64.F64.Insts.Leanvm_coreColvalColValF192Unreduced.ONE
 @[global_simps, irreducible]
 def primitives.field.gf2_64.F64.Insts.Leanvm_coreColvalColValF192Unreduced.ZERO
   : RustM primitives.field.gf2_64.F64 :=
-  primitives.field.gf2_64.F64.ZERO
+  (pure primitives.field.gf2_64.F64.ZERO)
 
 /-- Trait implementation: [leanvm_core::colval::{impl leanvm_core::colval::ColVal<primitives::field::gf2_64x3::F192Unreduced> for primitives::field::gf2_64::F64}]
     Source: 'crates/leanvm_core/src/colval.rs', lines 37:0-70:1 -/
@@ -352,7 +352,7 @@ def
 def
   primitives.field.gf2_64x3.F192.Insts.Leanvm_coreColvalColValF192Unreduced.ONE
   : RustM primitives.field.gf2_64x3.F192 :=
-  primitives.field.gf2_64x3.F192.ONE
+  (pure primitives.field.gf2_64x3.F192.ONE)
 
 /-- [leanvm_core::colval::{impl leanvm_core::colval::ColVal<primitives::field::gf2_64x3::F192Unreduced> for primitives::field::gf2_64x3::F192}::ZERO]
     Source: 'crates/leanvm_core/src/colval.rs', lines 73:4-73:34
@@ -361,7 +361,7 @@ def
 def
   primitives.field.gf2_64x3.F192.Insts.Leanvm_coreColvalColValF192Unreduced.ZERO
   : RustM primitives.field.gf2_64x3.F192 :=
-  primitives.field.gf2_64x3.F192.ZERO
+  (pure primitives.field.gf2_64x3.F192.ZERO)
 
 /-- Trait implementation: [leanvm_core::colval::{impl leanvm_core::colval::ColVal<primitives::field::gf2_64x3::F192Unreduced> for primitives::field::gf2_64x3::F192}]
     Source: 'crates/leanvm_core/src/colval.rs', lines 72:0-105:1 -/
@@ -862,8 +862,8 @@ def cpu.isa.DerefMode.f_pc
     cpu.isa.DerefMode.Insts.CoreCmpPartialEqDerefMode.eq self
       cpu.isa.DerefMode.Pc
   if b
-  then primitives.field.gf2_64.F64.ONE
-  else primitives.field.gf2_64.F64.ZERO
+  then (pure primitives.field.gf2_64.F64.ONE)
+  else (pure primitives.field.gf2_64.F64.ZERO)
 
 /-- [leanvm_core::cpu::isa::{leanvm_core::cpu::isa::DerefMode}::f_fp]:
     Source: 'crates/leanvm_core/src/cpu/isa.rs', lines 71:4-73:5 -/
@@ -873,8 +873,8 @@ def cpu.isa.DerefMode.f_fp
     cpu.isa.DerefMode.Insts.CoreCmpPartialEqDerefMode.eq self
       cpu.isa.DerefMode.Fp
   if b
-  then primitives.field.gf2_64.F64.ONE
-  else primitives.field.gf2_64.F64.ZERO
+  then (pure primitives.field.gf2_64.F64.ONE)
+  else (pure primitives.field.gf2_64.F64.ZERO)
 
 /-- [leanvm_core::cpu::MIN_LOG_MEM]
     Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 41:0-41:34
@@ -1116,6 +1116,27 @@ def cpu.Stats.TABLES : Array Str 6#usize :=
     "KECCAK"
     ]
 
+/-- [leanvm_core::keccak::STATE_CELLS]
+    Source: 'crates/leanvm_core/src/keccak.rs', lines 62:0-62:34
+    Visibility: public -/
+@[global_simps, irreducible] def keccak.STATE_CELLS : Std.Usize := 13#usize
+
+/-- [leanvm_core::keccak::RATE_CELLS]
+    Source: 'crates/leanvm_core/src/keccak.rs', lines 64:0-64:32
+    Visibility: public -/
+@[global_simps, irreducible] def keccak.RATE_CELLS : Std.Usize := 9#usize
+
+/-- [leanvm_core::leaf::N_TUPLE_BITS]
+    Source: 'crates/leanvm_core/src/leaf.rs', lines 129:0-129:34
+    Visibility: public -/
+@[global_simps, irreducible] def leaf.N_TUPLE_BITS : Std.Usize := 4#usize
+
+/-- [leanvm_core::leaf::N_BYTECODE_SELECTORS]
+    Source: 'crates/leanvm_core/src/leaf.rs', lines 765:0-765:42
+    Visibility: public -/
+@[global_simps, irreducible]
+def leaf.N_BYTECODE_SELECTORS : Std.Usize := 4#usize
+
 /-- [leanvm_core::init_prover]:
     Source: 'crates/leanvm_core/src/lib.rs', lines 42:0-44:1
     Visibility: public -/
@@ -1131,6 +1152,16 @@ def init_prover : RustM Unit := do
     Source: 'crates/leanvm_core/src/lib.rs', lines 53:0-53:48 -/
 @[global_simps, irreducible]
 def PAR_THRESHOLD : RustM Std.Usize := 1#usize <<< 11#i32
+
+/-- [leanvm_core::pcs::MIN_MU]
+    Source: 'crates/leanvm_core/src/pcs.rs', lines 49:0-49:29
+    Visibility: public -/
+@[global_simps, irreducible] def pcs.MIN_MU : Std.Usize := 15#usize
+
+/-- [leanvm_core::pcs::MAX_MU]
+    Source: 'crates/leanvm_core/src/pcs.rs', lines 51:0-51:29
+    Visibility: public -/
+@[global_simps, irreducible] def pcs.MAX_MU : Std.Usize := 28#usize
 
 /-- [leanvm_core::tables::TOWER_LANES]
     Source: 'crates/leanvm_core/src/tables.rs', lines 45:0-49:2 -/
@@ -1198,7 +1229,7 @@ def tables.jump_identity
   let t3 ← colvalColValInst.coreopsarithAddInst.add b t2
   let t4 ← colvalColValInst.coreopsarithMulInst.mul t b1
   let s ← core.array.Array.as_slice (Array.make 2#usize [ t3, t4 ])
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   colvalColValInst.dot pows s f
 
 /-- [leanvm_core::tables::g_pow]: loop body 0:
@@ -1230,7 +1261,7 @@ def tables.g_pow_loop
 /-- [leanvm_core::tables::g_pow]:
     Source: 'crates/leanvm_core/src/tables.rs', lines 83:0-91:1 -/
 def tables.g_pow (k : Std.Usize) : RustM primitives.field.gf2_64.F64 := do
-  let acc ← primitives.field.gf2_64.F64.ONE
+  let acc ← (pure primitives.field.gf2_64.F64.ONE)
   tables.g_pow_loop k acc 0#usize
 
 /-- [leanvm_core::tables::SEP_STATE]
@@ -1290,7 +1321,7 @@ def tables.Table.padding.default
   RustM (alloc.vec.Vec primitives.field.gf2_64.F64)
   := do
   let i ← TableInst.n_committed_columns self
-  let f ← primitives.field.gf2_64.F64.ZERO
+  let f ← (pure primitives.field.gf2_64.F64.ZERO)
   alloc.vec.from_elem primitives.field.gf2_64.F64.Insts.CoreCloneClone f i
 
 /-- [leanvm_core::tables::Table::n_constraints]:
@@ -1312,7 +1343,7 @@ def tables.Table.eval_constraint.default
   := do
   let b ← core.slice.Slice.is_empty pows
   massert b
-  primitives.field.gf2_64x3.F192.ZERO
+  (pure primitives.field.gf2_64x3.F192.ZERO)
 
 /-- [leanvm_core::tables::Table::eval_constraint_k]:
     Source: 'crates/leanvm_core/src/tables.rs', lines 373:4-376:5
@@ -1325,7 +1356,7 @@ def tables.Table.eval_constraint_k.default
   := do
   let b ← core.slice.Slice.is_empty pows
   massert b
-  primitives.field.gf2_64x3.F192.ZERO
+  (pure primitives.field.gf2_64x3.F192.ZERO)
 
 /-- [leanvm_core::tables::N_TABLES]
     Source: 'crates/leanvm_core/src/tables.rs', lines 388:0-388:30
@@ -1997,7 +2028,7 @@ def tables.keccakt.V_IN : RustM Std.Usize := do
 @[global_simps, irreducible]
 def tables.keccakt.V_OUT : RustM Std.Usize := do
   let i ← tables.keccakt.V_IN
-  let i1 ← primitives.hash.STATE_LANES
+  let i1 ← (pure primitives.hash.STATE_LANES)
   i + i1
 
 /-- [leanvm_core::tables::keccakt::R0]
@@ -2006,7 +2037,7 @@ def tables.keccakt.V_OUT : RustM Std.Usize := do
 @[global_simps, irreducible]
 def tables.keccakt.R0 : RustM Std.Usize := do
   let i ← tables.keccakt.V_OUT
-  let i1 ← primitives.hash.STATE_LANES
+  let i1 ← (pure primitives.hash.STATE_LANES)
   i + i1
 
 /-- [leanvm_core::tables::keccakt::RBC]
@@ -2076,7 +2107,7 @@ def tables.KeccakTable.Insts.Leanvm_coreTablesTable.padding
   (self : tables.KeccakTable) :
   RustM (alloc.vec.Vec primitives.field.gf2_64.F64)
   := do
-  let f ← primitives.field.gf2_64.F64.ZERO
+  let f ← (pure primitives.field.gf2_64.F64.ZERO)
   let i ← tables.keccakt.N
   let row ←
     alloc.vec.from_elem primitives.field.gf2_64.F64.Insts.CoreCloneClone f i

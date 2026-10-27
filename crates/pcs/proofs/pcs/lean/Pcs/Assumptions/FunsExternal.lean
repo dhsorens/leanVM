@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open pcs
+namespace pcs
 
 /-- [pcs::ntt::additive_ntt_f64::{impl core::fmt::Debug for pcs::ntt::additive_ntt_f64::AdditiveNttF64}::fmt]:
     Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 60:16-60:21
@@ -548,3 +548,4 @@ axiom whir_ntt_ext._F192_IS_THREE_WORDS : RustM Unit
     Source: 'crates/pcs/src/whir_ntt_ext.rs', lines 29:0-29:83 -/
 axiom whir_ntt_ext._F192_IS_WORD_ALIGNED : RustM Unit
 
+end pcs

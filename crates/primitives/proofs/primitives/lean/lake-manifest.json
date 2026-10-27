@@ -13,6 +13,16 @@
    "configFile": "lakefile.toml"
   },
   {
+   "type": "path",
+   "scope": "",
+   "name": "Parallel",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../parallel/proofs/parallel/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
    "url": "https://github.com/cryspen/hax-lean",
    "type": "git",
    "subDir": null,

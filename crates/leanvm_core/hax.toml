@@ -7,6 +7,26 @@
 # Assumptions/FunsExternal.lean, grouped by what stops them, so the list is also the work left.
 [scenario.leanvm-core]
 backend = "lean"
+# The constants of opaque modules that the crates using this one read, translated with their
+# values: charon reaches them only as roots, rustc having inlined every use, and the most
+# specific pattern makes them transparent.
+include = [
+  "crate",
+  "crate::keccak::STATE_CELLS",
+  "crate::keccak::RATE_CELLS",
+  "crate::leaf::N_TUPLE_BITS",
+  "crate::leaf::N_BYTECODE_SELECTORS",
+  "crate::pcs::MIN_MU",
+  "crate::pcs::MAX_MU",
+]
+charon-args = [
+  "--include", "crate::keccak::STATE_CELLS",
+  "--include", "crate::keccak::RATE_CELLS",
+  "--include", "crate::leaf::N_TUPLE_BITS",
+  "--include", "crate::leaf::N_BYTECODE_SELECTORS",
+  "--include", "crate::pcs::MIN_MU",
+  "--include", "crate::pcs::MAX_MU",
+]
 opaque = [
   # Whole modules of prover machinery: `parallel` dispatch, `unsafe` uninitialized buffers and
   # streaming stores, `tracing` spans. `gkr` also holds a bare `cfg(target_arch = "x86_64")`

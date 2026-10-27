@@ -1,8 +1,5 @@
 # The Lean extraction of this crate (formal/extraction/README.md), regenerated with
 # `formal/extraction/hax.sh extract` into proofs/lean-da/lean.
-#
-# The items it uses from other workspace crates (`primitives`, `fiat_shamir`, `pcs`) are declared
-# by hand at the top of proofs/lean-da/lean/LeanDa/Assumptions/*External.lean.
 [scenario.lean-da]
 backend = "lean"
 opaque = [

@@ -1,8 +1,5 @@
 # The Lean extraction of this crate (formal/extraction/README.md), regenerated with
 # `formal/extraction/hax.sh extract` into proofs/signatures/lean.
-#
-# The items it uses from other workspace crates (`primitives::hash`, `parallel`) are declared
-# by hand at the top of proofs/signatures/lean/Signatures/Assumptions/*External.lean.
 [scenario.signatures]
 backend = "lean"
 opaque = [

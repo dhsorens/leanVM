@@ -6,7 +6,15 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import RecAggregation.Assumptions.CratesExternal
+public import KeccakGkr.Extraction
+public import LeanCompiler.Extraction
+public import LeanDa.Extraction
+public import LeanvmCore.Extraction
+public import Parallel.Extraction
+public import Pcs.Extraction
+public import Primitives.Extraction
+public import Signatures.Extraction
+public import Verifier.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -27,7 +35,10 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 2048
 
 
+namespace rec_aggregation
+
 /-- [rec_aggregation::aggregation::digit_hints::{closure}]
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1566:37-1572:5 -/
 axiom aggregation.digit_hints.closure : Type
 
+end rec_aggregation

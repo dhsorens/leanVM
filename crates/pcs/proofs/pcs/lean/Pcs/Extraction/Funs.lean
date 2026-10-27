@@ -317,7 +317,7 @@ def ntt.additive_ntt_f64.span_get
   (basis : Slice primitives.field.gf2_64.F64) (idx : Std.Usize) :
   RustM primitives.field.gf2_64.F64
   := do
-  let acc ← primitives.field.gf2_64.F64.ZERO
+  let acc ← (pure primitives.field.gf2_64.F64.ZERO)
   let i ← core.slice.Slice.iter basis
   let iter ←
     core.iter.traits.iterator.Iterator.enumerate.default
@@ -560,7 +560,7 @@ def ntt.additive_ntt_f64.AdditiveNttF64.twiddles_radix8
     alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
       (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT (alloc.vec.Vec
       primitives.field.gf2_64.F64)) self.evals i3
-  let t0 ← primitives.field.gf2_64.F64.ZERO
+  let t0 ← (pure primitives.field.gf2_64.F64.ZERO)
   let (t01, a, c) ←
     ntt.additive_ntt_f64.AdditiveNttF64.twiddles_radix8_loop
       { start := 0#usize, «end» := layer } block v0 v1 v2 t0 t0 t0
@@ -1813,7 +1813,7 @@ def ring_switch.sample_map_challenges
   RustM ((Array primitives.field.gf2_64x3.F192 6#usize) ×
     fiat_shamir.transcript.ProverState)
   := do
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let challenges ←
     core.array.repeat 6#usize
       primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f
@@ -2024,7 +2024,7 @@ def ring_switch.build_fold_byte_table_ext
   := do
   let left_val ← core.slice.Slice.len coordinate_weights
   massert (left_val = tensor_algebra.DEGREE_E)
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let a ←
     core.array.repeat 256#usize
       primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f
@@ -2133,7 +2133,7 @@ def ring_switch.fold_one_slot_ext
   let a ← core.num.U64.to_le_bytes elem.c0
   let a1 ← core.num.U64.to_le_bytes elem.c1
   let a2 ← core.num.U64.to_le_bytes elem.c2
-  let acc ← primitives.field.gf2_64x3.F192.ZERO
+  let acc ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let s ← core.array.Array.as_slice (Array.make 3#usize [ a, a1, a2 ])
   let i ← core.slice.Slice.iter s
   let iter ←
@@ -2300,7 +2300,7 @@ def whir.inner_product_base_ext.closure_2.Insts.CoreOpsFunctionFnTupleF192.call
   (c : whir.inner_product_base_ext.closure_2) (_ : Unit) :
   RustM primitives.field.gf2_64x3.F192
   := do
-  primitives.field.gf2_64x3.F192.ZERO
+  (pure primitives.field.gf2_64x3.F192.ZERO)
 
 /-- [pcs::whir::inner_product_base_ext::{impl core::ops::function::FnMut<(), primitives::field::gf2_64x3::F192> for pcs::whir::inner_product_base_ext::{closure#2}}::call_mut]:
     Source: 'crates/pcs/src/whir.rs', lines 83:8-83:21 -/
@@ -2503,7 +2503,7 @@ def whir.inner_product_base_ext
         primitives.field.gf2_64x3.F192))
         whir.inner_product_base_ext.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0F64Shared1F192F192
         z ()
-    let f ← primitives.field.gf2_64x3.F192.ZERO
+    let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
     core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator.fold
       (core.iter.adapters.zip.Zip.Insts.CoreIterTraitsIteratorIteratorPair
       (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
@@ -2696,7 +2696,7 @@ def tensor_algebra.transpose_s_hat
   let i ← pack.PACKING_WIDTH
   if left_val = i
   then
-    let f ← primitives.field.gf2_64.F64.ZERO
+    let f ← (pure primitives.field.gf2_64.F64.ZERO)
     let s_hat_u ←
       alloc.vec.from_elem primitives.field.gf2_64.F64.Insts.CoreCloneClone f
         tensor_algebra.DEGREE_E
@@ -2885,7 +2885,7 @@ def whir.build_eq_table_ext_loop0.body
     let r_j ← Slice.index_usize point j
     let len ← 1#usize <<< j
     let i ← 2#usize * len
-    let f ← primitives.field.gf2_64x3.F192.ZERO
+    let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
     let out1 ←
       alloc.vec.Vec.resize primitives.field.gf2_64x3.F192.Insts.CoreCloneClone
         out i f
@@ -2918,7 +2918,7 @@ def whir.build_eq_table_ext
   let d ← core.slice.Slice.len point
   let i ← 1#usize <<< d
   let out ← alloc.vec.Vec.with_capacity primitives.field.gf2_64x3.F192 i
-  let f ← primitives.field.gf2_64x3.F192.ONE
+  let f ← (pure primitives.field.gf2_64x3.F192.ONE)
   let out1 ← alloc.vec.Vec.push out f
   whir.build_eq_table_ext_loop0 { start := 0#usize, «end» := d } point out1
 
@@ -4503,7 +4503,7 @@ def
   RustM (primitives.field.gf2_64x3.F192 × primitives.field.gf2_64x3.F192 ×
     primitives.field.gf2_64x3.F192)
   := do
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   ok (f, f, f)
 
 /-- [pcs::whir::round_msg_and_eval_lsb_ext::{impl core::ops::function::FnMut<(), (primitives::field::gf2_64x3::F192, primitives::field::gf2_64x3::F192, primitives::field::gf2_64x3::F192)> for pcs::whir::round_msg_and_eval_lsb_ext::{closure#2}}::call_mut]:
@@ -4766,7 +4766,7 @@ def whir.round_msg_and_eval_lsb_ext
         core.Usize.Insts.CoreIterRangeStep)
         whir.round_msg_and_eval_lsb_ext.closure.Insts.CoreOpsFunctionFnMutTupleUsizeTupleF192F192F192
         { start := 0#usize, «end» := half } (f, b)
-    let f1 ← primitives.field.gf2_64x3.F192.ZERO
+    let f1 ← (pure primitives.field.gf2_64x3.F192.ZERO)
     let (u_0, u_2, y) ←
       core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator.fold
         (core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator
@@ -5125,7 +5125,7 @@ def whir.INITIAL_BASIS_CHUNK : Std.Usize := 256#usize
 @[global_simps, irreducible]
 def whir.base_lane.ZERO
   : RustM (Array primitives.field.gf2_64.F64 128#usize) := do
-  let f ← primitives.field.gf2_64.F64.ZERO
+  let f ← (pure primitives.field.gf2_64.F64.ZERO)
   core.array.repeat 128#usize primitives.field.gf2_64.F64.Insts.CoreCloneClone
     f
 
@@ -6071,14 +6071,14 @@ def whir_induce.eval_sk_at_vks_loop0
 def whir_induce.eval_sk_at_vks
   (log_n : Std.Usize) : RustM (alloc.vec.Vec primitives.field.gf2_64.F64) := do
   let i ← log_n + 1#usize
-  let f ← primitives.field.gf2_64.F64.ZERO
+  let f ← (pure primitives.field.gf2_64.F64.ZERO)
   let sks_vks ←
     alloc.vec.from_elem primitives.field.gf2_64.F64.Insts.CoreCloneClone f i
   let (_, index_mut_back) ←
     alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
       (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT
       primitives.field.gf2_64.F64) sks_vks 0#usize
-  let f1 ← primitives.field.gf2_64.F64.ONE
+  let f1 ← (pure primitives.field.gf2_64.F64.ONE)
   if log_n = 0#usize
   then ok (index_mut_back f1)
   else
@@ -6330,7 +6330,7 @@ def primitives.field.gf2_64.F64.Insts.PcsWhir_induceRowElem.dot
       primitives.field.gf2_64x3.F192))
       whir_induce.RowElemF64.dot.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0F64Shared1F192F192
       z ()
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator.fold
     (core.iter.adapters.zip.Zip.Insts.CoreIterTraitsIteratorIteratorPair
     (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
@@ -6482,7 +6482,7 @@ def primitives.field.gf2_64x3.F192.Insts.PcsWhir_induceRowElem.dot
       primitives.field.gf2_64x3.F192))
       whir_induce.RowElemF192.dot.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0F192Shared1F192F192
       z ()
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator.fold
     (core.iter.adapters.zip.Zip.Insts.CoreIterTraitsIteratorIteratorPair
     (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
@@ -6512,7 +6512,7 @@ def
   := do
   let b ← primitives.field.gf2_64.F64.is_zero tupled_args
   if b
-  then let f ← primitives.field.gf2_64.F64.ZERO
+  then let f ← (pure primitives.field.gf2_64.F64.ZERO)
        ok (f, c)
   else let f ← primitives.field.gf2_64.F64.inv tupled_args
        ok (f, c)
@@ -6640,7 +6640,7 @@ def whir_induce.induce_sumcheck_enforced_sum
   let eq ← whir.build_eq_table_ext v_challenges
   let left_val1 ← core.slice.Slice.len weights
   massert (left_val1 = right_val)
-  let sum ← primitives.field.gf2_64x3.F192.ZERO
+  let sum ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let i ← core.slice.Slice.iter opened_rows
   let iter ←
     core.iter.traits.iterator.Iterator.enumerate.default

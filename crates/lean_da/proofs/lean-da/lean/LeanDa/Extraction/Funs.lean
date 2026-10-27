@@ -220,7 +220,7 @@ def commit.tree_from_leaves_loop.body
         (core.ops.range.RangeFromUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
         (Array Std.U8 32#usize)) read { start := base }
     let s2 ← core.slice.SliceArray.as_flattened s1
-    let i1 ← primitives.hash.OUT_LEN
+    let i1 ← (pure primitives.hash.OUT_LEN)
     let i2 ← 2#usize * i1
     let i3 ← width / 2#usize
     let (s3, index_mut_back) ←
@@ -574,7 +574,7 @@ def commit.commit_codewords
       core.U8.Insts.CoreCloneClone) padding_row n_pad
   let s1 ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref prefixes1
   let s2 ← core.slice.SliceArray.as_flattened s1
-  let i3 ← primitives.hash.OUT_LEN
+  let i3 ← (pure primitives.hash.OUT_LEN)
   let i4 ← t * i3
   let (s3, index_mut_back) ←
     alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
@@ -719,7 +719,7 @@ def membership.vector_digest
       vector bytes
   let i1 ← CELL_SYMBOLS
   let i2 ← i / i1
-  let i3 ← primitives.hash.OUT_LEN
+  let i3 ← (pure primitives.hash.OUT_LEN)
   let i4 ← i2 * i3
   let columns ← alloc.vec.from_elem core.U8.Insts.CoreCloneClone 0#u8 i4
   let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref bytes1

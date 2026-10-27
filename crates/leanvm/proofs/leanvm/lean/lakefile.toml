@@ -21,3 +21,19 @@ rev = "v0.3.34"
 [[require]]
 name = "CoreModelsExt"
 path = "../../../../../formal/extraction/CoreModelsExt"
+
+[[require]]
+name = "LeanDa"
+path = "../../../../lean_da/proofs/lean-da/lean"
+
+[[require]]
+name = "LeanvmCore"
+path = "../../../../leanvm_core/proofs/leanvm-core/lean"
+
+[[require]]
+name = "RecAggregation"
+path = "../../../../rec_aggregation/proofs/rec-aggregation/lean"
+
+[[require]]
+name = "Signatures"
+path = "../../../../signatures/proofs/signatures/lean"

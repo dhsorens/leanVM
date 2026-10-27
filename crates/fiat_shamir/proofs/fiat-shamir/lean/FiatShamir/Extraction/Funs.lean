@@ -288,7 +288,7 @@ def FiatShamirState.from_label
   (label : Slice Std.U8) : RustM FiatShamirState := do
   let a ← primitives.hash.hash label
   let a1 ← digest_words a
-  let f ← primitives.field.gf2_64.F64.ZERO
+  let f ← (pure primitives.field.gf2_64.F64.ZERO)
   let a2 ←
     core.array.repeat 4#usize primitives.field.gf2_64.F64.Insts.CoreCloneClone
       f

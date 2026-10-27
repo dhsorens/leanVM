@@ -484,7 +484,7 @@ def basis.PowerBasis.new
   let ids ←
     core.array.repeat 192#usize (core.Array.Insts.CoreCloneClone 3#usize
       core.U64.Insts.CoreCloneClone) a
-  let power1 ← primitives.field.gf2_64x3.F192.ONE
+  let power1 ← (pure primitives.field.gf2_64x3.F192.ONE)
   let rows1 ←
     basis.PowerBasis.new_loop0 { start := 0#usize, «end» := 192#usize } s
       rows power1
@@ -658,7 +658,7 @@ def basis.byte_sums
   (weights : Array primitives.field.gf2_64x3.F192 8#usize) :
   RustM (Array primitives.field.gf2_64x3.F192 256#usize)
   := do
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let t ←
     core.array.repeat 256#usize
       primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f
@@ -784,7 +784,7 @@ def basis.PolyEval.eval
   (self : basis.PolyEval) (words : Slice Std.U64) :
   RustM primitives.field.gf2_64x3.F192
   := do
-  let acc ← primitives.field.gf2_64x3.F192.ZERO
+  let acc ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref self.tables
   let i ← core.slice.Slice.iter s
   let iter ←
@@ -1047,7 +1047,7 @@ def keccak.row_positions
     Source: 'crates/keccak_gkr/src/keccak.rs', lines 31:0-34:1
     Visibility: public -/
 def keccak.iota_bit (round : Std.Usize) (z : Std.Usize) : RustM Bool := do
-  let i ← primitives.hash.ROUNDS
+  let i ← (pure primitives.hash.ROUNDS)
   let ri ← core.ops.range.RangeInclusive.new 1#usize i
   let b ←
     core.ops.range.RangeInclusive.contains
@@ -1055,7 +1055,7 @@ def keccak.iota_bit (round : Std.Usize) (z : Std.Usize) : RustM Bool := do
       core.Usize.Insts.CoreCmpPartialOrdUsize
       core.Usize.Insts.CoreCmpPartialOrdUsize ri round
   massert b
-  let a ← primitives.hash.RC
+  let a ← (pure primitives.hash.RC)
   let i1 ← round - 1#usize
   let i2 ← Array.index_usize a i1
   let i3 ← i2 >>> z
@@ -1371,7 +1371,7 @@ def keccak.linear_loop2.body
   match o with
   | core.option.Option.None => ok (done out)
   | core.option.Option.Some lane =>
-    let a1 ← primitives.hash.RHO
+    let a1 ← (pure primitives.hash.RHO)
     let i ← Array.index_usize a1 lane
     let rot ← lift (UScalar.cast .Usize i)
     let out1 ←
@@ -1414,7 +1414,7 @@ def keccak.linear
   let d1 ←
     keccak.linear_loop1 coreopsfunctionFnT1PairTInst
       { start := 0#usize, «end» := 5#usize } xor c1 d
-  let i ← primitives.hash.STATE_LANES
+  let i ← (pure primitives.hash.STATE_LANES)
   keccak.linear_loop2 coreopsfunctionFnT1PairTInst
     { start := 0#usize, «end» := i } a out xor d1
 
@@ -1486,7 +1486,7 @@ def keccak.linear_transpose_loop0.body
   match o with
   | core.option.Option.None => ok (done g)
   | core.option.Option.Some lane =>
-    let a ← primitives.hash.RHO
+    let a ← (pure primitives.hash.RHO)
     let i ← Array.index_usize a lane
     let rot ← lift (UScalar.cast .Usize i)
     let g1 ←
@@ -1712,11 +1712,11 @@ def keccak.linear_transpose
   := do
   let left_val ← core.slice.Slice.len w
   massert (left_val = keccak.BITS)
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let g ←
     alloc.vec.from_elem primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f
       keccak.BITS
-  let i ← primitives.hash.STATE_LANES
+  let i ← (pure primitives.hash.STATE_LANES)
   let g1 ←
     keccak.linear_transpose_loop0 { start := 0#usize, «end» := i } w g
   let columns ←
@@ -3429,7 +3429,7 @@ def OutputClaim.Insts.CoreCmpEq : core.cmp.Eq OutputClaim := {
     Source: 'crates/keccak_gkr/src/witness.rs', lines 66:4-68:5
     Visibility: public -/
 def witness.Shape.segments (self : witness.Shape) : RustM Std.Usize := do
-  let i ← primitives.hash.ROUNDS
+  let i ← (pure primitives.hash.ROUNDS)
   i / self.depth
 
 /-- [keccak_gkr::witness::{keccak_gkr::witness::Shape}::pack_vars]:
@@ -3546,7 +3546,7 @@ def protocol.first_claim
       protocol.first_claim.closure.Insts.CoreOpsFunctionFnMutTupleUsizeF192)
       (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator
       primitives.field.gf2_64x3.F192) m
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   ok { value := f, mu, point, weights := v1 }
 
 /-- [keccak_gkr::protocol::dot]: loop body 0:
@@ -3599,7 +3599,7 @@ def protocol.dot
   (b : Slice primitives.field.gf2_64x3.F192) :
   RustM primitives.field.gf2_64x3.F192
   := do
-  let acc ← primitives.field.gf2_64x3.F192.ZERO
+  let acc ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let i ← core.slice.Slice.len a
   let i1 ← core.slice.Slice.len b
   let i2 ← core.Usize.Insts.CoreCmpOrd.min i i1
@@ -3639,7 +3639,7 @@ def first
       (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT
       primitives.field.gf2_64x3.F192) v i1
   let v1 ← primitives.multilinear.eq_table r_lane
-  let i2 ← primitives.hash.STATE_LANES
+  let i2 ← (pure primitives.hash.STATE_LANES)
   let s3 ←
     alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
       (core.ops.range.RangeToUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
@@ -3655,7 +3655,7 @@ def first
     Visibility: public -/
 def witness.Shape.slots (self : witness.Shape) : RustM Std.Usize := do
   let i ← witness.Shape.segments self
-  let i1 ← primitives.hash.STATE_LANES
+  let i1 ← (pure primitives.hash.STATE_LANES)
   i1 * i
 
 /-- [keccak_gkr::witness::{keccak_gkr::witness::Shape}::slot_log]:
@@ -3739,7 +3739,7 @@ def prover.bind
   let s ← core.array.Array.as_slice coeffs
   let ps1 ← fiat_shamir.transcript.ProverState.add_round_poly ps s true
   let (challenge, ps2) ← fiat_shamir.transcript.ProverState.sample ps1
-  let f ← primitives.field.gf2_64x3.F192.ONE
+  let f ← (pure primitives.field.gf2_64x3.F192.ONE)
   let f1 ←
     primitives.field.gf2_64x3.F192.Insts.CoreOpsArithAddF192F192.add f «at»
   let eq ←
@@ -3975,7 +3975,7 @@ def
         (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT
         primitives.field.gf2_64x3.F192) v i1
     ok (f, c)
-  else let f ← primitives.field.gf2_64x3.F192.ZERO
+  else let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
        ok (f, c)
 
 /-- [keccak_gkr::prover::prove_layer::{closure#4}::{impl core::ops::function::FnOnce<(usize,), primitives::field::gf2_64x3::F192> for keccak_gkr::prover::prove_layer::{closure#4}::{closure}<'_0, '_1>}::call_once]:
@@ -4131,7 +4131,7 @@ def
       prover.prove_layer.closure_3.closure.Insts.CoreOpsFunctionFnMutTupleUsizeF192)
       (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator
       primitives.field.gf2_64x3.F192) m
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   alloc.vec.Vec.resize primitives.field.gf2_64x3.F192.Insts.CoreCloneClone out
     i f
 
@@ -4147,7 +4147,7 @@ def
     alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
       (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT
       primitives.field.gf2_64x3.F192) c1.point kernels.SKIP
-  let f1 ← primitives.field.gf2_64x3.F192.ONE
+  let f1 ← (pure primitives.field.gf2_64x3.F192.ONE)
   let f2 ←
     primitives.field.gf2_64x3.F192.Insts.CoreOpsArithAddF192F192.add f1 half
   let a ←
@@ -4278,7 +4278,7 @@ def
   RustM (primitives.field.gf2_64x3.F192 × prover.prove_layer.closure_1)
   := do
   let (v, v1) := c
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let f1 ←
     core.iter.traits.iterator.Iterator.fold.default
       (core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator
@@ -4515,7 +4515,7 @@ def prover.local_round
   (kappa : primitives.field.gf2_64x3.F192) :
   RustM (Array primitives.field.gf2_64x3.F192 4#usize)
   := do
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let h ←
     core.array.repeat 4#usize
       primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f
@@ -4805,7 +4805,7 @@ def protocol.chi_weights
   (beta : primitives.field.gf2_64x3.F192) :
   RustM (alloc.vec.Vec primitives.field.gf2_64x3.F192)
   := do
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let out ←
     alloc.vec.from_elem primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f
       keccak.BITS
@@ -4869,7 +4869,7 @@ def protocol.sum
   RustM primitives.field.gf2_64x3.F192
   := do
   let i ← core.slice.Slice.iter xs
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.fold
     protocol.sum.closure.Insts.CoreOpsFunctionFnMutPairF192Shared0F192F192 i f
     ()
@@ -4929,7 +4929,7 @@ def protocol.mu_at.closure.Insts.CoreOpsFunctionFnMutTupleUsizeF192.call_mut
   (c : protocol.mu_at.closure) (tupled_args : Std.Usize) :
   RustM (primitives.field.gf2_64x3.F192 × protocol.mu_at.closure)
   := do
-  let acc ← primitives.field.gf2_64x3.F192.ZERO
+  let acc ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let acc1 ←
     protocol.mu_at.closure.Insts.CoreOpsFunctionFnMutTupleUsizeF192.call_mut_loop
       { start := 0#usize, «end» := rmfe.EMBED_BITS } c tupled_args acc
@@ -5131,7 +5131,7 @@ def power.PowerField.new
   let cf ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o
   match cf with
   | core.ops.control_flow.ControlFlow.Continue val =>
-    let power1 ← primitives.field.gf2_64x3.F192.ONE
+    let power1 ← (pure primitives.field.gf2_64x3.F192.ONE)
     let power2 ←
       power.PowerField.new_loop0 { start := 0#i32, «end» := 192#i32 } s
         power1
@@ -5341,7 +5341,7 @@ def prover.prove_layer_loop0.body
         primitives.field.gf2_64x3.F192) v
         { start := i1, «end» := kernels.SKIP }
     let later ← primitives.multilinear.eq_table s
-    let f ← primitives.field.gf2_64x3.F192.ZERO
+    let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
     let h ←
       core.array.repeat 3#usize
         primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f
@@ -5609,7 +5609,7 @@ def prover.prove_layer
   let sums ←
     prover.Layer.skip_sums { witness := witness1, rounds := v } claim field s2
       binary
-  let scale ← primitives.field.gf2_64x3.F192.ONE
+  let scale ← (pure primitives.field.gf2_64x3.F192.ONE)
   let i2 ← alloc.vec.Vec.len claim.point
   let point ← alloc.vec.Vec.with_capacity primitives.field.gf2_64x3.F192 i2
   let (ps3, value1, scale1, point1) ←
@@ -5664,7 +5664,7 @@ def prover.prove_layer
   let w ←
     alloc.vec.Vec.Insts.CoreCloneClone.clone
       primitives.field.gf2_64x3.F192.Insts.CoreCloneClone claim.weights
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let w1 ←
     alloc.vec.Vec.resize primitives.field.gf2_64x3.F192.Insts.CoreCloneClone w
       cube f
@@ -5860,7 +5860,7 @@ def open.round_values
   (b : Slice primitives.field.gf2_64x3.F192) (width : Std.Usize) :
   RustM (primitives.field.gf2_64x3.F192 × primitives.field.gf2_64x3.F192)
   := do
-  let zero ← primitives.field.gf2_64x3.F192.ZERO
+  let zero ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let i ← 2#usize * width
   let ce ← core.slice.Slice.chunks_exact a i
   let ce1 ← core.slice.Slice.chunks_exact b i
@@ -6030,7 +6030,7 @@ def open.slot_weights_loop0.body
   match o with
   | core.option.Option.None => ok (done out)
   | core.option.Option.Some segment =>
-    let i ← primitives.hash.STATE_LANES
+    let i ← (pure primitives.hash.STATE_LANES)
     let i1 ← 64#usize * i
     let i2 ← first1 + segment
     let base ← i1 * i2
@@ -6072,7 +6072,7 @@ def open.slot_weights
   let segments ← primitives.multilinear.eq_table s
   let i1 ← witness.Shape.slot_log shape
   let i2 ← 64#usize <<< i1
-  let f ← primitives.field.gf2_64x3.F192.ZERO
+  let f ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let out ←
     alloc.vec.from_elem primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f
       i2
@@ -6159,7 +6159,7 @@ def open.open_inputs_loop0.body
   match o with
   | core.option.Option.None => ok (done per_instance)
   | core.option.Option.Some i =>
-    let acc ← primitives.field.gf2_64x3.F192.ZERO
+    let acc ← (pure primitives.field.gf2_64x3.F192.ZERO)
     let i1 ← witness.Shape.slot_log shape
     let i2 ← 1#usize <<< i1
     let acc1 ←
@@ -6409,12 +6409,12 @@ def open.open_inputs
   let v ←
     alloc.slice.Slice.to_vec
       primitives.field.gf2_64x3.F192.Insts.CoreCloneClone s
-  let f ← primitives.field.gf2_64x3.F192.ONE
+  let f ← (pure primitives.field.gf2_64x3.F192.ONE)
   let ((_, mu, low), ps1, value) ←
     open.prove_rounds ps per_instance1 v 1#usize f claim.value
   let i2 ← witness.Shape.slot_log witness1.shape
   let i3 ← 64#usize <<< i2
-  let f1 ← primitives.field.gf2_64x3.F192.ZERO
+  let f1 ← (pure primitives.field.gf2_64x3.F192.ZERO)
   let at_instance ←
     alloc.vec.from_elem primitives.field.gf2_64x3.F192.Insts.CoreCloneClone f1
       i3
@@ -6484,7 +6484,7 @@ def open.open_outputs
   RustM (open.WordOpening × fiat_shamir.transcript.ProverState)
   := do
   let v ← open.word_weights shape claim
-  let f ← primitives.field.gf2_64x3.F192.ONE
+  let f ← (pure primitives.field.gf2_64x3.F192.ONE)
   let ((word, _, slot), ps1, _) ←
     open.prove_rounds ps words v 1#usize f value
   let word1 ←
@@ -8115,7 +8115,7 @@ def witness.Shape.Insts.CoreCmpEq : core.cmp.Eq witness.Shape := {
     Visibility: public -/
 def witness.Shape.new
   (n_instances : Std.Usize) (depth : Std.Usize) : RustM witness.Shape := do
-  let i ← primitives.hash.ROUNDS
+  let i ← (pure primitives.hash.ROUNDS)
   let b ← core.num.Usize.is_multiple_of i depth
   massert b
   let n ←
@@ -8170,7 +8170,7 @@ def witness.Slot.Insts.CoreMarkerCopy : core.marker.Copy witness.Slot := {
     Visibility: public -/
 def witness.Extent.new
   (first1 : Std.Usize) (blocks : Std.Usize) : RustM witness.Extent := do
-  let i ← primitives.hash.ROUNDS
+  let i ← (pure primitives.hash.ROUNDS)
   let i1 ← i + 1#usize
   let i2 ← i1 * blocks
   let i3 ← witness.BLOCK_LEN

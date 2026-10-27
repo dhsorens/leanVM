@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open keccak_gkr
+namespace keccak_gkr
 
 /-- [keccak_gkr::basis::clear_column]:
     Source: 'crates/keccak_gkr/src/basis.rs', lines 21:0-29:1 -/
@@ -291,3 +291,4 @@ axiom witness.Witness.from_extents
   witness.Shape → alloc.vec.Vec witness.Extent → Std.Usize →
     core.option.Option witness.Extent → RustM witness.Witness
 
+end keccak_gkr

@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open verifier
+namespace verifier
 
 /-- [verifier::bus::verify_gkr_grand_products]:
     Source: 'crates/verifier/src/bus.rs', lines 14:0-51:1 -/
@@ -371,3 +371,4 @@ axiom whir.derive_config
   Std.Usize → Std.Usize → RustM (core.result.Result whir.WhirConfig
     VerifierError)
 
+end verifier

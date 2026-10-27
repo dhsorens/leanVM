@@ -25,51 +25,8 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open signatures
 
--- Items of other workspace crates the extraction uses, which hax does not declare: written
--- here by hand, above the generated declarations (wire.py keeps this header as it is).
-
--- `primitives::hash::RATE`: Keccak-256's rate, in bytes.
-def primitives.hash.RATE : RustM Std.Usize := ok 136#usize
-
--- `primitives::hash::Hasher::new`, assumed: the empty Keccak-256 sponge.
-axiom primitives.hash.Hasher.new : RustM primitives.hash.Hasher
-
--- `primitives::hash::Hasher::update`, assumed: absorbs the bytes; the second component is
--- the back function of the `&mut Self` it returns.
-axiom primitives.hash.Hasher.update :
-  primitives.hash.Hasher → Slice Std.U8 →
-    RustM (primitives.hash.Hasher × (primitives.hash.Hasher → primitives.hash.Hasher))
-
--- `primitives::hash::Hasher::finalize`, assumed: the Keccak-256 digest of what was absorbed.
-axiom primitives.hash.Hasher.finalize : primitives.hash.Hasher → RustM (Array Std.U8 32#usize)
-
--- The derived `Clone` of `primitives::hash::Hasher`, a struct of arrays and a `usize`.
-def primitives.hash.Hasher.Insts.CoreCloneClone.clone (self : primitives.hash.Hasher) :
-    RustM primitives.hash.Hasher :=
-  ok self
-
--- `parallel::map_collect`: `[f(0), .., f(n_tasks - 1)]`, here computed in order.
-def parallel.map_collect {T F : Type} (FnInst : core.ops.function.Fn F Std.Usize T)
-    (n_tasks : Std.Usize) (f : F) : RustM (alloc.vec.Vec T) := do
-  let empty ← alloc.vec.Vec.new T
-  (List.range n_tasks.val).foldlM
-    (fun out i => do
-      let x ← FnInst.call f ⟨BitVec.ofNat _ i⟩
-      alloc.vec.Vec.push out x)
-    empty
-
--- `parallel::find_first`: the least `i < n_tasks` with `pred(i)`, here searched in order.
-def parallel.find_first {P : Type} (FnInst : core.ops.function.Fn P Std.Usize Bool)
-    (n_tasks : Std.Usize) (pred : P) : RustM (core.option.Option Std.Usize) :=
-  (List.range n_tasks.val).foldlM
-    (fun found i => match found with
-      | .some _ => ok found
-      | .none => do
-        let hit ← FnInst.call pred ⟨BitVec.ofNat _ i⟩
-        ok (if hit then .some ⟨BitVec.ofNat _ i⟩ else .none))
-    .none
+namespace signatures
 
 /-- [signatures::lean_sphincs::forest::{impl core::fmt::Debug for signatures::lean_sphincs::forest::Mark}::fmt]:
     Source: 'crates/signatures/src/lean_sphincs/forest.rs', lines 84:22-84:27
@@ -232,3 +189,4 @@ axiom tweak.Tweak.Insts.CoreFmtDebug.fmt
   tweak.Tweak → core.fmt.Formatter → RustM ((core.result.Result Unit
     core.fmt.Error) × core.fmt.Formatter)
 
+end signatures

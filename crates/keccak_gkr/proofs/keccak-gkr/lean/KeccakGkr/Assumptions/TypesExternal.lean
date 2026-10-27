@@ -6,7 +6,12 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import KeccakGkr.Assumptions.CratesExternal
+public import Bench.Extraction
+public import FiatShamir.Extraction
+public import Parallel.Extraction
+public import Pcs.Extraction
+public import Primitives.Extraction
+public import Verifier.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -26,3 +31,7 @@ set_option maxHeartbeats 1000000
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
 
+
+namespace keccak_gkr
+
+end keccak_gkr

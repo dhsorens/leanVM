@@ -2,8 +2,7 @@
 # `formal/extraction/hax.sh extract` into proofs/rec-aggregation/lean.
 #
 # `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
-# Each is grouped by what stops it, so the list is also the work left. The items this crate
-# uses from other workspace crates are axioms in Assumptions/CratesExternal.lean.
+# Each is grouped by what stops it, so the list is also the work left.
 [scenario.rec-aggregation]
 backend = "lean"
 opaque = [

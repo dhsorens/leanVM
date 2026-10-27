@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open lean_compiler
+namespace lean_compiler
 
 /-- [lean_compiler::ast::{impl core::clone::Clone for lean_compiler::ast::Expr}::clone]:
     Source: 'crates/lean_compiler/src/ast.rs', lines 6:9-6:14
@@ -1070,3 +1070,4 @@ axiom parser.strip_log : Str → RustM (core.option.Option Str)
 axiom parser.parse_match
   : Str → Str → RustM (core.result.Result ast.StmtKind alloc.string.String)
 
+end lean_compiler

@@ -21,3 +21,11 @@ rev = "v0.3.34"
 [[require]]
 name = "CoreModelsExt"
 path = "../../../../../formal/extraction/CoreModelsExt"
+
+[[require]]
+name = "LeanvmCore"
+path = "../../../../leanvm_core/proofs/leanvm-core/lean"
+
+[[require]]
+name = "Primitives"
+path = "../../../../primitives/proofs/primitives/lean"

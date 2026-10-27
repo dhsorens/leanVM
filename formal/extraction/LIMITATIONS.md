@@ -31,7 +31,7 @@ Every crate in `crates/` is extracted to Lean and typechecks, with no `sorry`. E
 
 ## Across crates
 
-Aeneas translates only the crate it runs on, and emits nothing for the items a crate uses from another workspace crate: no declaration, not even an axiom. Each extraction therefore declares those items itself, by hand, in `Assumptions/CratesExternal.lean` (types mirrored as the Rust defines them, functions as axioms), and the extractions are built separately, never imported together. Linking each extraction to its dependencies' instead is the next step for this directory.
+Aeneas translates only the crate it runs on, and emits nothing for the items a crate uses from another workspace crate: it expects them declared elsewhere. They are: each extraction imports the extractions of the crates its crate depends on (`wire.py` derives the list from `cargo metadata`), so an item of another crate is that crate's own translation, with its body where it has one, and is opaque only where its own crate leaves it opaque. Nothing across crates is declared by hand. Two seams remain, both bridged by `wire.py` or the scenarios: a constant of another crate is a computation to Aeneas but a value in its own crate's translation, so each use is wrapped in `pure`; and a constant inside a module its crate keeps opaque is not reached by Charon at all (rustc inlines every use), so the scenario names it as a root (`leanvm_core`'s `include`).
 
 ## Toolchain gaps
 
@@ -46,6 +46,8 @@ Each gap was met by a patch, a model in `CoreModelsExt`, or an opaque item; most
 - A type recursive through `Vec` (`lean_compiler`'s `Expr`, `leanvm_core`'s `leaf::Coord`) becomes a nested inductive Lean's kernel rejects.
 - Recursion through a closure forms a mixed declaration group it rejects.
 - `&str` constants, `size_of::<T>()` (emitted without its type), and raw-pointer reads.
+- A crate's opaque items are declared at the Lean root under `open <crate>`, not in the crate's namespace, so another crate cannot name them and two crates' can clash; `wire.py` moves them into the namespace.
+- Another crate's constant is a computation (`RustM T`) where its own crate's translation is a value (`T`); `wire.py` wraps each use in `pure`.
 - Generated names that clash or trip Lean's linters: a field and a module with one name, a local named `lift`, two trait fields both named `coremarkerCopyInst` (a `Copy` supertrait and a `Copy` bound on an associated type), and `__N` for the anonymous `const _` items `serde_derive` generates (below).
 - Internal errors on a few functions of `verifier`, `pcs` and `leanvm_core`, named in their `hax.toml`; each is still to be reduced to a reportable case.
 
@@ -72,7 +74,7 @@ Each gap was met by a patch, a model in `CoreModelsExt`, or an opaque item; most
 The workspace builds with Lean linter warnings that cannot be fixed without silencing the linter, which is the maintainers' call rather than this pipeline's:
 
 - `nameCheck` on `<module>.__1` and the like in generated `Funs.lean`: Aeneas's names for the `const _: () = { .. }` items `serde_derive` wraps its impls in. No Charon pattern can name them, and the alternatives are a post-extraction patch per file or dropping the derives.
-- `dupNamespace` on `alloc.alloc.Global.Insts.CoreAllocAllocatorClone` (in `CoreModelsExt`) and on `primitives.hash.hash` (in hand-written cross-crate declarations): the generated code names them, after the Rust paths.
+- `dupNamespace` on `alloc.alloc.Global.Insts.CoreAllocAllocatorClone` (in `CoreModelsExt`): the generated code names it, after the Rust path.
 
 ## What the patch tests establish
 

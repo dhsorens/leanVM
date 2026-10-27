@@ -6,7 +6,8 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import FiatShamir.Assumptions.CratesExternal
+public import Parallel.Extraction
+public import Primitives.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -26,3 +27,7 @@ set_option maxHeartbeats 1000000
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
 
+
+namespace fiat_shamir
+
+end fiat_shamir

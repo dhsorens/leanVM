@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open leanvm_core
+namespace leanvm_core
 
 /-- [leanvm_core::cpu::execute::{impl core::clone::Clone for leanvm_core::cpu::execute::ExecError}::clone]:
     Source: 'crates/leanvm_core/src/cpu/execute.rs', lines 112:9-112:14
@@ -532,3 +532,4 @@ axiom tables.KeccakTable.Insts.Leanvm_coreTablesTable.fill
 axiom tables.KeccakTable.Insts.Leanvm_coreTablesTable.flushes
   : tables.KeccakTable → tables.FlushBuilder → RustM tables.FlushBuilder
 
+end leanvm_core

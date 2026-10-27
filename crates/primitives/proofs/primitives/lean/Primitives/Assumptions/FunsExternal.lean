@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open primitives
+namespace primitives
 
 /-- [primitives::bits::bit_transpose_64bytes]:
     Source: 'crates/primitives/src/bits.rs', lines 16:0-32:1
@@ -222,3 +222,4 @@ axiom stream.copy_raw
 axiom stream.Stream.Insts.CoreOpsDropDrop.drop
   : stream.Stream → RustM stream.Stream
 
+end primitives

@@ -9,14 +9,21 @@ in its hax.toml and nothing else. For each package crates/<crate>/proofs/<scenar
   declares it. Every `fmt` loses the `Formatter`
   write-back Aeneas gives it, which the hax Lean library's `Debug` and `Display` do not have
   (hax seeds a new package's Assumptions/ from the raw template, so the seeded ones need it too).
-  Both import CoreModelsExt, the standard-library models every extraction shares.
-- Its lakefile requires CoreModelsExt and resolves its dependencies into the workspace's
-  `.lake/packages`, and its manifest is the workspace's, so the package builds the same alone.
+  Both import CoreModelsExt, the standard-library models every extraction shares, and their
+  declarations sit in the crate's namespace (Aeneas leaves them at the root, under `open`), where
+  the generated code and the crates that use them look for them.
+- The first of the two the extraction imports also imports the extraction of each workspace crate
+  the crate depends on, which is where Aeneas, translating one crate, expects the items it uses
+  from another to be declared.
+- In its generated code, a constant of another crate is a computation, as is any item Aeneas
+  does not see, but the crate defining `c` translates it as a value when it can: each use of
+  such a `c`, always where a computation is expected, becomes `(pure c)`.
+- Its lakefile requires CoreModelsExt and those packages and resolves its dependencies into the
+  workspace's `.lake/packages`, and its manifest is the workspace's, so the package builds the
+  same alone.
 
 The workspace (this directory) requires every package by path, and its library `Extraction` has
-one root per package, `Extraction.<Package>`, so building it builds each extraction on its own:
-two extractions are never imported together, since a crate's extraction declares the items it
-uses from another crate as its own opaque ones.
+one root per package, `Extraction.<Package>`.
 """
 
 import json
@@ -63,28 +70,60 @@ def drop_formatter_write_back(block):
     return block
 
 
-def sync_assumptions(package, name):
+def sync_assumptions(package, name, crate, names, deps):
+    """`deps` are the Lean packages of the crates `crate` depends on, imported by the first file."""
+    imports = "".join(f"public import {dep}.Extraction\n" for dep in deps)
+    workspace_import = re.compile(r"public import (?:" + "|".join(map(re.escape, names)) + r")\.Extraction\n")
+    end = f"\nend {crate}\n"
     for stem in STEMS:
         template = package / name / "Extraction" / f"{stem}_Template.lean"
         assumption = package / name / "Assumptions" / f"{stem}.lean"
         if not template.exists() or not assumption.exists():
             continue
         _, wanted = split(template.read_text())
-        header, present = split(assumption.read_text())
-        if "public import CoreModelsExt\n" not in header:
-            header = header.replace("public import CoreModels\n", "public import CoreModels\npublic import CoreModelsExt\n", 1)
+        current = assumption.read_text()
+        header, present = split(current.removesuffix(end) if current.endswith(end) else current)
+        header = workspace_import.sub("", header)
+        header = header.replace("public import CoreModelsExt\n", "", 1)
+        header = header.replace("public import CoreModels\n", "public import CoreModels\npublic import CoreModelsExt\n" + imports, 1)
+        imports = ""
+        header = header.replace(f"\nopen {crate}\n", "\n").removesuffix(f"\nnamespace {crate}\n") + f"\nnamespace {crate}\n"
         kept = {key: block for key, block in present.items() if HAND_MAINTAINED in block}
         text = header + "".join(drop_formatter_write_back(kept.get(key) or block) for key, block in wanted.items())
-        write(assumption, text if text.endswith("\n") else text + "\n")
+        write(assumption, text.rstrip("\n") + "\n" + end)
         for key in wanted.keys() - present.keys():
             print(f"{assumption.relative_to(ROOT)}: added {key}")
         for key in present.keys() - wanted.keys():
             print(f"{assumption.relative_to(ROOT)}: dropped {key}")
 
 
-def wire_lakefile(package):
+CONSTANT = re.compile(r"@\[global_simps[^\]]*\]\s*def\s+(\S+)\s*:\s*(?!\s|RustM\b)")
+
+
+def constants(package, name, crate):
+    """The constants the package's extraction defines as values, by their qualified names."""
+    funs = package / name / "Extraction" / "Funs.lean"
+    return {f"{crate}.{c}" for c in CONSTANT.findall(funs.read_text())} if funs.exists() else set()
+
+
+def bind_foreign_constants(package, name, foreign):
+    if not foreign:
+        return
+    use = re.compile(r"(?<![\w.])(?<!pure )(" + "|".join(map(re.escape, sorted(foreign, key=len, reverse=True))) + r")(?![\w.])")
+    for path in (package / name / "Extraction").glob("*.lean"):
+        if not path.stem.endswith("_Template"):
+            write(path, use.sub(r"(pure \1)", path.read_text()))
+
+
+def require(name, path):
+    return f'\n[[require]]\nname = "{name}"\npath = "{path}"\n'
+
+
+def wire_lakefile(package, names, deps):
     lakefile = package / "lakefile.toml"
     text = lakefile.read_text()
+    for other, name in names.items():
+        text = text.replace(require(name, relative(other, package)), "")
     packages_dir = relative(WORKSPACE / ".lake" / "packages", package)
     if "\npackagesDir = " not in text:
         text = re.sub(
@@ -95,18 +134,20 @@ def wire_lakefile(package):
             count=1,
         )
     if '\nname = "CoreModelsExt"\n' not in text:
-        text += f'\n[[require]]\nname = "CoreModelsExt"\npath = "{relative(EXT, package)}"\n'
-    write(lakefile, text)
+        text += require("CoreModelsExt", relative(EXT, package))
+    write(lakefile, text + "".join(require(names[dep], relative(dep, package)) for dep in deps))
 
 
-def package_manifest(package, name, workspace_manifest):
-    """The workspace's manifest, seen from the package: its git dependencies, and CoreModelsExt."""
+def package_manifest(package, name, workspace_manifest, direct=(), inherited=()):
+    """The workspace's manifest, seen from the package: its git dependencies, CoreModelsExt, and
+    the packages it requires, `direct`, and those require in turn, `inherited`."""
+    dirs = {entry["name"]: pathlib.Path(entry["dir"]) for entry in workspace_manifest["packages"] if entry["type"] == "path"}
     entries = []
     for entry in workspace_manifest["packages"]:
         if entry["type"] == "git":
             entries.append(entry)
-        elif entry["name"] == "CoreModelsExt":
-            entries.append(dict(entry, dir=relative(EXT, package)))
+        elif entry["name"] == "CoreModelsExt" or entry["name"] in direct or entry["name"] in inherited:
+            entries.append(dict(entry, dir=relative(WORKSPACE / dirs[entry["name"]], package), inherited=entry["name"] in inherited))
     manifest = dict(workspace_manifest, name=name, packagesDir=relative(WORKSPACE / ".lake" / "packages", package), packages=entries)
     write(package / "lake-manifest.json", json.dumps(manifest, indent=1, ensure_ascii=False) + "\n")
 
@@ -115,9 +156,33 @@ def lean_name(package):
     return re.search(r'^name = "([^"]+)"', (package / "lakefile.toml").read_text(), re.M).group(1)
 
 
+def crate_of(package):
+    return package.parents[2].name
+
+
+def dependencies(packages):
+    """Each package's direct dependencies among the packages: those of the crates its crate uses."""
+    metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version", "1", "--no-deps"], cwd=ROOT))
+    by_crate = {crate_of(package): package for package in packages}
+    uses = {crate["name"]: {dep["name"] for dep in crate["dependencies"] if dep["kind"] is None} for crate in metadata["packages"]}
+    return {package: sorted(by_crate[dep] for dep in uses[crate_of(package)] if dep in by_crate) for package in packages}
+
+
+def closure(package, deps):
+    seen = set()
+    stack = list(deps[package])
+    while stack:
+        dep = stack.pop()
+        if dep not in seen:
+            seen.add(dep)
+            stack += deps[dep]
+    return seen
+
+
 def main():
     packages = sorted(path for path in ROOT.glob("crates/*/proofs/*/lean") if (path / "lakefile.toml").exists())
     names = {package: lean_name(package) for package in packages}
+    deps = dependencies(packages)
 
     lakefile = [
         GENERATED,
@@ -159,9 +224,13 @@ def main():
 
     package_manifest(EXT, "CoreModelsExt", dict(manifest, packages=git))
     for package in packages:
-        sync_assumptions(package, names[package])
-        wire_lakefile(package)
-        package_manifest(package, names[package], manifest)
+        direct = [names[dep] for dep in deps[package]]
+        foreign = set().union(*(constants(dep, names[dep], crate_of(dep)) for dep in closure(package, deps)))
+        bind_foreign_constants(package, names[package], foreign)
+        sync_assumptions(package, names[package], crate_of(package), names.values(), direct)
+        wire_lakefile(package, names, deps[package])
+        inherited = {names[dep] for dep in closure(package, deps)} - set(direct)
+        package_manifest(package, names[package], manifest, direct, inherited)
 
 
 if __name__ == "__main__":

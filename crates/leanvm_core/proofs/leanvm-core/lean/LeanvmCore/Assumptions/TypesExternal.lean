@@ -6,7 +6,12 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import LeanvmCore.Assumptions.CratesExternal
+public import FiatShamir.Extraction
+public import KeccakGkr.Extraction
+public import Parallel.Extraction
+public import Pcs.Extraction
+public import Primitives.Extraction
+public import Verifier.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -25,6 +30,8 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
+
+namespace leanvm_core
 
 /-- [leanvm_core::constraints::Claims]
     Source: 'crates/leanvm_core/src/constraints.rs', lines 43:0-46:1
@@ -88,3 +95,4 @@ axiom leaf.Coord : Type
     Visibility: public -/
 axiom tables.FillCtx : Type
 
+end leanvm_core

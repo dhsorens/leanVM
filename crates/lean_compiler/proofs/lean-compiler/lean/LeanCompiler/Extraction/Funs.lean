@@ -666,8 +666,8 @@ def g_pow_u128_loop
 /-- [lean_compiler::g_pow_u128]:
     Source: 'crates/lean_compiler/src/lib.rs', lines 284:0-295:1 -/
 def g_pow_u128 (e : Std.U128) : RustM primitives.field.gf2_64.F64 := do
-  let result ← primitives.field.gf2_64.F64.ONE
-  let base ← primitives.field.G
+  let result ← (pure primitives.field.gf2_64.F64.ONE)
+  let base ← (pure primitives.field.G)
   g_pow_u128_loop e result base
 
 /-- [lean_compiler::resolve::{impl core::ops::function::Fn<(&'_4 lean_compiler::ir::KVal,), primitives::field::gf2_64x3::F192> for lean_compiler::resolve::{closure}<'_0, '_1, '_2, '_3>}::call]:
@@ -758,26 +758,26 @@ def resolve
     Source: 'crates/lean_compiler/src/lower/builtins.rs', lines 580:0-580:65 -/
 @[global_simps, irreducible]
 def lower.builtins.STATE_CELLS : RustM Std.U32 := do
-  let i ← leanvm_core.keccak.STATE_CELLS
+  let i ← (pure leanvm_core.keccak.STATE_CELLS)
   ok (UScalar.cast .U32 i)
 
 /-- [lean_compiler::lower::builtins::BLOCK_CELLS]
     Source: 'crates/lean_compiler/src/lower/builtins.rs', lines 582:0-582:64 -/
 @[global_simps, irreducible]
 def lower.builtins.BLOCK_CELLS : RustM Std.U32 := do
-  let i ← leanvm_core.keccak.RATE_CELLS
+  let i ← (pure leanvm_core.keccak.RATE_CELLS)
   ok (UScalar.cast .U32 i)
 
 /-- [lean_compiler::lower::builtins::RATE]
     Source: 'crates/lean_compiler/src/lower/builtins.rs', lines 584:0-584:43 -/
 @[global_simps, irreducible]
-def lower.builtins.RATE : RustM Std.Usize := primitives.hash.RATE
+def lower.builtins.RATE : RustM Std.Usize := (pure primitives.hash.RATE)
 
 /-- [lean_compiler::lower::builtins::keccak_pad_value]:
     Source: 'crates/lean_compiler/src/lower/builtins.rs', lines 587:0-589:1 -/
 def lower.builtins.keccak_pad_value
   : RustM primitives.field.gf2_64x3.F192 := do
-  let i ← primitives.hash.PAD_FIRST
+  let i ← (pure primitives.hash.PAD_FIRST)
   let i1 ← core.U64.Insts.CoreConvertFromU8.from i
   primitives.field.gf2_64x3.F192.new i1 0#u64 0#u64
 
@@ -974,7 +974,7 @@ def lower.eval.field_pow
   (b : primitives.field.gf2_64x3.F192) (k : Std.U32) :
   RustM primitives.field.gf2_64x3.F192
   := do
-  let acc ← primitives.field.gf2_64x3.F192.ONE
+  let acc ← (pure primitives.field.gf2_64x3.F192.ONE)
   lower.eval.field_pow_loop k acc b
 
 /-- [lean_compiler::lower::eval::{lean_compiler::lower::FnLower<'_0>}::try_const_int]:
@@ -1051,7 +1051,7 @@ def lower.Abi.end
     Source: 'crates/lean_compiler/src/lower.rs', lines 83:0-83:58 -/
 @[global_simps, irreducible]
 def lower.FOLD_MAX : RustM Std.U128 := do
-  let i ← leanvm_core.cpu.MIN_LOG_MEM
+  let i ← (pure leanvm_core.cpu.MIN_LOG_MEM)
   1#u128 <<< i
 
 /-- [lean_compiler::lower::{impl core::clone::Clone for lean_compiler::lower::PureOp}::clone]:

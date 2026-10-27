@@ -6,6 +6,10 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
+public import FiatShamir.Extraction
+public import Parallel.Extraction
+public import Pcs.Extraction
+public import Primitives.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -25,15 +29,6 @@ set_option maxHeartbeats 1000000
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
 
--- Items of other workspace crates the extraction uses, which hax does not declare: written
--- here by hand, above the generated declarations (wire.py keeps this header as it is).
+namespace lean_da
 
--- `primitives::field::gf2_64x3::F192`: `c0 + c1 y + c2 y^2`, its three 64-bit coefficients.
-structure primitives.field.gf2_64x3.F192 where
-  c0 : Std.U64
-  c1 : Std.U64
-  c2 : Std.U64
-
--- `fiat_shamir::FiatShamirState`: the duplex sponge over Keccak-f, assumed.
-axiom fiat_shamir.FiatShamirState : Type
-
+end lean_da

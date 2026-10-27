@@ -13,6 +13,116 @@
    "configFile": "lakefile.toml"
   },
   {
+   "type": "path",
+   "scope": "",
+   "name": "Bench",
+   "manifestFile": "lake-manifest.json",
+   "inherited": true,
+   "dir": "../../../../bench/proofs/bench/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "FiatShamir",
+   "manifestFile": "lake-manifest.json",
+   "inherited": true,
+   "dir": "../../../../fiat_shamir/proofs/fiat-shamir/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "KeccakGkr",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../keccak_gkr/proofs/keccak-gkr/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "LeanCompiler",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../lean_compiler/proofs/lean-compiler/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "LeanDa",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../lean_da/proofs/lean-da/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "LeanvmCore",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../leanvm_core/proofs/leanvm-core/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Parallel",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../parallel/proofs/parallel/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Pcs",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../pcs/proofs/pcs/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Primitives",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../primitives/proofs/primitives/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Signatures",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../signatures/proofs/signatures/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Verifier",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../verifier/proofs/verifier/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
    "url": "https://github.com/cryspen/hax-lean",
    "type": "git",
    "subDir": null,

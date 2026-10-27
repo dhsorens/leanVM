@@ -21,3 +21,27 @@ rev = "v0.3.34"
 [[require]]
 name = "CoreModelsExt"
 path = "../../../../../formal/extraction/CoreModelsExt"
+
+[[require]]
+name = "Bench"
+path = "../../../../bench/proofs/bench/lean"
+
+[[require]]
+name = "FiatShamir"
+path = "../../../../fiat_shamir/proofs/fiat-shamir/lean"
+
+[[require]]
+name = "Parallel"
+path = "../../../../parallel/proofs/parallel/lean"
+
+[[require]]
+name = "Pcs"
+path = "../../../../pcs/proofs/pcs/lean"
+
+[[require]]
+name = "Primitives"
+path = "../../../../primitives/proofs/primitives/lean"
+
+[[require]]
+name = "Verifier"
+path = "../../../../verifier/proofs/verifier/lean"

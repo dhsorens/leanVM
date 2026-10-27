@@ -6,7 +6,8 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import LeanCompiler.Assumptions.Crates
+public import LeanvmCore.Extraction
+public import Primitives.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -27,6 +28,8 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 2048
 
 
+namespace lean_compiler
+
 /-- [lean_compiler::ast::Expr]
     Source: 'crates/lean_compiler/src/ast.rs', lines 7:0-83:1
     Visibility: public -/
@@ -42,3 +45,4 @@ axiom ast.Stmt : Type
     Visibility: public -/
 axiom ast.StmtKind : Type
 
+end lean_compiler

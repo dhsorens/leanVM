@@ -2493,7 +2493,7 @@ def lean_sphincs.SIG_SIZE : RustM Std.Usize := do
 def tweak.blocks (payload : Std.Usize) : RustM Std.Usize := do
   let i ← tweak.PUBLIC_PARAM_LEN + tweak.ADDRESS_LEN
   let i1 ← i + payload
-  let i2 ← primitives.hash.RATE
+  let i2 ← (pure primitives.hash.RATE)
   let i3 ← i1 / i2
   i3 + 1#usize
 

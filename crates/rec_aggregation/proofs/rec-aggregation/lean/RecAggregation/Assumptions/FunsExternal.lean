@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open rec_aggregation
+namespace rec_aggregation
 
 /-- [rec_aggregation::aggregation::f192_literal]:
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 168:0-170:1 -/
@@ -362,3 +362,4 @@ axiom aggregation.placeholder_map
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 2712:0-2739:1 -/
 axiom aggregation.compile_guest : Std.Usize → RustM leanvm_core.cpu.Program
 
+end rec_aggregation

@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
 
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
-open fiat_shamir
+namespace fiat_shamir
 
 /-- [fiat_shamir::{fiat_shamir::FiatShamirState}::grind_pow]:
     Source: 'crates/fiat_shamir/src/lib.rs', lines 160:4-199:5
@@ -49,3 +49,4 @@ axiom transcript.Proof.Insts.CoreFmtDebug.fmt
   transcript.Proof → core.fmt.Formatter → RustM ((core.result.Result Unit
     core.fmt.Error) × core.fmt.Formatter)
 
+end fiat_shamir

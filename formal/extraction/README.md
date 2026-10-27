@@ -25,7 +25,7 @@ formal/extraction/
 
 A crate takes part by declaring a [proof scenario](https://github.com/cryspen/hax/blob/main/docs/manual/tools.md#proof-scenarios) in its `hax.toml`; `hax.sh extract` does the rest. The scenario's `opaque` list names the items extracted as signatures only, grouped by what stops them, so it is also the work left.
 
-This directory is the one Lake workspace: it requires every package by path and `CoreModelsExt`, so Aeneas, the hax Lean library and Mathlib (and later CompPoly and ArkLib) resolve once, in `formal/extraction/.lake/packages`, which each package also points at when built alone. `lake build` here builds every extraction, each as its own root: a crate's extraction declares the items it uses from another crate as its own opaque ones, so two are never imported together.
+This directory is the one Lake workspace: it requires every package by path and `CoreModelsExt`, so Aeneas, the hax Lean library and Mathlib (and later CompPoly and ArkLib) resolve once, in `formal/extraction/.lake/packages`, which each package also points at when built alone. `lake build` here builds every extraction, each as its own root. A crate's extraction imports those of the crates it depends on, which declare the items it uses from them.
 
 ## Using it
 

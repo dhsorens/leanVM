@@ -33,3 +33,42 @@ open parallel
     Visibility: public -/
 axiom topology.topology : RustM topology.Topology
 
+/-- [parallel::init]:
+    Source: 'crates/parallel/src/lib.rs', lines 112:0-118:1
+    Visibility: public -/
+axiom init : RustM Unit
+
+/-- [parallel::chunks_mut]:
+    Source: 'crates/parallel/src/lib.rs', lines 340:0-350:1
+    Visibility: public -/
+axiom chunks_mut
+  {T : Type _} {F : Type _} (coreopsfunctionFnFPairUsizeMut0SliceTupleInst :
+  core.ops.function.Fn F (Std.Usize × (Slice T)) Unit) :
+  Slice T → Std.Usize → F → RustM (Slice T)
+
+/-- [parallel::map_collect]:
+    Source: 'crates/parallel/src/lib.rs', lines 450:0-463:1
+    Visibility: public -/
+axiom map_collect
+  {T : Type _} {F : Type _} (coreopsfunctionFnFTupleUsizeTInst :
+  core.ops.function.Fn F Std.Usize T) :
+  Std.Usize → F → RustM (alloc.vec.Vec T)
+
+/-- [parallel::find_first]:
+    Source: 'crates/parallel/src/lib.rs', lines 471:0-486:1
+    Visibility: public -/
+axiom find_first
+  {P : Type _} (coreopsfunctionFnPTupleUsizeBoolInst : core.ops.function.Fn P
+  Std.Usize Bool) :
+  Std.Usize → P → RustM (core.option.Option Std.Usize)
+
+/-- [parallel::map_reduce]:
+    Source: 'crates/parallel/src/lib.rs', lines 515:0-532:1
+    Visibility: public -/
+axiom map_reduce
+  {T : Type _} {ID : Type _} {M : Type _} {R : Type _}
+  (coreopsfunctionFnIDTupleTInst : core.ops.function.Fn ID Unit T)
+  (coreopsfunctionFnMTupleUsizeTInst : core.ops.function.Fn M Std.Usize T)
+  (coreopsfunctionFnRPairTInst : core.ops.function.Fn R (T × T) T) :
+  Std.Usize → ID → M → R → RustM T
+
