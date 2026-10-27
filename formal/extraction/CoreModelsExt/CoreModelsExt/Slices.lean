@@ -1,7 +1,4 @@
--- Models first needed by crates/fiat_shamir and crates/keccak_gkr, of Rust standard library
--- items the pinned hax-lean CoreModels lacks. Each is a candidate for upstreaming there. A `def`
--- mirrors the Rust semantics; an `opaque` is an assumption about an item whose body is not
--- modelled.
+-- Arrays, slices and `Vec`.
 module
 public import Aeneas
 public import CoreModels
@@ -12,17 +9,6 @@ open RustM ControlFlow Error
 
 namespace CoreModels
 
-/-! ## Integers -/
-
-/-- `usize::next_multiple_of`: the least multiple of `rhs` at least `x`, a panic for a zero
-`rhs` or where that overflows. -/
-def core.num.Usize.next_multiple_of (x rhs : Std.Usize) : RustM Std.Usize :=
-  if rhs.val = 0 then fail .panic
-  else
-    let m := (x.val + rhs.val - 1) / rhs.val * rhs.val
-    if h : m < 2 ^ Std.UScalarTy.Usize.numBits then ok (Std.UScalar.ofNatCore m h)
-    else fail .panic
-
 /-! ## Arrays -/
 
 /-- `<&[T; N]>::try_from(&[T])`: the slice as an array when it has `N` elements. -/
@@ -31,15 +17,16 @@ def core.SharedAArray.Insts.CoreConvertTryFromSharedASliceTryFromSliceError.try_
     RustM (core.result.Result (Std.Array T N) core.array.TryFromSliceError) :=
   if h : s.val.length = N.val then ok (.Ok (Std.Array.make N s.val h)) else ok (.Err ())
 
-/-! ## Raw pointers -/
+/-- `<[[T; N]]>::as_flattened`: the arrays' elements in order. -/
+def core.slice.SliceArray.as_flattened {T : Type} {N : Std.Usize} (self : Slice (Array T N)) :
+    RustM (Slice T) :=
+  let flat := (self.val.map Array.val).flatten
+  if h : flat.length ≤ Usize.max then ok (Slice.from flat h) else fail .panic
 
-/-- `<[T]>::as_mut_ptr`. -/
-opaque core.slice.Slice.as_mut_ptr {T : Type} : Slice T → RustM (MutRawPtr T × Slice T)
-
-/-- `<*mut T>::cast`. -/
-opaque core.ptr.mut_ptr.RawPtrMutT.cast {T : Type} (U : Type) : MutRawPtr T → RustM (MutRawPtr U)
-
-/-! ## Formatting -/
+/-- `<[[T; N]]>::as_flattened_mut`, assumed: the arrays' elements in order, and the back
+function regrouping the flat slice into the arrays. -/
+opaque core.slice.SliceArray.as_flattened_mut {T : Type} {N : Std.Usize}
+    (self : Slice (Array T N)) : RustM (Slice T × (Slice T → Slice (Array T N)))
 
 /-! ## Slices and vectors -/
 
