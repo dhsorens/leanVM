@@ -15,6 +15,26 @@
   {
    "type": "path",
    "scope": "",
+   "name": "Parallel",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/parallel/proofs/parallel/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Primitives",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/primitives/proofs/primitives/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "Verifier",
    "manifestFile": "lake-manifest.json",
    "inherited": false,

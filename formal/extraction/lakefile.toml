@@ -6,11 +6,19 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.Verifier"]
+roots = ["Extraction.Parallel", "Extraction.Primitives", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
 path = "CoreModelsExt"
+
+[[require]]
+name = "Parallel"
+path = "../../crates/parallel/proofs/parallel/lean"
+
+[[require]]
+name = "Primitives"
+path = "../../crates/primitives/proofs/primitives/lean"
 
 [[require]]
 name = "Verifier"
