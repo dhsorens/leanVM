@@ -35,7 +35,7 @@ axiom bus.verify_gkr_grand_products
     transcript.Transcript)
 
 /-- [verifier::bus::{verifier::bus::ColumnClaim}::on_stack]:
-    Source: 'crates/verifier/src/bus.rs', lines 86:4-89:5
+    Source: 'crates/verifier/src/bus.rs', lines 88:4-91:5
     Visibility: public -/
 axiom bus.ColumnClaim.on_stack
   :
@@ -43,7 +43,7 @@ axiom bus.ColumnClaim.on_stack
     _dyn => core.ops.function.Fn _dyn (Slice field.E) field.E)) × field.E))
 
 /-- [verifier::bus::verify_bus_balance]:
-    Source: 'crates/verifier/src/bus.rs', lines 103:0-210:1
+    Source: 'crates/verifier/src/bus.rs', lines 105:0-212:1
     Visibility: public -/
 axiom bus.verify_bus_balance
   :
@@ -51,7 +51,7 @@ axiom bus.verify_bus_balance
     bus.BusResult VerifierError) × transcript.Transcript)
 
 /-- [verifier::bus::table_sumcheck]:
-    Source: 'crates/verifier/src/bus.rs', lines 215:0-256:1
+    Source: 'crates/verifier/src/bus.rs', lines 217:0-258:1
     Visibility: public -/
 axiom bus.table_sumcheck
   :
@@ -127,7 +127,7 @@ axiom field.E.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [verifier::hash::{impl core::fmt::Debug for verifier::hash::Digest}::fmt]:
-    Source: 'crates/verifier/src/hash.rs', lines 100:22-100:27
+    Source: 'crates/verifier/src/hash.rs', lines 106:22-106:27
     Visibility: public -/
 axiom hash.Digest.Insts.CoreFmtDebug.fmt
   :
@@ -156,7 +156,7 @@ axiom keccak.verify_layer
 axiom multilinear.eq_kernel : Slice field.E → RustM (alloc.vec.Vec field.E)
 
 /-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::next_scalars]:
-    Source: 'crates/verifier/src/transcript.rs', lines 152:4-154:5
+    Source: 'crates/verifier/src/transcript.rs', lines 149:4-151:5
     Visibility: public -/
 axiom transcript.Transcript.next_scalars
   :
@@ -202,49 +202,49 @@ axiom layout.Flushes.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [verifier::layout::jump_constraints]:
-    Source: 'crates/verifier/src/layout.rs', lines 297:0-300:1 -/
+    Source: 'crates/verifier/src/layout.rs', lines 303:0-306:1 -/
 axiom layout.jump_constraints : Slice field.E → RustM (alloc.vec.Vec field.E)
 
 /-- [verifier::layout::flushes_arith]:
-    Source: 'crates/verifier/src/layout.rs', lines 212:0-237:1 -/
+    Source: 'crates/verifier/src/layout.rs', lines 218:0-243:1 -/
 axiom layout.flushes_arith : Std.Usize → Bool → RustM layout.Flushes
 
 /-- [verifier::layout::flushes_set]:
-    Source: 'crates/verifier/src/layout.rs', lines 239:0-248:1 -/
+    Source: 'crates/verifier/src/layout.rs', lines 245:0-254:1 -/
 axiom layout.flushes_set : RustM layout.Flushes
 
 /-- [verifier::layout::flushes_deref]:
-    Source: 'crates/verifier/src/layout.rs', lines 250:0-273:1 -/
+    Source: 'crates/verifier/src/layout.rs', lines 256:0-279:1 -/
 axiom layout.flushes_deref : RustM layout.Flushes
 
 /-- [verifier::layout::flushes_jump]:
-    Source: 'crates/verifier/src/layout.rs', lines 275:0-295:1 -/
+    Source: 'crates/verifier/src/layout.rs', lines 281:0-301:1 -/
 axiom layout.flushes_jump : RustM layout.Flushes
 
 /-- [verifier::layout::flushes_keccak]:
-    Source: 'crates/verifier/src/layout.rs', lines 332:0-370:1 -/
+    Source: 'crates/verifier/src/layout.rs', lines 338:0-376:1 -/
 axiom layout.flushes_keccak : RustM layout.Flushes
 
 /-- [verifier::layout::KECCAK_IN]
-    Source: 'crates/verifier/src/layout.rs', lines 393:0-393:47
+    Source: 'crates/verifier/src/layout.rs', lines 399:0-399:47
     Visibility: public -/
 axiom layout.KECCAK_IN : RustM Std.Usize
 
 /-- [verifier::layout::TABLE_WIDTHS]
-    Source: 'crates/verifier/src/layout.rs', lines 469:0-476:2 -/
+    Source: 'crates/verifier/src/layout.rs', lines 475:0-482:2 -/
 axiom layout.TABLE_WIDTHS : RustM (Array Std.Usize 6#usize)
 
 /-- [verifier::layout::keccak_columns]:
-    Source: 'crates/verifier/src/layout.rs', lines 433:0-442:1 -/
+    Source: 'crates/verifier/src/layout.rs', lines 439:0-448:1 -/
 axiom layout.keccak_columns : RustM (alloc.vec.Vec alloc.string.String)
 
 /-- [verifier::layout::tables]:
-    Source: 'crates/verifier/src/layout.rs', lines 444:0-467:1
+    Source: 'crates/verifier/src/layout.rs', lines 450:0-473:1
     Visibility: public -/
 axiom layout.tables : RustM (alloc.vec.Vec layout.Table)
 
 /-- [verifier::layout::build_layout]:
-    Source: 'crates/verifier/src/layout.rs', lines 490:0-591:1
+    Source: 'crates/verifier/src/layout.rs', lines 496:0-597:1
     Visibility: public -/
 axiom layout.build_layout
   :
@@ -307,7 +307,7 @@ axiom merkle.PrunedMerklePaths.Insts.CoreFmtDebug.fmt
     ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
 
 /-- [verifier::merkle::{impl core::fmt::Debug for verifier::merkle::MerklePath}::fmt]:
-    Source: 'crates/verifier/src/merkle.rs', lines 49:16-49:21
+    Source: 'crates/verifier/src/merkle.rs', lines 53:16-53:21
     Visibility: public -/
 axiom merkle.MerklePath.Insts.CoreFmtDebug.fmt
   :
@@ -315,7 +315,7 @@ axiom merkle.MerklePath.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [verifier::merkle::{verifier::merkle::PrunedMerklePaths}::expand]:
-    Source: 'crates/verifier/src/merkle.rs', lines 77:4-144:5 -/
+    Source: 'crates/verifier/src/merkle.rs', lines 81:4-148:5 -/
 axiom merkle.PrunedMerklePaths.expand
   :
   merkle.PrunedMerklePaths → Std.Usize → Slice Std.U64 → Std.Usize →
@@ -323,7 +323,7 @@ axiom merkle.PrunedMerklePaths.expand
     merkle.MerklePath)) VerifierError)
 
 /-- [verifier::multilinear::{impl core::fmt::Debug for verifier::multilinear::Placement}::fmt]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 115:22-115:27
+    Source: 'crates/verifier/src/multilinear.rs', lines 119:22-119:27
     Visibility: public -/
 axiom multilinear.Placement.Insts.CoreFmtDebug.fmt
   :
@@ -331,7 +331,7 @@ axiom multilinear.Placement.Insts.CoreFmtDebug.fmt
     Unit core.fmt.Error) × core.fmt.Formatter)
 
 /-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::samples]:
-    Source: 'crates/verifier/src/transcript.rs', lines 132:4-134:5
+    Source: 'crates/verifier/src/transcript.rs', lines 129:4-131:5
     Visibility: public -/
 axiom transcript.Transcript.samples
   :
@@ -347,7 +347,7 @@ axiom transcript.Proof.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [verifier::transcript::{impl core::fmt::Debug for verifier::transcript::Sponge}::fmt]:
-    Source: 'crates/verifier/src/transcript.rs', lines 40:16-40:21
+    Source: 'crates/verifier/src/transcript.rs', lines 37:16-37:21
     Visibility: public -/
 axiom transcript.Sponge.Insts.CoreFmtDebug.fmt
   :
@@ -355,7 +355,7 @@ axiom transcript.Sponge.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::merkle]:
-    Source: 'crates/verifier/src/transcript.rs', lines 186:4-233:5
+    Source: 'crates/verifier/src/transcript.rs', lines 183:4-230:5
     Visibility: public -/
 axiom transcript.Transcript.merkle
   :

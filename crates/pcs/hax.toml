@@ -1,0 +1,110 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/pcs/lean.
+#
+# `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
+# Each is grouped by what stops it; a patch in proofs/pcs/patches/pre that rewrites the
+# construct takes the item off it.
+[scenario.pcs]
+backend = "lean"
+opaque = [
+  # Defined per host by `cfg(target_arch)` (additive_ntt_f64.rs:694, :721, :731): opaque, so
+  # the extraction is the same on every host.
+  "crate::ntt::additive_ntt_f64::prefetch",
+  "crate::ntt::additive_ntt_f64::L2_WORDS",
+  "crate::ntt::additive_ntt_f64::LOG_SUBS_PER_WORKER",
+
+  # A thread-local scratch buffer (additive_ntt_f64.rs:758): Aeneas has no thread locals.
+  "crate::ntt::additive_ntt_f64::with_scratch",
+
+  # The Merkle builder: a lock-free tree over atomics and a `OnceLock`, whose tasks write
+  # `MaybeUninit` digests through raw pointers.
+  "crate::merkle",
+
+  # Raw pointers and uninitialized memory (`parallel::SendPtr`, `MaybeUninit`, `uninit_vec`),
+  # which have no model.
+  "crate::ntt::additive_ntt_f64::replicate",
+  "crate::ntt::additive_ntt_f64::fused_rows",
+  "crate::stack_open::basis::_::new",
+  "crate::whir::build_initial_basis",
+  "crate::whir::fold_out_buf",
+
+  # Type layouts (`size_of`, `align_of`), which Aeneas renders without their type: the guards
+  # of the in-place casts above (whir_ntt_ext.rs:28, named by a patch).
+  "crate::whir_ntt_ext::_F192_IS_THREE_WORDS",
+  "crate::whir_ntt_ext::_F192_IS_WORD_ALIGNED",
+
+  # Call an encode that takes a `&RowSink` (excluded below).
+  "crate::ntt::additive_ntt_f64::_::encode_interleaved_in_place",
+  "crate::whir::commit",
+  "crate::whir::ligero_commit_ext",
+
+  # Kernels whose closures, handed to the `parallel` pool, write disjoint mutable slices or
+  # rows borrowed from a shared buffer: Aeneas cannot join loop states that hold such borrows,
+  # nor nested borrows (`&mut [&mut [F64]; N]`).
+  "crate::ntt::additive_ntt_f64::_::gathered_pass",
+  "crate::ntt::additive_ntt_f64::butterfly_interleaved_fused_2layer",
+  "crate::ntt::additive_ntt_f64::butterfly_interleaved_fused_3layer",
+  "crate::ntt::additive_ntt_f64::radix8_butterflies",
+  "crate::ntt::additive_ntt_f64::transpose_lane_major",
+  "crate::ring_switch::combine_deferred_chunk",
+  "crate::ring_switch::fold_1b_rows",
+  "crate::stack_open::basis::_::add",
+  "crate::stack_open::basis::build",
+  "crate::whir::_::fold_lane",
+  "crate::whir::_::glue_pending",
+  "crate::whir::fold_and_msg_blocks",
+  "crate::whir::fold_and_msg_lsb",
+  "crate::whir::fold_base_and_msg_blocks",
+  "crate::whir::lane_fold",
+  "crate::whir::lifted_lane_fold",
+  "crate::whir_induce::induce_sumcheck_evaluate_at_residual",
+  "crate::whir_induce::induce_sumcheck_poly",
+  "crate::whir_induce::induce_sumcheck_poly_via_ntt",
+  "crate::whir_induce::transpose_dense_rest",
+  "crate::whir_induce::transpose_layers_ext_windowed",
+  "crate::whir_induce::transpose_sparse_windowed",
+
+  # The WHIR prover's level loop, which mutates a `SumcheckProver<'a>` that borrows the
+  # witness (whir.rs:1300), and returns from inside it (whir.rs:1359): an Aeneas internal error.
+  "crate::whir::recursive_prover_with_prepared_basis",
+  "crate::stack_open::open_batch_mixed_whir_stacked",
+
+  # Aeneas internal errors, each still to be reduced to a reportable case.
+  "crate::whir::msg_terms_lone",  # whir.rs:588, a loop over a zip, its accumulator returned twice
+
+  # The security analysis computes in `f64`, which Aeneas does not translate.
+  "crate::whir_config::ANALYSIS_LOG_Q",
+  "crate::whir_config::_::paper_predicted_bits",
+  "crate::whir_config::johnson_algebraic_bits_for",
+  "crate::whir_config::johnson_eta_for_m",
+  "crate::whir_config::johnson_interleaved_list_log2",
+  "crate::whir_config::johnson_m_param",
+  "crate::whir_config::optimize_johnson_level",
+  "crate::whir_config::paper_ood_bits",
+  "crate::whir_config::paper_per_query_bits",
+  "crate::whir_config::paper_thm_ca_johnson_log_a",
+  "crate::whir_config::reduced_rate",
+
+  # Aeneas does not yet translate an early return out of a loop: `?` in the config's derivation.
+  "crate::whir_config::derive_ladder",
+  "crate::whir_config::_::validate",
+  "crate::whir_config::_::derive_config_with_log_inv_rate",
+  # Hands `derive_ladder` a closure over mutable state, which the hax Lean library's `FnMut`
+  # does not model (whir_config.rs:294).
+  "crate::whir_config::derive_ladder_shape",
+
+  # `Iterator::copied` (whir_config.rs:140), excluded below.
+  "crate::whir_config::_::level_shapes",
+]
+exclude = [
+  # A `&RowSink`, a `dyn Fn`, in the signature: Aeneas has no dynamic trait types.
+  "crate::ntt::additive_ntt_f64::RowSink",
+  "crate::ntt::additive_ntt_f64::_::transform",
+  "crate::ntt::additive_ntt_f64::_::encode_interleaved_in_place_with",
+  "crate::ntt::additive_ntt_f64::_::encode_interleaved_with",
+  "crate::whir_ntt_ext::encode_interleaved_ext",
+  # Their signatures crash Aeneas while translating the `Iterator` trait.
+  "core::iter::traits::iterator::Iterator::copied",
+  "core::iter::traits::iterator::Iterator::find",
+  "core::slice::iter::_::find",
+]

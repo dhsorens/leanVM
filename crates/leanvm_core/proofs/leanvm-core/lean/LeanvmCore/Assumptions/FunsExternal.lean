@@ -525,7 +525,6 @@ axiom tables.KeccakTable.Insts.Leanvm_coreTablesTable.fill
     primitives.field.gf2_64.F64)) × (Slice (Slice primitives.field.gf2_64.F64)
     → Slice (Slice primitives.field.gf2_64.F64)))
 
-
 /-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::KeccakTable}::flushes]:
     Source: 'crates/leanvm_core/src/tables.rs', lines 949:4-968:5
     Visibility: public -/

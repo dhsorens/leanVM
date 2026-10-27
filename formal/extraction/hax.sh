@@ -31,6 +31,7 @@ case "$(uname -m)" in
   arm64 | aarch64) export RUSTFLAGS="-C target-feature=-aes,-sha2,-sha3" ;;
   *) export RUSTFLAGS="" ;;
 esac
+export RUSTDOCFLAGS="$RUSTFLAGS" # doctests build with these
 
 usage() {
   awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"

@@ -1,0 +1,99 @@
+diff --git a/crates/pcs/src/ring_switch.rs b/crates/pcs/src/ring_switch.rs
+index 66673c3e..18924dbe 100644
+--- a/crates/pcs/src/ring_switch.rs
++++ b/crates/pcs/src/ring_switch.rs
+@@ -153,7 +153,11 @@ fn apply_composed_map(mut value: F192, challenges: &[F192; COMPOSITION_SHIFTS.le
+ /// Sample the composed map's challenges after every ring-switch message has
+ /// been bound.
+ pub fn sample_map_challenges(ch: &mut ProverState) -> [F192; COMPOSITION_SHIFTS.len()] {
+-    std::array::from_fn(|_| ch.sample())
++    let mut challenges = [F192::ZERO; COMPOSITION_SHIFTS.len()];
++    for i in 0..challenges.len() {
++        challenges[i] = ch.sample();
++    }
++    challenges
+ }
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/crates/pcs/src/whir.rs b/crates/pcs/src/whir.rs
+index 68be7c78..38bf0a1f 100644
+--- a/crates/pcs/src/whir.rs
++++ b/crates/pcs/src/whir.rs
+@@ -1085,7 +1085,13 @@ fn send_ood(sc: &mut SumcheckProver<'_>, ps: &mut ProverState, n_vars: usize, co
+ 
+ /// An `E` row as the `F64` words its Merkle leaf is hashed from.
+ fn ext_row_words(row: &[F192]) -> Vec<F64> {
+-    row.iter().flat_map(|v| [F64(v.c0), F64(v.c1), F64(v.c2)]).collect()
++    let mut words = Vec::with_capacity(3 * row.len());
++    for v in row {
++        words.push(F64(v.c0));
++        words.push(F64(v.c1));
++        words.push(F64(v.c2));
++    }
++    words
+ }
+ 
+ /// Prove `Σ_x witness(x) · b_initial(x) = target` against the L0 commitment
+diff --git a/crates/pcs/src/whir_config.rs b/crates/pcs/src/whir_config.rs
+index 717950a2..d76d6210 100644
+--- a/crates/pcs/src/whir_config.rs
++++ b/crates/pcs/src/whir_config.rs
+@@ -77,8 +77,8 @@ pub const RS_DOMAIN_INITIAL_REDUCTION_FACTOR: usize = 3;
+ /// reduction, it is deliberately fixed rather than a tuning parameter.
+ const RS_DOMAIN_SUBSEQUENT_REDUCTION_FACTOR: usize = 1;
+ 
+-const _: () = assert!(RS_DOMAIN_INITIAL_REDUCTION_FACTOR <= INITIAL_FOLDING_FACTOR);
+-const _: () = assert!(RS_DOMAIN_SUBSEQUENT_REDUCTION_FACTOR <= SUBSEQUENT_FOLDING_FACTOR);
++const _INITIAL_REDUCTION_FITS_FOLD: () = assert!(RS_DOMAIN_INITIAL_REDUCTION_FACTOR <= INITIAL_FOLDING_FACTOR);
++const _SUBSEQUENT_REDUCTION_FITS_FOLD: () = assert!(RS_DOMAIN_SUBSEQUENT_REDUCTION_FACTOR <= SUBSEQUENT_FOLDING_FACTOR);
+ 
+ /// Folding stops once at most this many variables remain: the residual
+ /// polynomial (`yr`, at most `2^RESIDUAL_MAX_LOG` coefficients) is sent in
+@@ -89,7 +89,7 @@ pub const RESIDUAL_MAX_LOG: usize = 5;
+ // by witness coordinate, and the residual segment is what the last lane challenges
+ // rotate past, so the residual may never be longer than that fold
+ // (`rec_aggregation`'s placeholder emitter re-checks this per derived candidate).
+-const _: () = assert!(RESIDUAL_MAX_LOG <= INITIAL_FOLDING_FACTOR);
++const _RESIDUAL_FITS_LANE_FOLD: () = assert!(RESIDUAL_MAX_LOG <= INITIAL_FOLDING_FACTOR);
+ 
+ /// Shape plus per-level soundness parameters for one WHIR opening. Prover
+ /// and verifier read exactly the same numbers.
+diff --git a/crates/pcs/src/whir_induce.rs b/crates/pcs/src/whir_induce.rs
+index 2106c1d3..c43b886d 100644
+--- a/crates/pcs/src/whir_induce.rs
++++ b/crates/pcs/src/whir_induce.rs
+@@ -34,7 +34,7 @@ pub fn eval_sk_at_vks(log_n: usize) -> Vec<F64> {
+     if log_n == 0 {
+         return sks_vks;
+     }
+-    let mut layer: Vec<F64> = (1..=log_n).map(|i| F64(1u64 << i)).collect();
++    let mut layer: Vec<F64> = (1..log_n + 1).map(|i| F64(1u64 << i)).collect();
+     let mut cur_len = log_n;
+     for i in 0..log_n {
+         for j in 0..cur_len {
+@@ -60,8 +60,8 @@ fn normalized_sks_at(x: F64, sks_vks: &[F64], inv_sks_vks: &[F64], out: &mut [F6
+     for i in 1..out.len() {
+         out[i] = next_s(out[i - 1], sks_vks[i - 1]);
+     }
+-    for (v, &inv) in out.iter_mut().zip(inv_sks_vks) {
+-        *v *= inv;
++    for i in 0..out.len().min(inv_sks_vks.len()) {
++        out[i] *= inv_sks_vks[i];
+     }
+ }
+ 
+diff --git a/crates/pcs/src/whir_ntt_ext.rs b/crates/pcs/src/whir_ntt_ext.rs
+index a68e9a9b..aada8b7b 100644
+--- a/crates/pcs/src/whir_ntt_ext.rs
++++ b/crates/pcs/src/whir_ntt_ext.rs
+@@ -25,8 +25,8 @@ use crate::ntt::{AdditiveNttF64, RowSink};
+ use primitives::field::{F64, F192};
+ 
+ // An E element is exactly three K words, with no padding, so the two views line up.
+-const _: () = assert!(size_of::<F192>() == 3 * size_of::<F64>());
+-const _: () = assert!(align_of::<F192>() == align_of::<F64>());
++const _F192_IS_THREE_WORDS: () = assert!(size_of::<F192>() == 3 * size_of::<F64>());
++const _F192_IS_WORD_ALIGNED: () = assert!(align_of::<F192>() == align_of::<F64>());
+ 
+ /// RS-encode a row-major E-valued message into a codeword, overwriting all of it.
+ ///

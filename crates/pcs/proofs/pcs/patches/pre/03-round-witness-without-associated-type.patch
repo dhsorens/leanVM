@@ -1,0 +1,94 @@
+diff --git a/crates/pcs/src/whir.rs b/crates/pcs/src/whir.rs
+index 2580bf5c..68be7c78 100644
+--- a/crates/pcs/src/whir.rs
++++ b/crates/pcs/src/whir.rs
+@@ -286,13 +286,11 @@ impl RoundQuad {
+ 
+ /// Sumcheck witness element: `F64` before the first fold (each product against
+ /// the E basis is a mixed `mul_base`, 2 PMULL), `F192` after it (full E
+-/// products, 3 PMULL). The associated accumulator is the matching
+-/// deferred-reduction type.
++/// products, 3 PMULL). Both accumulate in the deferred-reduction `F192Unreduced`.
+ trait RoundWitness: Copy + Sync + std::ops::Add<Output = Self> {
+-    type Acc: Copy + Send + core::ops::BitXorAssign;
+-    const ZERO_ACC: Self::Acc;
+-    fn mul_basis_unreduced(self, b: F192) -> Self::Acc;
+-    fn reduce(acc: Self::Acc) -> F192;
++    const ZERO_ACC: F192Unreduced;
++    fn mul_basis_unreduced(self, b: F192) -> F192Unreduced;
++    fn reduce(acc: F192Unreduced) -> F192;
+     /// Characteristic-two interpolation `x0·(1+r) + x1·r = x0 + r·(x0+x1)`,
+     /// lifting the witness into E. One product rather than two, bit-identical
+     /// to the two-product form and still just one reduction.
+@@ -304,14 +302,13 @@ trait RoundWitness: Copy + Sync + std::ops::Add<Output = Self> {
+ }
+ 
+ impl RoundWitness for F64 {
+-    type Acc = F192Unreduced;
+-    const ZERO_ACC: Self::Acc = F192Unreduced::ZERO;
++    const ZERO_ACC: F192Unreduced = F192Unreduced::ZERO;
+     #[inline]
+-    fn mul_basis_unreduced(self, b: F192) -> Self::Acc {
++    fn mul_basis_unreduced(self, b: F192) -> F192Unreduced {
+         b.mul_base_unreduced(self)
+     }
+     #[inline]
+-    fn reduce(acc: Self::Acc) -> F192 {
++    fn reduce(acc: F192Unreduced) -> F192 {
+         acc.reduce()
+     }
+     #[inline]
+@@ -325,14 +322,13 @@ impl RoundWitness for F64 {
+ }
+ 
+ impl RoundWitness for F192 {
+-    type Acc = F192Unreduced;
+-    const ZERO_ACC: Self::Acc = F192Unreduced::ZERO;
++    const ZERO_ACC: F192Unreduced = F192Unreduced::ZERO;
+     #[inline]
+-    fn mul_basis_unreduced(self, b: F192) -> Self::Acc {
++    fn mul_basis_unreduced(self, b: F192) -> F192Unreduced {
+         self.mul_unreduced(b)
+     }
+     #[inline]
+-    fn reduce(acc: Self::Acc) -> F192 {
++    fn reduce(acc: F192Unreduced) -> F192 {
+         acc.reduce()
+     }
+     #[inline]
+@@ -357,7 +353,7 @@ fn round_msg_lsb<T: RoundWitness>(f: &[T], b: &[F192]) -> SumcheckMessage {
+     debug_assert_eq!(b.len(), n);
+ 
+     let half = n / 2;
+-    let term = |j: usize| -> (T::Acc, T::Acc) {
++    let term = |j: usize| -> (F192Unreduced, F192Unreduced) {
+         let (f0, f1) = (f[2 * j], f[2 * j + 1]);
+         let (b0, b1) = (b[2 * j], b[2 * j + 1]);
+         (f0.mul_basis_unreduced(b0), (f0 + f1).mul_basis_unreduced(b0 + b1))
+@@ -563,7 +559,7 @@ fn accumulate_msg<A: Copy + Send + core::ops::BitXorAssign>(
+ 
+ /// `(u_0, u_2)` over one pair of blocks, elementwise.
+ #[inline]
+-fn msg_terms_pair<T: RoundWitness>(f0: &[T], f1: &[T], b0: &[F192], b1: &[F192]) -> (T::Acc, T::Acc) {
++fn msg_terms_pair<T: RoundWitness>(f0: &[T], f1: &[T], b0: &[F192], b1: &[F192]) -> (F192Unreduced, F192Unreduced) {
+     let mut u_0 = T::ZERO_ACC;
+     let mut u_2 = T::ZERO_ACC;
+     for (((&x0, &x1), &y0), &y1) in f0.iter().zip(f1).zip(b0).zip(b1) {
+@@ -577,7 +573,7 @@ fn msg_terms_pair<T: RoundWitness>(f0: &[T], f1: &[T], b0: &[F192], b1: &[F192])
+ /// `h(0)` and `h(inf)` collect the same `Σ f0·b0`, so this is NOT a no-op the way
+ /// a trailing odd element is in an adjacent-pair round.
+ #[inline]
+-fn msg_terms_lone<T: RoundWitness>(f0: &[T], b0: &[F192]) -> (T::Acc, T::Acc) {
++fn msg_terms_lone<T: RoundWitness>(f0: &[T], b0: &[F192]) -> (F192Unreduced, F192Unreduced) {
+     let mut u = T::ZERO_ACC;
+     for (&x0, &y0) in f0.iter().zip(b0) {
+         u ^= x0.mul_basis_unreduced(y0);
+@@ -594,7 +590,7 @@ fn round_msg_blocks<T: RoundWitness>(f: &[T], b: &[F192], block: usize) -> Sumch
+     assert!(block > 0 && f.len().is_multiple_of(block));
+     let n_blocks = f.len() / block;
+     let per = block.div_ceil(ROUND_CHUNK);
+-    let task = |t: usize| -> (T::Acc, T::Acc) {
++    let task = |t: usize| -> (F192Unreduced, F192Unreduced) {
+         let (i, c) = (t / per, t % per);
+         let x0 = c * ROUND_CHUNK;
+         let len = ROUND_CHUNK.min(block - x0);

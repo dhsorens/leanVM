@@ -384,6 +384,7 @@ axiom lower.builtins.SpongeCell.Insts.CoreFmtDebug.fmt
 
 /-- [lean_compiler::lower::call::substitute_body]:
     Source: 'crates/lean_compiler/src/lower/call.rs', lines 30:0-34:1 -/
+-- hand-maintained: Aeneas gives `Cow` two type arguments, the hax Lean library's takes one.
 axiom lower.call.substitute_body
   :
   Slice ast.Stmt → Slice (Str × ast.Expr) → RustM (alloc.borrow.Cow (Slice
