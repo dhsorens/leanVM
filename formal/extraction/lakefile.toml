@@ -6,11 +6,15 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.Signatures", "Extraction.Verifier"]
+roots = ["Extraction.LeanDa", "Extraction.Signatures", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
 path = "CoreModelsExt"
+
+[[require]]
+name = "LeanDa"
+path = "../../crates/lean_da/proofs/lean-da/lean"
 
 [[require]]
 name = "Signatures"

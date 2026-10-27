@@ -1,0 +1,21 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/lean-da/lean.
+#
+# The items it uses from other workspace crates (`primitives`, `fiat_shamir`, `pcs`) are declared
+# by hand at the top of proofs/lean-da/lean/LeanDa/Assumptions/*External.lean.
+[scenario.lean-da]
+backend = "lean"
+opaque = [
+  # A reinterpreting cast (`unsafe`): field elements as their limbs, symbols as bytes.
+  "crate::encode::encode_rows",  # encode.rs:36, the NTT over the codeword as `F64`s
+  "crate::membership::dual_codeword",  # membership.rs:71, the NTT over the `F192` limbs
+  "crate::commit::as_bytes",
+]
+exclude = [
+  # Its only caller, `encode_rows`, is opaque.
+  "crate::encode::as_field_mut",
+  # Serde: the derived (de)serializers, which Aeneas cannot translate (a visitor mutually
+  # recursive with its trait impl).
+  "{impl serde_core::ser::Serialize for _}",
+  "{impl serde_core::de::Deserialize for _}",
+]

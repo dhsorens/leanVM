@@ -12,6 +12,16 @@ open RustM ControlFlow Error
 
 namespace CoreModels
 
+/-! ## Integers -/
+
+/-- `usize::next_power_of_two`: the least power of two at least `x` (`1` for `0`). Rust
+panics on overflow in debug builds and returns `0` in release ones; this models the panic. -/
+def core.num.Usize.next_power_of_two (x : Std.Usize) : RustM Std.Usize :=
+  let p := (List.range (Usize.numBits + 1)).find? (fun i => x.val ≤ 2 ^ i)
+  match p with
+  | some i => if 2 ^ i ≤ Usize.max then ok ⟨BitVec.ofNat _ (2 ^ i)⟩ else fail .panic
+  | none => fail .panic
+
 /-! ## `bool`, ranges -/
 
 /-- `bool::then_some`: `if self { Some(t) } else { None }`. -/
@@ -40,6 +50,11 @@ def core.slice.SliceArray.as_flattened {T : Type} {N : Std.Usize} (self : Slice 
     RustM (Slice T) :=
   let flat := (self.val.map Array.val).flatten
   if h : flat.length ≤ Usize.max then ok (Slice.from flat h) else fail .panic
+
+/-- `<[[T; N]]>::as_flattened_mut`, assumed: the arrays' elements in order, and the back
+function regrouping the flat slice into the arrays. -/
+opaque core.slice.SliceArray.as_flattened_mut {T : Type} {N : Std.Usize}
+    (self : Slice (Array T N)) : RustM (Slice T × (Slice T → Slice (Array T N)))
 
 /-- `Ord::cmp` of `[T; N]`: lexicographic, the first unequal elements deciding. -/
 def core.Array.Insts.CoreCmpOrd.cmp {T : Type} {N : Std.Usize} (OrdInst : core.cmp.Ord T)

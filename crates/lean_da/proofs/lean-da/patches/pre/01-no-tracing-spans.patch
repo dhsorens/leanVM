@@ -1,0 +1,32 @@
+diff --git a/crates/lean_da/src/commit.rs b/crates/lean_da/src/commit.rs
+index bbcfe253..31b1ffaa 100644
+--- a/crates/lean_da/src/commit.rs
++++ b/crates/lean_da/src/commit.rs
+@@ -45,7 +45,6 @@ impl DaWitness {
+ }
+ 
+ /// Commit to payload rows of little-endian 64-bit symbols and their systematic encoding.
+-#[tracing::instrument(name = "Commit", skip_all)]
+ pub fn commit(rows: &[u64]) -> (DaCommitment, DaWitness) {
+     let codewords = encode_rows(rows);
+     commit_codewords(codewords)
+@@ -107,7 +106,6 @@ pub fn padding_digests() -> (Hash, Hash) {
+ }
+ 
+ /// `e_{i,j} = H(W_{i,j})` for every cell of every real row, row-major.
+-#[tracing::instrument(name = "Hashing cells", skip_all)]
+ fn hash_cells(codewords: &[u64]) -> Vec<Hash> {
+     let (cells, m) = (CELLS_PER_ROW, CODEWORD_SYMBOLS);
+     let n_rows = codewords.len() / m;
+diff --git a/crates/lean_da/src/encode.rs b/crates/lean_da/src/encode.rs
+index 1f3f2737..5da422a5 100644
+--- a/crates/lean_da/src/encode.rs
++++ b/crates/lean_da/src/encode.rs
+@@ -15,7 +15,6 @@ use crate::{BLOB_SYMBOLS, CODEWORD_SYMBOLS, DA_LOG_K, LOG_M, row_count};
+ /// long, with each payload row unchanged in its codeword's first half.
+ /// Symbols are little-endian 64-bit words; every bit pattern is valid.
+ /// Padding rows are not materialized, being zero codewords.
+-#[tracing::instrument(name = "Encoding", skip_all)]
+ pub fn encode_rows(rows: &[u64]) -> Vec<u64> {
+     let n_rows = row_count(rows.len(), BLOB_SYMBOLS);
+     let (k, m) = (BLOB_SYMBOLS, CODEWORD_SYMBOLS);

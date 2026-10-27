@@ -1,0 +1,77 @@
+diff --git a/crates/lean_da/src/commit.rs b/crates/lean_da/src/commit.rs
+index 31b1ffaa..9526f9e9 100644
+--- a/crates/lean_da/src/commit.rs
++++ b/crates/lean_da/src/commit.rs
+@@ -59,9 +59,11 @@ pub fn commit_codewords(codewords: Vec<u64>) -> (DaCommitment, DaWitness) {
+ 
+     // Row branch: hash each payload's cell digests.
+     let mut prefixes = vec![Hash::default(); n_rows * t];
+-    parallel::chunks_mut(&mut prefixes, t, |i, prefix| {
+-        prefix.copy_from_slice(&cell_digests[i * cells..i * cells + t]);
+-    });
++    for i in 0..n_rows {
++        for k in 0..t {
++            prefixes[i * t + k] = cell_digests[i * cells + k];
++        }
++    }
+     let mut row_digests = vec![padding_row; n_pad];
+     hash_many(
+         prefixes.as_flattened(),
+@@ -73,15 +75,15 @@ pub fn commit_codewords(codewords: Vec<u64>) -> (DaCommitment, DaWitness) {
+ 
+     // Column branch: the same digests, column-major, one tree carrying both levels.
+     let mut column_major = vec![Hash::default(); cells * n_pad];
+-    parallel::chunks_mut(&mut column_major, n_pad, |j, column| {
+-        for (i, slot) in column.iter_mut().enumerate() {
+-            *slot = if i < n_rows {
++    for j in 0..cells {
++        for i in 0..n_pad {
++            column_major[j * n_pad + i] = if i < n_rows {
+                 cell_digests[i * cells + j]
+             } else {
+                 padding_cell
+             };
+         }
+-    });
++    }
+     let column_tree = tree_from_leaves(column_major);
+ 
+     let (root_row, root_col) = (*row_tree.last().unwrap(), *column_tree.last().unwrap());
+@@ -110,13 +112,13 @@ fn hash_cells(codewords: &[u64]) -> Vec<Hash> {
+     let (cells, m) = (CELLS_PER_ROW, CODEWORD_SYMBOLS);
+     let n_rows = codewords.len() / m;
+     let mut digests = vec![Hash::default(); n_rows * cells];
+-    parallel::chunks_mut(&mut digests, cells, |i, row| {
++    for i in 0..n_rows {
+         hash_many(
+             as_bytes(&codewords[i * m..(i + 1) * m]),
+             CELL_SYMBOLS * size_of::<u64>(),
+-            row.as_flattened_mut(),
++            digests[i * cells..(i + 1) * cells].as_flattened_mut(),
+         );
+-    });
++    }
+     digests
+ }
+ 
+diff --git a/crates/lean_da/src/membership.rs b/crates/lean_da/src/membership.rs
+index 0d4ee789..16527467 100644
+--- a/crates/lean_da/src/membership.rs
++++ b/crates/lean_da/src/membership.rs
+@@ -47,10 +47,12 @@ pub fn membership_vector(root: &[u8; 32]) -> Vec<F192> {
+ /// its entries' three little-endian 64-bit limbs.
+ pub fn vector_digest(vector: &[F192]) -> [u8; 32] {
+     assert_eq!(vector.len(), CODEWORD_SYMBOLS);
+-    let bytes: Vec<u8> = vector
+-        .iter()
+-        .flat_map(|v| [v.c0, v.c1, v.c2].into_iter().flat_map(u64::to_le_bytes))
+-        .collect();
++    let mut bytes = Vec::new();
++    for i in 0..vector.len() {
++        bytes.extend_from_slice(&vector[i].c0.to_le_bytes());
++        bytes.extend_from_slice(&vector[i].c1.to_le_bytes());
++        bytes.extend_from_slice(&vector[i].c2.to_le_bytes());
++    }
+     let mut columns = vec![0u8; CODEWORD_SYMBOLS / CELL_SYMBOLS * OUT_LEN];
+     hash_many(&bytes, CELL_SYMBOLS * 24, &mut columns);
+     hash(&columns)
