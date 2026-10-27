@@ -6,11 +6,15 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.Verifier"]
+roots = ["Extraction.LeanvmCore", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
 path = "CoreModelsExt"
+
+[[require]]
+name = "LeanvmCore"
+path = "../../crates/leanvm_core/proofs/leanvm-core/lean"
 
 [[require]]
 name = "Verifier"
