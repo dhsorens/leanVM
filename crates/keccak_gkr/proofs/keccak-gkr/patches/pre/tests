@@ -1,0 +1,3 @@
+# `cargo test --release` arguments, one run per line, on the patched source. Not the doctests:
+# rustdoc builds with the config's target-cpu, the libraries with hax.sh's features off.
+-p keccak_gkr --lib --tests
