@@ -8,6 +8,8 @@ open CoreModels Aeneas Aeneas.Std RustM
 
 namespace Verifier.Field
 
+instance : Inhabited verifier.field.K := ⟨⟨0#u64⟩⟩
+
 /-- A `K` as the CompPoly field element its word denotes. -/
 def toBF64 (x : verifier.field.K) : BF64 := BF64.ofBitVec x.bv
 
