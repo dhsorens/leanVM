@@ -25,6 +25,16 @@
   {
    "type": "path",
    "scope": "",
+   "name": "LeanvmCore",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/leanvm_core/proofs/leanvm-core/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "Verifier",
    "manifestFile": "lake-manifest.json",
    "inherited": false,

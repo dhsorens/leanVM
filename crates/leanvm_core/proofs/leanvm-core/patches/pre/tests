@@ -1,0 +1,3 @@
+# `cargo test --release` arguments, one run per line, on the patched source.
+# The crate's unit tests: the constraint sumcheck over both `ColVal`s, and whole programs proved and verified.
+-p leanvm_core --lib

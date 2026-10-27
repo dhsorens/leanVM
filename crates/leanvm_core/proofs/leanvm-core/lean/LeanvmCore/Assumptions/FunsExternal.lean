@@ -1,0 +1,534 @@
+-- [leanvm_core]: external functions.
+-- Seeded by hax from Extraction/FunsExternal_Template.lean: fill the holes.
+-- hax never modifies this file; after re-extraction, compare it against the
+-- regenerated template to see what changed.
+module
+public import Aeneas
+public import CoreModels
+public import LeanvmCore.Extraction.Types
+@[expose] public section
+open CoreModels Aeneas
+open Aeneas.Std hiding namespace core alloc
+open RustM ControlFlow Error
+open Std.Do
+set_option linter.dupNamespace false
+set_option linter.hashCommand false
+set_option linter.unusedVariables false
+set_option linter.style.whitespace false
+set_option linter.style.setOption false
+set_option linter.style.longLine false
+set_option linter.internalConstructors false
+
+/- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
+set_option maxHeartbeats 1000000
+
+/- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
+set_option maxRecDepth 2048
+open leanvm_core
+
+/-- [leanvm_core::cpu::execute::{impl core::clone::Clone for leanvm_core::cpu::execute::ExecError}::clone]:
+    Source: 'crates/leanvm_core/src/cpu/execute.rs', lines 112:9-112:14
+    Visibility: public -/
+axiom cpu.execute.ExecError.Insts.CoreCloneClone.clone
+  : cpu.execute.ExecError → RustM cpu.execute.ExecError
+
+/-- [leanvm_core::cpu::execute::{impl core::cmp::PartialEq<leanvm_core::cpu::execute::ExecError> for leanvm_core::cpu::execute::ExecError}::eq]:
+    Source: 'crates/leanvm_core/src/cpu/execute.rs', lines 112:23-112:32
+    Visibility: public -/
+axiom cpu.execute.ExecError.Insts.CoreCmpPartialEqExecError.eq
+  : cpu.execute.ExecError → cpu.execute.ExecError → RustM Bool
+
+/-- [leanvm_core::cpu::hints::{leanvm_core::cpu::hints::GPow}::new]:
+    Source: 'crates/leanvm_core/src/cpu/hints.rs', lines 48:4-58:5
+    Visibility: public -/
+axiom cpu.hints.GPow.new : Std.Usize → RustM cpu.hints.GPow
+
+/-- [leanvm_core::cpu::hints::{leanvm_core::cpu::hints::GPow}::note]:
+    Source: 'crates/leanvm_core/src/cpu/hints.rs', lines 93:4-114:5
+    Visibility: public -/
+axiom cpu.hints.GPow.note
+  : cpu.hints.GPow → Std.Usize → RustM cpu.hints.GPow
+
+/-- [leanvm_core::cpu::hints::{leanvm_core::cpu::hints::GPow}::widen]:
+    Source: 'crates/leanvm_core/src/cpu/hints.rs', lines 152:4-164:5 -/
+axiom cpu.hints.GPow.widen : cpu.hints.GPow → RustM cpu.hints.GPow
+
+/-- [leanvm_core::cpu::hints::{impl core::fmt::Debug for leanvm_core::cpu::hints::BitsDest}::fmt]:
+    Source: 'crates/leanvm_core/src/cpu/hints.rs', lines 177:22-177:27
+    Visibility: public -/
+axiom cpu.hints.BitsDest.Insts.CoreFmtDebug.fmt
+  :
+  cpu.hints.BitsDest → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [leanvm_core::cpu::hints::{impl core::fmt::Debug for leanvm_core::cpu::hints::RHint}::fmt]:
+    Source: 'crates/leanvm_core/src/cpu/hints.rs', lines 186:16-186:21
+    Visibility: public -/
+axiom cpu.hints.RHint.Insts.CoreFmtDebug.fmt
+  :
+  cpu.hints.RHint → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [leanvm_core::cpu::isa::{impl core::fmt::Debug for leanvm_core::cpu::isa::Op}::fmt]:
+    Source: 'crates/leanvm_core/src/cpu/isa.rs', lines 5:22-5:27
+    Visibility: public -/
+axiom cpu.isa.Op.Insts.CoreFmtDebug.fmt
+  :
+  cpu.isa.Op → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [leanvm_core::cpu::isa::{impl core::fmt::Debug for leanvm_core::cpu::isa::DerefMode}::fmt]:
+    Source: 'crates/leanvm_core/src/cpu/isa.rs', lines 60:22-60:27
+    Visibility: public -/
+axiom cpu.isa.DerefMode.Insts.CoreFmtDebug.fmt
+  :
+  cpu.isa.DerefMode → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [leanvm_core::cpu::fs_seed]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 68:0-80:1
+    Visibility: public -/
+axiom cpu.fs_seed
+  : cpu.Program → RustM (Array primitives.field.gf2_64x3.F192 2#usize)
+
+/-- [leanvm_core::cpu::announce_public]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 101:0-107:1 -/
+axiom cpu.announce_public
+  :
+  fiat_shamir.transcript.ProverState → Std.Usize → Array Std.Usize 6#usize
+    → Std.Usize → RustM fiat_shamir.transcript.ProverState
+
+/-- [leanvm_core::cpu::{impl core::clone::Clone for leanvm_core::cpu::Program}::clone]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 109:9-109:14
+    Visibility: public -/
+axiom cpu.Program.Insts.CoreCloneClone.clone
+  : cpu.Program → RustM cpu.Program
+
+/-- [leanvm_core::cpu::_LITTLE_ENDIAN]
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 152:0-152:67 -/
+axiom cpu._LITTLE_ENDIAN : RustM Unit
+
+/-- [leanvm_core::cpu::{leanvm_core::cpu::Program}::assemble]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 158:4-177:5
+    Visibility: public -/
+axiom cpu.Program.assemble
+  :
+  alloc.vec.Vec cpu.isa.Op → std.collections.hash.map.HashMap Std.U32
+    (alloc.vec.Vec cpu.hints.RHint) std.hash.random.RandomState
+    alloc.alloc.Global → Std.U32 → RustM cpu.Program
+
+/-- [leanvm_core::cpu::{leanvm_core::cpu::Program}::site_at]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 183:4-188:5
+    Visibility: public -/
+axiom cpu.Program.site_at
+  : cpu.Program → Std.U32 → RustM alloc.string.String
+
+/-- [leanvm_core::cpu::{leanvm_core::cpu::Program}::code_len]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 192:4-197:5
+    Visibility: public -/
+axiom cpu.Program.code_len : cpu.Program → RustM Std.Usize
+
+/-- [leanvm_core::cpu::{leanvm_core::cpu::Program}::fn_at]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 201:4-206:5
+    Visibility: public -/
+axiom cpu.Program.fn_at : cpu.Program → Std.U32 → RustM Str
+
+/-- [leanvm_core::cpu::{leanvm_core::cpu::Program}::set_witness]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 212:4-214:5
+    Visibility: public -/
+axiom cpu.Program.set_witness
+  {T0 : Type _} (coreconvertIntoT0StringInst : core.convert.Into T0
+  alloc.string.String) :
+  cpu.Program → T0 → alloc.vec.Vec (alloc.vec.Vec
+    primitives.field.gf2_64x3.F192) → RustM cpu.Program
+
+/-- [leanvm_core::cpu::{impl core::fmt::Debug for leanvm_core::cpu::ProveError}::fmt]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 233:16-233:21
+    Visibility: public -/
+axiom cpu.ProveError.Insts.CoreFmtDebug.fmt
+  :
+  cpu.ProveError → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [leanvm_core::cpu::{impl core::fmt::Display for leanvm_core::cpu::ProveError}::fmt]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 249:4-267:5
+    Visibility: public -/
+axiom cpu.ProveError.Insts.CoreFmtDisplay.fmt
+  :
+  cpu.ProveError → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [leanvm_core::cpu::{impl core::fmt::Debug for leanvm_core::cpu::CpuError}::fmt]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 273:16-273:21
+    Visibility: public -/
+axiom cpu.CpuError.Insts.CoreFmtDebug.fmt
+  :
+  cpu.CpuError → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [leanvm_core::cpu::block_owners]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 288:0-295:1 -/
+axiom cpu.block_owners
+  :
+  Std.Usize → Array Std.Usize 3#usize → RustM (Array (alloc.vec.Vec
+    (core.option.Option (Std.Usize × Std.Usize))) 3#usize)
+
+/-- [leanvm_core::cpu::bus_wiring]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 300:0-306:1 -/
+axiom cpu.bus_wiring
+  :
+  cpu.Program → cpu.layout.Layout → RustM ((Array (alloc.vec.Vec
+    (core.option.Option (Std.Usize × Std.Usize))) 3#usize) × (alloc.vec.Vec
+    (Std.Usize × Std.Usize)))
+
+/-- [leanvm_core::cpu::table_spans]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 310:0-317:1 -/
+axiom cpu.table_spans : RustM (alloc.vec.Vec (Std.Usize × Std.Usize))
+
+/-- [leanvm_core::cpu::airs]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 325:0-356:1 -/
+axiom cpu.airs
+  :
+  Array Std.Usize 6#usize → Array (alloc.vec.Vec leaf.BusForm) 3#usize →
+    Array primitives.field.gf2_64x3.F192 3#usize → RustM (alloc.vec.Vec
+    constraints.Air)
+
+/-- [leanvm_core::cpu::{impl core::clone::Clone for leanvm_core::cpu::RowForm}::clone]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 362:9-362:14
+    Visibility: public -/
+axiom cpu.RowForm.Insts.CoreCloneClone.clone
+  : cpu.RowForm → RustM cpu.RowForm
+
+/-- [leanvm_core::cpu::{leanvm_core::cpu::RowForm}::new]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 370:4-404:5 -/
+axiom cpu.RowForm.new : leaf.BusForm → RustM cpu.RowForm
+
+/-- [leanvm_core::cpu::{leanvm_core::cpu::RowForm}::eval_unreduced]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 408:4-427:5 -/
+axiom cpu.RowForm.eval_unreduced
+  {T : Type _} {Clause0_Unreduced : Type _} (colvalColValInst : colval.ColVal T
+  Clause0_Unreduced) :
+  cpu.RowForm → Slice T → Bool → RustM Clause0_Unreduced
+
+/-- [leanvm_core::cpu::sigmas]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 433:0-437:1 -/
+axiom cpu.sigmas
+  :
+  Array (alloc.vec.Vec primitives.field.gf2_64x3.F192) 3#usize → Array
+    primitives.field.gf2_64x3.F192 3#usize → RustM (alloc.vec.Vec
+    primitives.field.gf2_64x3.F192)
+
+/-- [leanvm_core::cpu::xi_form_base]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 448:0-450:1
+    Visibility: public -/
+axiom cpu.xi_form_base : RustM Std.Usize
+
+/-- [leanvm_core::cpu::xi_form_pows]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 453:0-457:1 -/
+axiom cpu.xi_form_pows
+  :
+  primitives.field.gf2_64x3.F192 → RustM (Array
+    primitives.field.gf2_64x3.F192 3#usize)
+
+/-- [leanvm_core::cpu::keccak_output_claim]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 461:0-467:1 -/
+axiom cpu.keccak_output_claim
+  : Slice constraints.Claims → RustM keccak_gkr.OutputClaim
+
+/-- [leanvm_core::cpu::{leanvm_core::cpu::Stats}::details]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 496:4-519:5
+    Visibility: public -/
+axiom cpu.Stats.details : cpu.Stats → RustM alloc.string.String
+
+/-- [leanvm_core::cpu::prove]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 529:0-644:1
+    Visibility: public -/
+axiom cpu.prove
+  :
+  cpu.Program → Array primitives.field.gf2_64x3.F192 2#usize → Std.Usize
+    → RustM (core.result.Result (fiat_shamir.transcript.Proof × cpu.Stats)
+    cpu.ProveError)
+
+/-- [leanvm_core::cpu::finish_claims]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 651:0-675:1 -/
+axiom cpu.finish_claims
+  :
+  cpu.layout.Layout → alloc.vec.Vec leaf.ColumnClaim → Slice
+    constraints.Claims → primitives.field.gf2_64x3.F192 → RustM
+    (alloc.vec.Vec pcs.stack_open.StackClaim)
+
+/-- [leanvm_core::cpu::bind_pi_claim]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 682:0-695:1 -/
+axiom cpu.bind_pi_claim
+  :
+  primitives.field.gf2_64x3.F192 → cpu.layout.Layout → RustM (Array
+    leaf.ColumnClaim 3#usize)
+
+/-- [leanvm_core::cpu::to_scalar]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 698:0-700:1
+    Visibility: public -/
+axiom cpu.to_scalar : primitives.field.gf2_64x3.F192 → RustM verifier.field.E
+
+/-- [leanvm_core::cpu::from_scalar]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 702:0-704:1
+    Visibility: public -/
+axiom cpu.from_scalar
+  : verifier.field.E → RustM primitives.field.gf2_64x3.F192
+
+/-- [leanvm_core::cpu::scalar_proof]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 707:0-720:1
+    Visibility: public -/
+axiom cpu.scalar_proof
+  : fiat_shamir.transcript.Proof → RustM verifier.transcript.Proof
+
+/-- [leanvm_core::cpu::public_input_bytes]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 723:0-730:1
+    Visibility: public -/
+axiom cpu.public_input_bytes
+  :
+  Array primitives.field.gf2_64x3.F192 2#usize → RustM (Array Std.U8
+    32#usize)
+
+/-- [leanvm_core::cpu::verify]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 736:0-749:1
+    Visibility: public -/
+axiom cpu.verify
+  :
+  cpu.Program → Array primitives.field.gf2_64x3.F192 2#usize →
+    fiat_shamir.transcript.Proof → RustM (core.result.Result verifier.Summary
+    cpu.CpuError)
+
+/-- [leanvm_core::cpu::slot_claims]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 759:0-779:1 -/
+axiom cpu.slot_claims
+  :
+  cpu.layout.Layout → alloc.vec.Vec leaf.ColumnClaim → RustM (alloc.vec.Vec
+    pcs.stack_open.StackClaim)
+
+/-- [leanvm_core::keccak::MIN_STEPS]
+    Source: 'crates/leanvm_core/src/keccak.rs', lines 36:0-36:43
+    Visibility: public -/
+axiom keccak.MIN_STEPS : RustM Std.Usize
+
+/-- [leanvm_core::keccak::ROW_CELLS]
+    Source: 'crates/leanvm_core/src/keccak.rs', lines 66:0-66:45
+    Visibility: public -/
+axiom keccak.ROW_CELLS : RustM Std.Usize
+
+/-- [leanvm_core::keccak::cell_lanes]:
+    Source: 'crates/leanvm_core/src/keccak.rs', lines 73:0-89:1
+    Visibility: public -/
+axiom keccak.cell_lanes
+  :
+  Bool → RustM (Array ((core.option.Option Std.Usize) × (core.option.Option
+    Std.Usize)) 13#usize)
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FlushBuilder}::new]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 118:4-123:5 -/
+axiom tables.FlushBuilder.new : RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FlushBuilder}::pair]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 125:4-128:5 -/
+axiom tables.FlushBuilder.pair
+  :
+  tables.FlushBuilder → alloc.vec.Vec leaf.Coord → alloc.vec.Vec leaf.Coord
+    → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FlushBuilder}::state_step]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 131:4-136:5 -/
+axiom tables.FlushBuilder.state_step
+  :
+  tables.FlushBuilder → Std.Usize → Std.Usize → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FlushBuilder}::state_derived]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 140:4-145:5 -/
+axiom tables.FlushBuilder.state_derived
+  :
+  tables.FlushBuilder → Std.Usize → Std.Usize → leaf.Coord → leaf.Coord
+    → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FlushBuilder}::bytecode]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 149:4-155:5 -/
+axiom tables.FlushBuilder.bytecode
+  :
+  tables.FlushBuilder → Std.Usize → Std.Usize →
+    primitives.field.gf2_64.F64 → Slice leaf.Coord → RustM
+    tables.FlushBuilder
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FlushBuilder}::memory_coords]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 163:4-169:5 -/
+axiom tables.FlushBuilder.memory_coords
+  :
+  tables.FlushBuilder → leaf.Coord → Std.Usize → Array leaf.Coord 3#usize
+    → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FlushBuilder}::memory]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 172:4-174:5 -/
+axiom tables.FlushBuilder.memory
+  :
+  tables.FlushBuilder → leaf.Coord → Std.Usize → Std.Usize → Std.Usize
+    → Std.Usize → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FlushBuilder}::memory_k]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 179:4-181:5 -/
+axiom tables.FlushBuilder.memory_k
+  :
+  tables.FlushBuilder → leaf.Coord → Std.Usize → Std.Usize → RustM
+    tables.FlushBuilder
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FillCtx<'a>}::new]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 208:4-225:5 -/
+axiom tables.FillCtx.new
+  :
+  cpu.trace.Trace → cpu.execute.Memory → Slice primitives.field.gf2_64.F64
+    → Slice cpu.isa.Op → Std.Usize → alloc.vec.Vec
+    primitives.field.gf2_64.F64 → RustM tables.FillCtx
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FillCtx<'a>}::g_at]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 227:4-229:5 -/
+axiom tables.FillCtx.g_at
+  : tables.FillCtx → Std.U32 → RustM primitives.field.gf2_64.F64
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FillCtx<'a>}::ternary_operands]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 235:4-240:5 -/
+axiom tables.FillCtx.ternary_operands
+  : tables.FillCtx → Std.U32 → RustM (Std.U32 × Std.U32 × Std.U32)
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FillCtx<'a>}::col]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 244:4-246:5 -/
+axiom tables.FillCtx.col
+  {R : Type _} {T2 : Type _} (coreopsfunctionFnT2TupleSharedARF64Inst :
+  core.ops.function.Fn T2 R primitives.field.gf2_64.F64) :
+  tables.FillCtx → Slice (Slice primitives.field.gf2_64.F64) →
+    cpu.trace.Rows R → Std.Usize → T2 → RustM ((Slice (Slice
+    primitives.field.gf2_64.F64)) × (Slice (Slice primitives.field.gf2_64.F64)
+    → Slice (Slice primitives.field.gf2_64.F64)))
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FillCtx<'a>}::cols]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 252:4-260:5 -/
+axiom tables.FillCtx.cols
+  {R : Type _} {T3 : Type _} {N : Std.Usize}
+  (coreopsfunctionFnT3TupleSharedARArrayF64NInst : core.ops.function.Fn T3 R
+  (Array primitives.field.gf2_64.F64 N)) :
+  tables.FillCtx → Slice (Slice primitives.field.gf2_64.F64) →
+    cpu.trace.Rows R → Std.Usize → T3 → RustM ((Slice (Slice
+    primitives.field.gf2_64.F64)) × (Slice (Slice primitives.field.gf2_64.F64)
+    → Slice (Slice primitives.field.gf2_64.F64)))
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FillCtx<'a>}::cols_at]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 264:4-304:5 -/
+axiom tables.FillCtx.cols_at
+  {T2 : Type _} {N : Std.Usize} (coreopsfunctionFnT2TupleUsizeArrayF64NInst :
+  core.ops.function.Fn T2 Std.Usize (Array primitives.field.gf2_64.F64 N)) :
+  tables.FillCtx → Slice (Slice primitives.field.gf2_64.F64) → Std.Usize
+    → Std.Usize → T2 → RustM ((Slice (Slice primitives.field.gf2_64.F64))
+    × (Slice (Slice primitives.field.gf2_64.F64) → Slice (Slice
+    primitives.field.gf2_64.F64)))
+
+/-- [leanvm_core::tables::{leanvm_core::tables::FillCtx<'a>}::limbs]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 307:4-310:5 -/
+axiom tables.FillCtx.limbs
+  :
+  tables.FillCtx → Std.U32 → RustM (Array primitives.field.gf2_64.F64
+    3#usize)
+
+/-- [leanvm_core::tables::KECCAK_CELLS]
+    Source: 'crates/leanvm_core/src/tables.rs', lines 410:0-424:2 -/
+axiom tables.KECCAK_CELLS : RustM (Array (Std.Usize × Std.U32) 26#usize)
+
+/-- [leanvm_core::tables::arith_result]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 515:0-527:1 -/
+axiom tables.arith_result : Bool → RustM (Array leaf.Coord 3#usize)
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::Arith}::fill]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 550:4-574:5
+    Visibility: public -/
+axiom tables.Arith.Insts.Leanvm_coreTablesTable.fill
+  :
+  tables.Arith → tables.FillCtx → Slice (Slice primitives.field.gf2_64.F64)
+    → RustM ((Slice (Slice primitives.field.gf2_64.F64)) × (Slice (Slice
+    primitives.field.gf2_64.F64) → Slice (Slice
+    primitives.field.gf2_64.F64)))
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::Arith}::flushes]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 537:4-549:5
+    Visibility: public -/
+axiom tables.Arith.Insts.Leanvm_coreTablesTable.flushes
+  : tables.Arith → tables.FlushBuilder → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::SetTable}::fill]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 616:4-633:5
+    Visibility: public -/
+axiom tables.SetTable.Insts.Leanvm_coreTablesTable.fill
+  :
+  tables.SetTable → tables.FillCtx → Slice (Slice
+    primitives.field.gf2_64.F64) → RustM ((Slice (Slice
+    primitives.field.gf2_64.F64)) × (Slice (Slice primitives.field.gf2_64.F64)
+    → Slice (Slice primitives.field.gf2_64.F64)))
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::SetTable}::flushes]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 602:4-615:5
+    Visibility: public -/
+axiom tables.SetTable.Insts.Leanvm_coreTablesTable.flushes
+  : tables.SetTable → tables.FlushBuilder → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::deref_store]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 670:0-677:1 -/
+axiom tables.deref_store : RustM (Array leaf.Coord 3#usize)
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::DerefTable}::fill]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 698:4-735:5
+    Visibility: public -/
+axiom tables.DerefTable.Insts.Leanvm_coreTablesTable.fill
+  :
+  tables.DerefTable → tables.FillCtx → Slice (Slice
+    primitives.field.gf2_64.F64) → RustM ((Slice (Slice
+    primitives.field.gf2_64.F64)) × (Slice (Slice primitives.field.gf2_64.F64)
+    → Slice (Slice primitives.field.gf2_64.F64)))
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::DerefTable}::flushes]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 687:4-697:5
+    Visibility: public -/
+axiom tables.DerefTable.Insts.Leanvm_coreTablesTable.flushes
+  : tables.DerefTable → tables.FlushBuilder → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::JumpTable}::fill]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 806:4-863:5
+    Visibility: public -/
+axiom tables.JumpTable.Insts.Leanvm_coreTablesTable.fill
+  :
+  tables.JumpTable → tables.FillCtx → Slice (Slice
+    primitives.field.gf2_64.F64) → RustM ((Slice (Slice
+    primitives.field.gf2_64.F64)) × (Slice (Slice primitives.field.gf2_64.F64)
+    → Slice (Slice primitives.field.gf2_64.F64)))
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::JumpTable}::flushes]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 785:4-805:5
+    Visibility: public -/
+axiom tables.JumpTable.Insts.Leanvm_coreTablesTable.flushes
+  : tables.JumpTable → tables.FlushBuilder → RustM tables.FlushBuilder
+
+/-- [leanvm_core::tables::layout_limb]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 907:0-919:1 -/
+axiom tables.layout_limb
+  :
+  core.option.Option Std.Usize → core.option.Option Std.Usize → Std.Usize
+    → Std.Usize → core.option.Option Std.Usize → RustM leaf.Coord
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::KeccakTable}::fill]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 970:4-994:5
+    Visibility: public -/
+axiom tables.KeccakTable.Insts.Leanvm_coreTablesTable.fill
+  :
+  tables.KeccakTable → tables.FillCtx → Slice (Slice
+    primitives.field.gf2_64.F64) → RustM ((Slice (Slice
+    primitives.field.gf2_64.F64)) × (Slice (Slice primitives.field.gf2_64.F64)
+    → Slice (Slice primitives.field.gf2_64.F64)))
+
+
+/-- [leanvm_core::tables::{impl leanvm_core::tables::Table for leanvm_core::tables::KeccakTable}::flushes]:
+    Source: 'crates/leanvm_core/src/tables.rs', lines 949:4-968:5
+    Visibility: public -/
+axiom tables.KeccakTable.Insts.Leanvm_coreTablesTable.flushes
+  : tables.KeccakTable → tables.FlushBuilder → RustM tables.FlushBuilder
+

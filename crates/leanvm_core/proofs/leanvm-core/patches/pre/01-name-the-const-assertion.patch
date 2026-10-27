@@ -1,0 +1,13 @@
+diff --git a/crates/leanvm_core/src/cpu/mod.rs b/crates/leanvm_core/src/cpu/mod.rs
+index a44e7182..c3ba7a11 100644
+--- a/crates/leanvm_core/src/cpu/mod.rs
++++ b/crates/leanvm_core/src/cpu/mod.rs
+@@ -149,7 +149,7 @@ pub struct Program {
+ 
+ /// The bytecode digest reinterprets the stacked table as bytes, which is its
+ /// `to_le_bytes` image only on a little-endian target.
+-const _: () = assert!(cfg!(target_endian = "little"));
++const _LITTLE_ENDIAN: () = assert!(cfg!(target_endian = "little"));
+ 
+ impl Program {
+     /// Assemble a [`Program`], computing its bytecode digest

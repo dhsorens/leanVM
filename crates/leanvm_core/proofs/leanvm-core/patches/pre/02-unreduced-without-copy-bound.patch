@@ -1,0 +1,13 @@
+diff --git a/crates/leanvm_core/src/colval.rs b/crates/leanvm_core/src/colval.rs
+index 89cbcb39..0526fc9c 100644
+--- a/crates/leanvm_core/src/colval.rs
++++ b/crates/leanvm_core/src/colval.rs
+@@ -10,7 +10,7 @@ pub trait ColVal: Copy + Send + Sync + Add<Output = Self> + Mul<Output = Self> {
+ 
+     /// Where this column's products XOR-accumulate before the one reduction that
+     /// ends a form.
+-    type Unreduced: Copy + Send + Sync + BitXor<Output = Self::Unreduced> + BitXorAssign;
++    type Unreduced: Send + Sync + BitXor<Output = Self::Unreduced> + BitXorAssign;
+ 
+     /// Times an `E` value: an `η`-power, a bus coefficient, a machine word.
+     fn mul_e(self, e: F192) -> F192;
