@@ -158,11 +158,6 @@ axiom keccak.verify_layer
     → RustM ((core.result.Result keccak.Claim VerifierError) ×
     transcript.Transcript)
 
-/-- [verifier::multilinear::eq_kernel]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 7:0-19:1
-    Visibility: public -/
-axiom multilinear.eq_kernel : Slice field.E → RustM (alloc.vec.Vec field.E)
-
 /-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::next_scalars]:
     Source: 'crates/verifier/src/transcript.rs', lines 149:4-151:5
     Visibility: public -/
@@ -340,7 +335,7 @@ axiom merkle.PrunedMerklePaths.expand
     merkle.MerklePath)) VerifierError)
 
 /-- [verifier::multilinear::{impl core::fmt::Debug for verifier::multilinear::Placement}::fmt]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 119:22-119:27
+    Source: 'crates/verifier/src/multilinear.rs', lines 120:22-120:27
     Visibility: public -/
 axiom multilinear.Placement.Insts.CoreFmtDebug.fmt
   :
