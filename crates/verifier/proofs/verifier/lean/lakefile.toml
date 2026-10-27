@@ -17,3 +17,7 @@ subDir = "backends/lean"
 name = "hax"
 git = "https://github.com/cryspen/hax-lean"
 rev = "v0.3.34"
+
+[[require]]
+name = "CoreModelsExt"
+path = "../../../../../formal/extraction/CoreModelsExt"

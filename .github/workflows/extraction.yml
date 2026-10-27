@@ -63,8 +63,8 @@ jobs:
       - name: Report the trusted surface
         run: formal/extraction/report.sh >> "$GITHUB_STEP_SUMMARY"
 
-  # The pre-extraction patches rewrite the Rust the extraction sees. The crate's tests, and
-  # the suite that checks `crates/verifier` against real proofs, run on the patched source.
+  # The pre-extraction patches rewrite the Rust the extraction sees. Each patched crate's tests
+  # (and the suites its patches/pre/tests names) run on the patched source.
   patches:
     name: Patched source behaves the same
     runs-on: ubuntu-latest
@@ -79,9 +79,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: patched
-      - name: Clippy on the patched source
-        run: formal/extraction/hax.sh patched cargo clippy --release -p verifier --all-targets -- -D warnings
-      - name: The verifier's tests on the patched source
-        run: formal/extraction/hax.sh patched cargo test --release -p verifier
-      - name: The checks against real proofs, on the patched source
-        run: formal/extraction/hax.sh patched cargo test --release -p leanvm_core --test verifiers
+      - name: Clippy and the tests of every patched crate, on the patched source
+        run: formal/extraction/hax.sh test

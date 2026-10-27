@@ -7,11 +7,13 @@
 #                              (scenario names, `-p <crate>`)
 #   hax.sh extract --check     regenerate, then fail if the result differs from the commit
 #   hax.sh patched <cmd...>    run a command on the patched source, e.g. `cargo test -p verifier`
+#   hax.sh test                clippy and the tests of every patched crate, on the patched source:
+#                              `cargo test -p <crate>`, or each line of patches/pre/tests as its args
 #
 # A scenario's patches live in crates/<crate>/proofs/<scenario>/patches. Those in pre/ rewrite
 # the Rust source, only for the length of `extract` or `patched`: the committed source never
 # carries them. Those in post/ (a last resort) rewrite the generated Lean after every extraction.
-# Each extraction's Assumptions/ is then synced with the templates hax regenerates.
+# Each extraction is then wired into the workspace in formal/extraction (wire.py).
 set -euo pipefail
 
 # cargo-hax is installed from this commit of https://github.com/cryspen/hax (0.4.2 and later
@@ -73,7 +75,7 @@ extract() {
       exit 1
     fi
   done
-  python3 formal/extraction/sync_assumptions.py crates/*/proofs/*/lean
+  python3 formal/extraction/wire.py
   if $check; then
     git add --intent-to-add -- crates/*/proofs
     if ! git diff --exit-code --stat -- crates/*/proofs; then
@@ -89,9 +91,28 @@ patched() {
   "$@"
 }
 
+test_patched() {
+  apply_patches
+  for dir in crates/*/proofs/*/patches/pre; do
+    local patches=("$dir"/*.patch) crate
+    [[ ${#patches[@]} -gt 0 ]] || continue
+    crate=$(basename "${dir%%/proofs/*}")
+    cargo clippy --release -p "$crate" --all-targets -- -D warnings
+    if [[ -f "$dir/tests" ]]; then
+      local args
+      while read -r -a args; do
+        [[ ${#args[@]} -eq 0 || "${args[0]}" == \#* ]] || cargo test --release "${args[@]}"
+      done < "$dir/tests"
+    else
+      cargo test --release -p "$crate"
+    fi
+  done
+}
+
 case "${1:-}" in
   setup) setup ;;
   extract) shift; extract "$@" ;;
   patched) shift; patched "$@" ;;
+  test) test_patched ;;
   *) usage ;;
 esac

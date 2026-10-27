@@ -5,7 +5,7 @@
 module
 public import Aeneas
 public import CoreModels
-public import Verifier.Assumptions.Std
+public import CoreModelsExt
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
