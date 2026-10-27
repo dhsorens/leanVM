@@ -8,3 +8,4 @@ public import CoreModelsExt.LeanvmCore
 public import CoreModelsExt.Pcs
 public import CoreModelsExt.RecAggregation
 public import CoreModelsExt.SignaturesLeanDa
+public import CoreModelsExt.Primitives

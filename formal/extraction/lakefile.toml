@@ -6,7 +6,7 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.Bench", "Extraction.LeanCompiler", "Extraction.LeanDa", "Extraction.Leanvm", "Extraction.LeanvmCore", "Extraction.Pcs", "Extraction.RecAggregation", "Extraction.Signatures", "Extraction.Verifier"]
+roots = ["Extraction.Bench", "Extraction.LeanCompiler", "Extraction.LeanDa", "Extraction.Leanvm", "Extraction.LeanvmCore", "Extraction.Parallel", "Extraction.Pcs", "Extraction.Primitives", "Extraction.RecAggregation", "Extraction.Signatures", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
@@ -33,8 +33,16 @@ name = "LeanvmCore"
 path = "../../crates/leanvm_core/proofs/leanvm-core/lean"
 
 [[require]]
+name = "Parallel"
+path = "../../crates/parallel/proofs/parallel/lean"
+
+[[require]]
 name = "Pcs"
 path = "../../crates/pcs/proofs/pcs/lean"
+
+[[require]]
+name = "Primitives"
+path = "../../crates/primitives/proofs/primitives/lean"
 
 [[require]]
 name = "RecAggregation"

@@ -28,6 +28,6 @@ set_option maxRecDepth 2048
 
 
 /-- [rec_aggregation::aggregation::digit_hints::{closure}]
-    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1559:37-1565:5 -/
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1566:37-1572:5 -/
 axiom aggregation.digit_hints.closure : Type
 

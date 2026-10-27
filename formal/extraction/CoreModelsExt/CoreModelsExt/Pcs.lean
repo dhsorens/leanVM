@@ -36,10 +36,6 @@ abbrev core.cmp.Ord.clamp {Self : Type} (OrdInst : core.cmp.Ord Self) (self min 
 def core.fmt.Arguments.from_str (_ : Str) : RustM core.fmt.Arguments :=
   ok ()
 
-/-- `Argument::new_display`: a value to format with `Display`. -/
-opaque core.fmt.rt.Argument.new_display {T : Type} (DisplayInst : core.fmt.Display T) :
-    T → RustM core.fmt.rt.Argument
-
 /-- `alloc::fmt::format`, `format!`'s string. -/
 opaque alloc.fmt.format : core.fmt.Arguments → RustM alloc.string.String
 

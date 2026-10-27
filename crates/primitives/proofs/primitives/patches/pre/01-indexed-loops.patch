@@ -1,0 +1,227 @@
+diff --git a/crates/primitives/src/bits.rs b/crates/primitives/src/bits.rs
+index b0fc9b98..1f1463de 100644
+--- a/crates/primitives/src/bits.rs
++++ b/crates/primitives/src/bits.rs
+@@ -60,9 +60,15 @@ fn transpose_8x8_bits(mut x: u64) -> u64 {
+ )]
+ #[inline]
+ fn bit_transpose_64bytes_portable(input: &[u8; 64], output: &mut [u8; 64]) {
+-    for (b, row) in output.as_chunks_mut::<8>().0.iter_mut().enumerate() {
+-        let column = u64::from_le_bytes(std::array::from_fn(|x| input[8 * x + b]));
+-        *row = transpose_8x8_bits(column).to_le_bytes();
++    for b in 0..8 {
++        let mut column = 0u64;
++        for x in 0..8 {
++            column |= u64::from(input[8 * x + b]) << (8 * x);
++        }
++        let row = transpose_8x8_bits(column).to_le_bytes();
++        for j in 0..8 {
++            output[8 * b + j] = row[j];
++        }
+     }
+ }
+ 
+diff --git a/crates/primitives/src/field/gf2_64x3.rs b/crates/primitives/src/field/gf2_64x3.rs
+index c4a79c8c..2d7d7fcd 100644
+--- a/crates/primitives/src/field/gf2_64x3.rs
++++ b/crates/primitives/src/field/gf2_64x3.rs
+@@ -344,11 +344,15 @@ pub fn dot_base(w: &[Weights8], k: &[F64]) -> F192Unreduced {
+     // SAFETY: both features are enabled at compile time; the lengths match.
+     return unsafe { x86_64::dot_base_ymm(w, k) };
+     #[cfg(not(all(target_arch = "x86_64", target_feature = "vpclmulqdq", target_feature = "avx2")))]
+-    w.iter()
+-        .zip(k.as_chunks::<8>().0)
+-        .fold(F192Unreduced::ZERO, |acc, (w, k)| {
+-            (0..8).fold(acc, |acc, i| acc ^ w.get(i).mul_base_unreduced(k[i]))
+-        })
++    {
++        let mut acc = F192Unreduced::ZERO;
++        for j in 0..w.len() {
++            for i in 0..8 {
++                acc ^= w[j].get(i).mul_base_unreduced(k[8 * j + i]);
++            }
++        }
++        acc
++    }
+ }
+ 
+ /// An F192 value whose coefficients are not yet reduced modulo the base polynomial.
+@@ -413,8 +417,10 @@ impl BitXor for F192Unreduced {
+ impl BitXorAssign for F192Unreduced {
+     #[inline]
+     fn bitxor_assign(&mut self, rhs: Self) {
+-        for (acc, x) in self.coeffs.as_flattened_mut().iter_mut().zip(rhs.coeffs.as_flattened()) {
+-            *acc ^= x;
++        for i in 0..3 {
++            for j in 0..2 {
++                self.coeffs[i][j] ^= rhs.coeffs[i][j];
++            }
+         }
+     }
+ }
+diff --git a/crates/primitives/src/hash.rs b/crates/primitives/src/hash.rs
+index 232e734c..00285b36 100644
+--- a/crates/primitives/src/hash.rs
++++ b/crates/primitives/src/hash.rs
+@@ -125,19 +125,23 @@ trait Lanes64: Copy {
+ #[inline(always)]
+ fn permute<S: Lanes64>(a: &mut [S; STATE_LANES]) {
+     let mut c: [S; 5] = std::array::from_fn(|x| S::xor5(a[x], a[x + 5], a[x + 10], a[x + 15], a[x + 20]));
+-    for &rc in &RC {
++    for r in 0..ROUNDS {
++        let rc = RC[r];
+         let d: [S; 5] = std::array::from_fn(|x| S::theta_d(c[(x + 4) % 5], c[(x + 1) % 5]));
+-        let th = |i: usize| a[i].xor(d[i % 5]);
+         // Row `y` holds the lanes π sends there, each rotated by its `RHO`.
+         #[rustfmt::skip]
+-        let rows: [[S; 5]; 5] = [
+-            [th(0), th(6).rotl::<44>(), th(12).rotl::<43>(), th(18).rotl::<21>(), th(24).rotl::<14>()],
+-            [th(3).rotl::<28>(), th(9).rotl::<20>(), th(10).rotl::<3>(), th(16).rotl::<45>(), th(22).rotl::<61>()],
+-            [th(1).rotl::<1>(), th(7).rotl::<6>(), th(13).rotl::<25>(), th(19).rotl::<8>(), th(20).rotl::<18>()],
+-            [th(4).rotl::<27>(), th(5).rotl::<36>(), th(11).rotl::<10>(), th(17).rotl::<15>(), th(23).rotl::<56>()],
+-            [th(2).rotl::<62>(), th(8).rotl::<55>(), th(14).rotl::<39>(), th(15).rotl::<41>(), th(21).rotl::<2>()],
+-        ];
+-        for (y, &[b0, b1, b2, b3, b4]) in rows.iter().enumerate() {
++        let rows: [[S; 5]; 5] = {
++            let th = |i: usize| a[i].xor(d[i % 5]);
++            [
++                [th(0), th(6).rotl::<44>(), th(12).rotl::<43>(), th(18).rotl::<21>(), th(24).rotl::<14>()],
++                [th(3).rotl::<28>(), th(9).rotl::<20>(), th(10).rotl::<3>(), th(16).rotl::<45>(), th(22).rotl::<61>()],
++                [th(1).rotl::<1>(), th(7).rotl::<6>(), th(13).rotl::<25>(), th(19).rotl::<8>(), th(20).rotl::<18>()],
++                [th(4).rotl::<27>(), th(5).rotl::<36>(), th(11).rotl::<10>(), th(17).rotl::<15>(), th(23).rotl::<56>()],
++                [th(2).rotl::<62>(), th(8).rotl::<55>(), th(14).rotl::<39>(), th(15).rotl::<41>(), th(21).rotl::<2>()],
++            ]
++        };
++        for y in 0..5 {
++            let [b0, b1, b2, b3, b4] = rows[y];
+             let mut row = [
+                 S::chi(b0, b1, b2),
+                 S::chi(b1, b2, b3),
+@@ -243,15 +247,15 @@ pub const END_BIT: u64 = (PAD_LAST as u64) << 56;
+ /// One sponge step: XOR the rate block `block` into `state` and permute.
+ #[inline]
+ fn absorb(state: &mut [u64; STATE_LANES], block: &[u64; RATE_LANES]) {
+-    for (s, b) in state.iter_mut().zip(block) {
+-        *s ^= b;
++    for i in 0..RATE_LANES {
++        state[i] ^= block[i];
+     }
+     keccak_f(state);
+ }
+ 
+ /// A full block of message bytes, as rate lanes.
+ #[inline]
+-fn block_of(bytes: &[u8; RATE]) -> [u64; RATE_LANES] {
++fn block_of(bytes: &[u8]) -> [u64; RATE_LANES] {
+     std::array::from_fn(|i| u64::from_le_bytes(bytes[8 * i..8 * i + 8].try_into().unwrap()))
+ }
+ 
+@@ -270,8 +274,11 @@ fn final_block(tail: &[u8]) -> [u64; RATE_LANES] {
+ #[inline]
+ pub fn digest_of(state: &[u64; STATE_LANES]) -> [u8; OUT_LEN] {
+     let mut out = [0u8; OUT_LEN];
+-    for (chunk, lane) in out.as_chunks_mut::<8>().0.iter_mut().zip(state) {
+-        *chunk = lane.to_le_bytes();
++    for i in 0..OUT_LANES {
++        let bytes = state[i].to_le_bytes();
++        for j in 0..8 {
++            out[8 * i + j] = bytes[j];
++        }
+     }
+     out
+ }
+@@ -345,11 +352,11 @@ pub fn zero_prefix_state(n_blocks: usize) -> [u64; STATE_LANES] {
+ /// [`zero_prefix_state`]): `data` is the rest of the message.
+ fn hash_from_state(data: &[u8], state: &[u64; STATE_LANES]) -> [u8; OUT_LEN] {
+     let mut state = *state;
+-    let (blocks, tail) = data.as_chunks::<RATE>();
+-    for block in blocks {
+-        absorb(&mut state, &block_of(block));
++    let blocks = data.len() / RATE;
++    for b in 0..blocks {
++        absorb(&mut state, &block_of(&data[b * RATE..(b + 1) * RATE]));
+     }
+-    absorb(&mut state, &final_block(tail));
++    absorb(&mut state, &final_block(&data[blocks * RATE..]));
+     digest_of(&state)
+ }
+ 
+diff --git a/crates/primitives/src/multilinear.rs b/crates/primitives/src/multilinear.rs
+index c1c7feb1..6a1940d6 100644
+--- a/crates/primitives/src/multilinear.rs
++++ b/crates/primitives/src/multilinear.rs
+@@ -163,15 +163,25 @@ pub fn fold_high_inplace(table: &mut Vec<F192>, chi: F192) {
+ 
+ /// `lo[i] = interp(lo[i], hi[i], chi)`, four products per batch.
+ fn interp_into(lo: &mut [F192], hi: &[F192], chi: F192) {
+-    let ((lo4, lo_tail), (hi4, hi_tail)) = (lo.as_chunks_mut::<4>(), hi.as_chunks::<4>());
+-    for (l, h) in lo4.iter_mut().zip(hi4) {
+-        let p = mul4([chi; 4], std::array::from_fn(|i| l[i] + h[i]));
+-        for i in 0..4 {
+-            l[i] += p[i];
+-        }
++    let quads = lo.len() / 4;
++    for q in 0..quads {
++        let b = 4 * q;
++        let p = mul4(
++            [chi; 4],
++            [
++                lo[b] + hi[b],
++                lo[b + 1] + hi[b + 1],
++                lo[b + 2] + hi[b + 2],
++                lo[b + 3] + hi[b + 3],
++            ],
++        );
++        lo[b] += p[0];
++        lo[b + 1] += p[1];
++        lo[b + 2] += p[2];
++        lo[b + 3] += p[3];
+     }
+-    for (l, h) in lo_tail.iter_mut().zip(hi_tail) {
+-        *l = interp(*l, *h, chi);
++    for i in 4 * quads..lo.len() {
++        lo[i] = interp(lo[i], hi[i], chi);
+     }
+ }
+ 
+@@ -199,9 +209,10 @@ pub fn shrink_eq_high(table: &mut Vec<F192>) {
+     let half = table.len() / 2;
+     {
+         // Sliced, as in `fold_high_inplace`.
+-        let (lo, hi) = (**table).split_at_mut(half);
+-        for (l, h) in lo.iter_mut().zip(&*hi) {
+-            *l += *h;
++        let t: &mut [F192] = table;
++        for i in 0..half {
++            let h = t[half + i];
++            t[i] += h;
+         }
+     }
+     table.truncate(half);
+@@ -226,17 +237,19 @@ pub fn poly_eval(coeffs: &[F192], point: F192) -> F192 {
+ pub fn mle_eval(table: &[F64], point: &[F192]) -> F192 {
+     debug_assert_eq!(table.len(), 1 << point.len());
+     if point.len() < 3 {
+-        return match point.split_first() {
+-            None => F192::from(table[0]),
+-            Some((&p0, rest)) => fold_ladder(fold_low_k(table, p0), rest),
++        return if point.is_empty() {
++            F192::from(table[0])
++        } else {
++            fold_ladder(fold_low_k(table, point[0]), &point[1..])
+         };
+     }
+     let low_vars = point.len().min(MLE_LOW_VARS);
+     let low = packed_eq(&point[..low_vars]);
+-    let rows = table
+-        .chunks_exact(1 << low_vars)
+-        .map(|row| dot_base(&low, row).reduce())
+-        .collect();
++    let width = 1 << low_vars;
++    let mut rows = Vec::with_capacity(table.len() / width);
++    for r in 0..table.len() / width {
++        rows.push(dot_base(&low, &table[r * width..(r + 1) * width]).reduce());
++    }
+     fold_ladder(rows, &point[low_vars..])
+ }
+ 
