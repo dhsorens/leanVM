@@ -1,0 +1,200 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/lean-compiler/lean.
+#
+# `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
+# Each is grouped by what stops it, so the list is also the work left. What is extracted is
+# the AST, the IR and the plain data around them; the parser and the lowering are opaque.
+[scenario.lean-compiler]
+backend = "lean"
+opaque = [
+  # The lowering state `FnLower<'a>` holds `&'a mut` borrows and shared borrows of borrowed
+  # data (`&'a HashMap<&'a str, &'a Func>`), and Aeneas cannot end or join those borrows in a
+  # method of it (`fresh`, lower.rs:263, a three-line counter bump, already fails). So every
+  # method is opaque but the three that read a constant out of the state.
+  "crate::lower::_::fail",
+  "crate::lower::_::fresh",
+  "crate::lower::_::emit",
+  "crate::lower::_::set",
+  "crate::lower::_::set_const",
+  "crate::lower::_::deref",
+  "crate::lower::_::anchor",
+  "crate::lower::_::check_not_reserved",
+  "crate::lower::_::rebind",
+  "crate::lower::_::bind_targets",
+  "crate::lower::_::pure",
+  "crate::lower::_::frame_cell",
+  "crate::lower::_::one",
+  "crate::lower::_::const_cell",
+  "crate::lower::_::zero",
+  "crate::lower::_::halt",
+  "crate::lower::_::copy",
+  "crate::lower::_::self_fp",
+  "crate::lower::_::patch_local",
+  "crate::lower::_::branch",
+  "crate::lower::_::ret_targets",
+  "crate::lower::_::lower_match",
+  "crate::lower::_::table_jump",
+  "crate::lower::_::lower_if",
+  "crate::lower::_::lower_assert_ne",
+  "crate::lower::_::bound_cell",
+  "crate::lower::_::lower_assert_lt",
+  "crate::lower::_::expr",
+  "crate::lower::_::pow_expr",
+  "crate::lower::_::expr_into",
+  "crate::lower::_::stmt",
+  "crate::lower::_::lower_for",
+  "crate::lower::builtins::_::lower_keccak",
+  "crate::lower::builtins::_::lower_keccak_cells",
+  "crate::lower::builtins::_::keccak_len",
+  "crate::lower::builtins::_::keccak_out",
+  "crate::lower::builtins::_::keccak_finish",
+  "crate::lower::builtins::_::emit_keccak_message",
+  "crate::lower::builtins::_::xor_byte",
+  "crate::lower::builtins::_::keccak_rate",
+  "crate::lower::builtins::_::sponge_xor",
+  "crate::lower::builtins::_::sponge_run",
+  "crate::lower::builtins::_::lower_builtin",
+  "crate::lower::builtins::_::sponge_cells",
+  "crate::lower::builtins::_::keccak_operand",
+  "crate::lower::builtins::_::prev_state",
+  "crate::lower::builtins::_::try_cell_run",
+  "crate::lower::builtins::_::sponge_cell",
+  "crate::lower::builtins::_::keccak_pad_run",
+  "crate::lower::builtins::_::bits_dest",
+  "crate::lower::builtins::_::lower_hint_witness",
+  "crate::lower::call::_::lower_call",
+  "crate::lower::call::_::lower_dispatched_call",
+  "crate::lower::call::_::try_inline",
+  "crate::lower::call::_::lower_return",
+  "crate::lower::call::_::specialize",
+  "crate::lower::call::_::call",
+  "crate::lower::call::_::call_into",
+  "crate::lower::call::_::const_substs",
+  "crate::lower::call::_::callee_def",
+  "crate::lower::call::_::take_inline_ret_cell",
+  "crate::lower::call::_::const_arg",
+  "crate::lower::eval::_::eval",
+  "crate::lower::eval::_::try_const_index",
+  "crate::lower::eval::_::const_index",
+  "crate::lower::eval::_::gpow_exp",
+  "crate::lower::eval::_::const_array_elem",
+  "crate::lower::eval::_::const_len",
+  "crate::lower::eval::_::add_identity",
+  "crate::lower::eval::_::mul_identity",
+  "crate::lower::eval::_::try_lit",
+  "crate::lower::eval::_::check_const_leaves",
+  "crate::lower::eval::_::const_gpow",
+  "crate::lower::mem::_::cell_run",
+  "crate::lower::mem::_::heap_addr",
+  "crate::lower::mem::_::check_heap_bound",
+  "crate::lower::mem::_::stack_addr",
+  "crate::lower::mem::_::heap_base",
+  "crate::lower::mem::_::array_ptr",
+  "crate::lower::mem::_::materialize",
+  "crate::lower::mem::_::stack_of",
+  "crate::lower::mem::_::alloc_stack",
+  "crate::lower::mem::_::heap_to_stack",
+  "crate::lower::mem::_::deref_run",
+  # Builds the `FnLower` and lowers through it; also calls `Func::param_shapes` (excluded).
+  "crate::lower::lower_func",
+  # The whole-program driver: an environment variable, `HashMap`s of borrowed keys, and
+  # `Iterator::find` (excluded below).
+  "crate::compile",
+
+  # Recursion through a closure (`args.iter().for_each(|a| f(a, ..))`): Aeneas does not
+  # translate a function mutually recursive with a closure's `Fn*` impl.
+  "crate::ast::free_vars_expr",
+  "crate::ast::free_vars_stmt",
+  "crate::ast::scoped_vars",
+  "crate::parser::subst::subst_var",
+  "crate::lower::contains_return",
+  "crate::lower::call::stmt_inline_safe",
+  "crate::parser::expr::parse_expr",
+  "crate::parser::expr::fold_ops",
+  # The AST's recursive types nest through `Vec` (`Expr::Call(String, Vec<Expr>)`, a block's
+  # `Vec<Stmt>`), and Aeneas's `Vec` is a subtype of `List`, which Lean's kernel does not
+  # accept in a nested inductive. So the types are opaque, and with them their derived impls.
+  "crate::ast::Expr",
+  "crate::ast::Stmt",
+  "crate::ast::StmtKind",
+  "{impl core::clone::Clone for crate::ast::Expr}::clone",
+  "{impl core::clone::Clone for crate::ast::Stmt}::clone",
+  "{impl core::clone::Clone for crate::ast::StmtKind}::clone",
+  "{impl core::cmp::PartialEq<crate::ast::Expr> for crate::ast::Expr}::eq",
+  # The functions that build or take apart those opaque types.
+  "crate::ast::_::new",
+  "crate::ast::_::at",
+  "crate::lower::plus_k",
+  "crate::parser::consts::const_int_expr",
+  "crate::parser::consts::gpow_bound",
+  "crate::parser::consts::parse_const",
+  "crate::parser::subst::subst_kind",
+  "crate::parser::subst::subst_stmts",
+
+  # Aeneas does not yet translate an early return or a break out of a loop.
+  "crate::parser::parse_with_replacements",  # parser.rs:42, a return in nested loops
+  "crate::parser::parse_match",  # parser.rs:861
+  "crate::parser::infer_return_shapes",  # parser.rs:279, a break to an outer loop in `scan`
+  "crate::parser::_::func_header",  # parser.rs:447
+
+  # String handling through `core::str`'s `Pattern` methods (`find`, `starts_with`,
+  # `strip_suffix`, ..): Aeneas does not translate the trait's generic associated type
+  # `Searcher<'a>`.
+  "crate::lower::builtins::_::keccak_kwargs",
+  "crate::parser::locate",
+  "crate::parser::strip_log",
+  "crate::parser::whole_call",
+  "crate::parser::_::func_inner",
+  "crate::parser::_::stmt_inner",
+  "crate::parser::_::if_stmt",
+  "crate::parser::consts::parse_f192_const",
+  "crate::parser::expr::call_args",
+  "crate::parser::expr::string_lit",
+  "crate::parser::expr::strip_const_wrapper",
+  # Byte scans of a `&str` that return subslices of it: Aeneas cannot join their loop states
+  # ("could not match the contexts").
+  "crate::parser::expr::split_add",
+  "crate::parser::expr::split_mul",
+  "crate::parser::expr::split_top",
+  "crate::parser::expr::split_assign",
+  "crate::parser::expr::split_aug",
+  "crate::parser::expr::strip_comment",
+  "crate::parser::expr::top_level_cmp",
+  "crate::parser::_::here",  # a closure returning a borrow of `self`
+
+  # A function item passed as a closure (`String::as_str`, `stmt_inline_safe`), or a closure
+  # inserting a borrow into a set it captures: its `Fn*` impl relates a higher-ranked lifetime
+  # to a free one, which Aeneas does not translate.
+  "crate::parser::consts::apply_replacements",
+  "crate::lower::call::body_inlinable",
+  "crate::ast::binds_anywhere",
+  "crate::disassemble",
+
+  # Iterator adapters CoreModels' `Iterator` (only `next`) lacks: `any`, `take`, `map`, `sum`.
+  "crate::ast::_::has_const_params",
+  "crate::lower::_::arg",
+  "crate::lower::_::arg_cells",
+  # `Cow<[Stmt]>`, which CoreModels does not model.
+  "crate::lower::call::substitute_body",
+  # String operations CoreModels does not model: `format!`, `str::trim`, `str::chars`,
+  # indexing a `str` by a range.
+  "crate::parser::consts::eval_const_int",
+  "crate::parser::expr::binding_name",
+  "crate::parser::expr::is_ident",
+  "crate::parser::expr::split_once_top",
+
+  # The derived `Clone` of a struct holding a tuple: Aeneas's builtin `Clone` of the tuple does
+  # not match the hax Lean library's `Clone`.
+  "{impl core::clone::Clone for crate::ast::Ast}::clone",
+  "{impl core::clone::Clone for crate::lower::Scope}::clone",
+]
+exclude = [
+  # Signatures Aeneas does not translate, so not even opaque: an `impl Iterator` result, and
+  # closures over `&mut Self` (higher-ranked lifetimes). Their callers are opaque above.
+  "crate::ast::_::param_shapes",
+  "crate::lower::_::scoped",
+  "crate::lower::_::lower_match_dispatch",
+  # Their signatures crash Aeneas while translating the `Iterator` trait.
+  "core::iter::traits::iterator::Iterator::find",
+  "core::slice::iter::_::find",
+]

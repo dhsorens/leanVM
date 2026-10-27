@@ -15,6 +15,16 @@
   {
    "type": "path",
    "scope": "",
+   "name": "LeanCompiler",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/lean_compiler/proofs/lean-compiler/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "Verifier",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
