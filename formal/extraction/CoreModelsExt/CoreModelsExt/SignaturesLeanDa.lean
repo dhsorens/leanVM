@@ -14,19 +14,7 @@ namespace CoreModels
 
 /-! ## Integers -/
 
-/-- `usize::next_power_of_two`: the least power of two at least `x` (`1` for `0`). Rust
-panics on overflow in debug builds and returns `0` in release ones; this models the panic. -/
-def core.num.Usize.next_power_of_two (x : Std.Usize) : RustM Std.Usize :=
-  let p := (List.range (Usize.numBits + 1)).find? (fun i => x.val ≤ 2 ^ i)
-  match p with
-  | some i => if 2 ^ i ≤ Usize.max then ok ⟨BitVec.ofNat _ (2 ^ i)⟩ else fail .panic
-  | none => fail .panic
-
 /-! ## `bool`, ranges -/
-
-/-- `bool::then_some`: `if self { Some(t) } else { None }`. -/
-def core.bool.Bool.then_some {T : Type} (self : Bool) (t : T) : RustM (core.option.Option T) :=
-  ok (if self then .Some t else .None)
 
 /-- `Iterator::next` of `RangeInclusive`: `start` until it reaches `end`, then `end` once
 more, setting `exhausted`; `None` once exhausted or when `start > end`. -/

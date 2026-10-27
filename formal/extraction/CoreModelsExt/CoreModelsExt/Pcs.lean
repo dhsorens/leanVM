@@ -23,11 +23,6 @@ def core.F64.Insts.CoreCloneClone.clone (x : F64) : RustM F64 :=
 
 /-! ## Integers and `Ord` -/
 
-/-- `usize::trailing_zeros`: the index of the lowest set bit, the width for zero. -/
-def core.num.Usize.trailing_zeros (x : Std.Usize) : RustM Std.U32 :=
-  ok ⟨BitVec.ofNat 32 (((List.range System.Platform.numBits).find? fun i => x.val.testBit i).getD
-    System.Platform.numBits)⟩
-
 /-- `Ord::clamp`, projected from the dictionary: `max(min, min(self, max))`, a panic unless
 `min <= max`. -/
 abbrev core.cmp.Ord.clamp {Self : Type} (OrdInst : core.cmp.Ord Self) (self min max : Self) :

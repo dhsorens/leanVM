@@ -15,10 +15,40 @@
   {
    "type": "path",
    "scope": "",
+   "name": "Bench",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/bench/proofs/bench/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "LeanCompiler",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
    "dir": "../../crates/lean_compiler/proofs/lean-compiler/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "LeanDa",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/lean_da/proofs/lean-da/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Leanvm",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/leanvm/proofs/leanvm/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -39,6 +69,26 @@
    "manifestFile": "lake-manifest.json",
    "inherited": false,
    "dir": "../../crates/pcs/proofs/pcs/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "RecAggregation",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/rec_aggregation/proofs/rec-aggregation/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Signatures",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/signatures/proofs/signatures/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },

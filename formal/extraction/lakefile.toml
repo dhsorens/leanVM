@@ -6,15 +6,27 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.LeanCompiler", "Extraction.LeanvmCore", "Extraction.Pcs", "Extraction.Verifier"]
+roots = ["Extraction.Bench", "Extraction.LeanCompiler", "Extraction.LeanDa", "Extraction.Leanvm", "Extraction.LeanvmCore", "Extraction.Pcs", "Extraction.RecAggregation", "Extraction.Signatures", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
 path = "CoreModelsExt"
 
 [[require]]
+name = "Bench"
+path = "../../crates/bench/proofs/bench/lean"
+
+[[require]]
 name = "LeanCompiler"
 path = "../../crates/lean_compiler/proofs/lean-compiler/lean"
+
+[[require]]
+name = "LeanDa"
+path = "../../crates/lean_da/proofs/lean-da/lean"
+
+[[require]]
+name = "Leanvm"
+path = "../../crates/leanvm/proofs/leanvm/lean"
 
 [[require]]
 name = "LeanvmCore"
@@ -23,6 +35,14 @@ path = "../../crates/leanvm_core/proofs/leanvm-core/lean"
 [[require]]
 name = "Pcs"
 path = "../../crates/pcs/proofs/pcs/lean"
+
+[[require]]
+name = "RecAggregation"
+path = "../../crates/rec_aggregation/proofs/rec-aggregation/lean"
+
+[[require]]
+name = "Signatures"
+path = "../../crates/signatures/proofs/signatures/lean"
 
 [[require]]
 name = "Verifier"
