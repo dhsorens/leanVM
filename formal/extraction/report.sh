@@ -14,7 +14,7 @@ for lean in crates/*/proofs/*/lean; do
   defs=$(cat "$ext"/Types.lean "$ext"/Funs.lean | grep -cE '^(@\[[^]]*\] *)*(def|structure|inductive|instance) ' || true)
   axioms=$(cat "$asm"/*External.lean 2>/dev/null | grep -cE '^axiom ' || true)
   sorries=$(cat "$ext"/Types.lean "$ext"/Funs.lean | grep -cw sorry || true)
-  patches=$(find "${lean%/lean}/patches" -name '*.patch' 2>/dev/null | wc -l | tr -d ' ')
+  patches=$(find "${lean%/lean}" -path '*/patches/*' -name '*.patch' | wc -l | tr -d ' ')
   echo "| \`${lean%/lean}\` | $defs | $axioms | $sorries | $patches |"
 done
 

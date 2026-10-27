@@ -5,8 +5,9 @@ in its hax.toml and nothing else. For each package crates/<crate>/proofs/<scenar
 
 - Assumptions/*External.lean is kept in step with the templates hax regenerates: declarations
   already there (which may have been fixed by hand) stay as they are, the template's new ones are
-  added and the ones it lost are dropped, in template order. A new `fmt` loses the `Formatter`
-  write-back Aeneas gives it, which the hax Lean library's `Debug` and `Display` do not have.
+  added and the ones it lost are dropped, in template order. Every `fmt` loses the `Formatter`
+  write-back Aeneas gives it, which the hax Lean library's `Debug` and `Display` do not have
+  (hax seeds a new package's Assumptions/ from the raw template, so the seeded ones need it too).
   TypesExternal imports CoreModelsExt, the standard-library models every extraction shares.
 - Its lakefile requires CoreModelsExt and resolves its dependencies into the workspace's
   `.lake/packages`, and its manifest is the workspace's, so the package builds the same alone.
@@ -54,7 +55,7 @@ def split(text):
     return text[:start], blocks
 
 
-def seed(block):
+def drop_formatter_write_back(block):
     if ".Insts.CoreFmtDebug.fmt" in block or ".Insts.CoreFmtDisplay.fmt" in block:
         return FORMATTER_WRITE_BACK.sub(")", block)
     return block
@@ -70,7 +71,7 @@ def sync_assumptions(package, name):
         header, present = split(assumption.read_text())
         if stem == "TypesExternal" and "public import CoreModelsExt\n" not in header:
             header = header.replace("public import CoreModels\n", "public import CoreModels\npublic import CoreModelsExt\n", 1)
-        text = header + "".join(present.get(key) or seed(block) for key, block in wanted.items())
+        text = header + "".join(drop_formatter_write_back(present.get(key) or block) for key, block in wanted.items())
         write(assumption, text if text.endswith("\n") else text + "\n")
         for key in wanted.keys() - present.keys():
             print(f"{assumption.relative_to(ROOT)}: added {key}")
