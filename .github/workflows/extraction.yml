@@ -57,9 +57,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Mathlib's build comes from its own cache (`lake exe cache get`), so the entry holds only
+      # the other dependencies' builds: keyed on the pins, not the commit, and saved from `main`
+      # only, it stays one small entry rather than one per push.
+      - name: Restore the Lake dependencies
+        id: lake-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            formal/extraction/.lake
+            !formal/extraction/.lake/packages/mathlib/.lake
+          key: lake-extraction-${{ runner.os }}-${{ hashFiles('formal/extraction/lean-toolchain', 'formal/extraction/lake-manifest.json') }}
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: formal/extraction
+          use-github-cache: false
+      - name: Save the Lake dependencies
+        if: github.ref == 'refs/heads/main' && steps.lake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            formal/extraction/.lake
+            !formal/extraction/.lake/packages/mathlib/.lake
+          key: ${{ steps.lake-cache.outputs.cache-primary-key }}
       - name: Report the trusted surface
         run: formal/extraction/report.sh >> "$GITHUB_STEP_SUMMARY"
 
