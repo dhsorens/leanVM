@@ -1,0 +1,23 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/fiat-shamir/lean.
+#
+# `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
+[scenario.fiat-shamir]
+backend = "lean"
+opaque = [
+  # Proof-of-work search: a parallel batched search (`parallel::find_first`) whose closure
+  # borrows the state, which Aeneas cannot join across the loop (lib.rs:172).
+  "crate::_::grind_pow",
+]
+exclude = [
+  # Wire encoding, derived by serde: its traits are mutually recursive, which Aeneas does not
+  # model, and `Deserialize`'s visitors do not translate.
+  "{impl serde_core::ser::Serialize for crate::merkle::PrunedMerklePaths}",
+  "{impl serde_core::de::Deserialize for crate::merkle::PrunedMerklePaths}",
+  "{impl serde_core::ser::Serialize for crate::transcript::Proof}",
+  "{impl serde_core::de::Deserialize for crate::transcript::Proof}",
+  # Their signatures crash Aeneas while translating the `Iterator` trait.
+  "core::iter::traits::iterator::Iterator::find",
+  "core::slice::iter::_::find",
+]
+charon-args = ["--include", "primitives::field::gf2_64::F64", "--include", "primitives::field::gf2_64x3::F192"]

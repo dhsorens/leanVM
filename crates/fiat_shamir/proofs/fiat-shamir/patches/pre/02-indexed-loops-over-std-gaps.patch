@@ -1,0 +1,56 @@
+diff --git a/crates/fiat_shamir/src/lib.rs b/crates/fiat_shamir/src/lib.rs
+index d5ce192f..ea79aa92 100644
+--- a/crates/fiat_shamir/src/lib.rs
++++ b/crates/fiat_shamir/src/lib.rs
+@@ -23,8 +23,9 @@ use primitives::hash::STATE_LANES;
+ /// node hash.
+ pub fn compress(a: [F64; 4], b: [F64; 4]) -> [F64; 4] {
+     let mut input = [0u8; 64];
+-    for (slot, w) in input.as_chunks_mut::<8>().0.iter_mut().zip(a.into_iter().chain(b)) {
+-        *slot = w.0.to_le_bytes();
++    for i in 0..4 {
++        input[8 * i..8 * i + 8].copy_from_slice(&a[i].0.to_le_bytes());
++        input[32 + 8 * i..32 + 8 * i + 8].copy_from_slice(&b[i].0.to_le_bytes());
+     }
+     digest_words(&primitives::hash::hash(&input))
+ }
+@@ -67,8 +68,9 @@ impl FiatShamirState {
+             state: [0; STATE_LANES],
+             n_pending: 0,
+         };
+-        for (lane, word) in fs.state.iter_mut().zip(iv.into_iter().chain(public_input)) {
+-            *lane = word.0;
++        for i in 0..4 {
++            fs.state[i] = iv[i].0;
++            fs.state[4 + i] = public_input[i].0;
+         }
+         fs.duplex();
+         fs
+@@ -127,7 +129,11 @@ impl FiatShamirState {
+ 
+     /// Squeeze `n` challenges, in order.
+     pub fn sample_vec(&mut self, n: usize) -> Vec<F192> {
+-        (0..n).map(|_| self.sample()).collect()
++        let mut out = Vec::with_capacity(n);
++        for _ in 0..n {
++            out.push(self.sample());
++        }
++        out
+     }
+ 
+     /// Whether `nonce` passes a `bits` grind here: absorbed as a nonce, the challenge
+diff --git a/crates/fiat_shamir/src/merkle.rs b/crates/fiat_shamir/src/merkle.rs
+index c2929631..d5a15348 100644
+--- a/crates/fiat_shamir/src/merkle.rs
++++ b/crates/fiat_shamir/src/merkle.rs
+@@ -102,7 +102,9 @@ impl PrunedMerklePaths {
+         assert!(num_leaves.is_power_of_two() && num_leaves > 0);
+         assert_eq!(tree.len(), 2 * num_leaves - 1);
+         let sorted = sorted_unique(positions);
+-        debug_assert!(sorted.iter().all(|&p| p < num_leaves));
++        for i in 0..sorted.len() {
++            debug_assert!(sorted[i] < num_leaves);
++        }
+ 
+         let sibling_hashes = octopus(tree, num_leaves, sorted.clone());
+         Self {

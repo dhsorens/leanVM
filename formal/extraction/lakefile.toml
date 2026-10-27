@@ -6,11 +6,15 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.Verifier"]
+roots = ["Extraction.FiatShamir", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
 path = "CoreModelsExt"
+
+[[require]]
+name = "FiatShamir"
+path = "../../crates/fiat_shamir/proofs/fiat-shamir/lean"
 
 [[require]]
 name = "Verifier"

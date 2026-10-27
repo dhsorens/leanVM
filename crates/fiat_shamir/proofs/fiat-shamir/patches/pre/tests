@@ -1,0 +1,6 @@
+# `cargo test --release` arguments, one run per line, on the patched source.
+-p fiat_shamir
+# Pruned openings and the transcript's challenges, checked by the verifier against real proofs.
+-p leanvm_core --test verifiers
+# `compress`, checked against the VM's `KECCAK` through the digests proofs publish.
+-p lean_compiler --test suite vm_proofs
