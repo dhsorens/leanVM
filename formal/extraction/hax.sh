@@ -23,6 +23,15 @@ HAX_REV=721d1a2710b1d7020a0b32de7291fe791885d215
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
+# The extraction models the portable code paths, the same on every host: the hardware features
+# the crates dispatch on are off (on x86-64 they are off by default, with `target-cpu=native`
+# overridden), so each `cfg(target_feature)` choice takes its fallback. The tests run on these
+# paths too, the ones the extraction and its patches describe.
+case "$(uname -m)" in
+  arm64 | aarch64) export RUSTFLAGS="-C target-feature=-aes,-sha2,-sha3" ;;
+  *) export RUSTFLAGS="" ;;
+esac
+
 usage() {
   awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
   exit 2

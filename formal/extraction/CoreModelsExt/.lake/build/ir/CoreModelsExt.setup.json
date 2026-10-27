@@ -6368,6 +6368,11 @@
     "/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/hax/.lake/build/lib/lean/Hax/MissingAeneas.olean.server"],
    ["/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/hax/.lake/build/lib/lean/Hax/MissingAeneas.ir.sig",
     "/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/hax/.lake/build/lib/lean/Hax/MissingAeneas.ir"]],
+  "CoreModelsExt.Verifier":
+  [["/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/lib/lean/CoreModelsExt/Verifier.olean",
+    "/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/lib/lean/CoreModelsExt/Verifier.olean.server"],
+   ["/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/lib/lean/CoreModelsExt/Verifier.ir.sig",
+    "/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/lib/lean/CoreModelsExt/Verifier.ir"]],
   "CoreModels.Spec.RustPrimitives.Slice":
   [["/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/hax/.lake/build/lib/lean/CoreModels/Spec/RustPrimitives/Slice.olean",
     "/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/hax/.lake/build/lib/lean/CoreModels/Spec/RustPrimitives/Slice.olean.server"],

@@ -2,30 +2,26 @@
  "schemaVersion": "2025-09-10",
  "outputs":
  {"rs": "53fee5021f6262a8.ir.sig",
-  "r": "758a7ec002c4151c.ir",
+  "r": "be7b5810ec618441.ir",
   "o":
-  ["31a64bf875d94b4d.olean",
-   "58bf241c7e96e810.olean.server",
-   "cec62364e869c881.olean.private"],
+  ["264fc7c500336c6a.olean",
+   "a9d6a204c5985198.olean.server",
+   "50078dd9dfcf7d9f.olean.private"],
   "m": true,
-  "i": "12c887b68c554973.ilean",
-  "c": "758214fd8f065546.c"},
+  "i": "7222f22d578488d8.ilean",
+  "c": "d4e54d95010d6128.c"},
  "log":
  [{"message":
    ".> LEAN_PATH=/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/Cli/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/batteries/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/Qq/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/aesop/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/proofwidgets/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/importGraph/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/LeanSearchClient/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/plausible/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/mathlib/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/aeneas/backends/lean/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/hax/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/crates/verifier/proofs/verifier/lean/.lake/build/lib/lean:/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/build/lib/lean /Users/dhsorens/.elan/toolchains/leanprover--lean4---v4.35.0/bin/lean /Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/CoreModelsExt.lean -o /Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/lib/lean/CoreModelsExt.olean -i /Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/lib/lean/CoreModelsExt.ilean -c /Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/ir/CoreModelsExt.c --setup /Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/.lake/build/ir/CoreModelsExt.setup.json --json",
-   "level": "trace"},
-  {"message":
-   "CoreModelsExt.lean:92:4: The namespace `alloc` is duplicated in the declaration `CoreModels.alloc.alloc.Global.Insts.CoreAllocAllocatorClone`.\n\nNote: This linter can be disabled with `set_option linter.dupNamespace false`",
-   "level": "warning"}],
+   "level": "trace"}],
  "inputs":
  [["deps",
    [["CoreModelsExt/CoreModelsExt:extraDep",
      [["@CoreModelsExt:extraDep", "00000000000006bb"]]],
     ["imports",
-     [["Aeneas transitive imports (public)", "5ae9a8bb1786e108"],
-      ["Aeneas:importArts", "03eaf28844ce05a4"],
-      ["CoreModels transitive imports (public)", "21360c08820e8ac7"],
-      ["CoreModels:importArts", "130713a8442487f0"]]]]],
+     [["CoreModelsExt.Verifier transitive imports (public)",
+       "8f873e69f62ed5f5"],
+      ["CoreModelsExt.Verifier:importArts", "346ddca67cbdcc59"]]]]],
   ["libs",
    [["import dynlibs",
      [["/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/.lake/packages/aeneas/backends/lean/.lake/build/lib/libaeneas_AeneasMeta.dylib",
@@ -36,10 +32,10 @@
   ["Lean 4.35.0, commit eb6cafb7290e8bd5f2937522d8d804f58f02bafc",
    "407ce514b71d5a10"],
   ["/Users/dhsorens/devel/zkvm/leanVM/formal/extraction/CoreModelsExt/CoreModelsExt.lean",
-   "7fa8ac9d68b1dd93"],
+   "a3be715b97782a07"],
   ["options", "00000000000006bb"],
   ["isModule: true", "760fcc16989f4b9b"],
   ["Module.name: CoreModelsExt", "ad9c6293538106c7"],
   ["Package.id?: (some CoreModelsExt)", "481ec3c77c41fcde"],
   ["Module.leanArgs: #[]", "00000000000006bb"]],
- "depHash": "7ca8cde3c72c5a6b"}
+ "depHash": "ea31d0453a1c1f5d"}

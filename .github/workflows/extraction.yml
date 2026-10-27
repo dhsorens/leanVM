@@ -68,9 +68,6 @@ jobs:
   patches:
     name: Patched source behaves the same
     runs-on: ubuntu-latest
-    env:
-      # As in rust.yml: the SIMD backend the tests exercise should not depend on the runner.
-      RUSTFLAGS: -C target-cpu=haswell
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
