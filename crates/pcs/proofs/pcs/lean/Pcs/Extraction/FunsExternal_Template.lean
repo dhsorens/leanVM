@@ -55,7 +55,7 @@ axiom ntt.additive_ntt_f64.AdditiveNttF64.gathered_pass
     primitives.field.gf2_64.F64)
 
 /-- [pcs::ntt::additive_ntt_f64::butterfly_interleaved_fused_2layer]:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 817:0-834:1 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 819:0-836:1 -/
 axiom ntt.additive_ntt_f64.butterfly_interleaved_fused_2layer
   :
   Slice primitives.field.gf2_64.F64 → primitives.field.gf2_64.F64 →
@@ -103,22 +103,22 @@ axiom ntt.additive_ntt_f64.prefetch
   : ConstRawPtr primitives.field.gf2_64.F64 → Std.Usize → RustM Unit
 
 /-- [pcs::ntt::additive_ntt_f64::L2_WORDS]
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 724:0-724:32 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 721:0-725:2 -/
 axiom ntt.additive_ntt_f64.L2_WORDS : RustM Std.Usize
 
 /-- [pcs::ntt::additive_ntt_f64::LOG_SUBS_PER_WORKER]
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 734:0-734:37 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 732:0-736:2 -/
 axiom ntt.additive_ntt_f64.LOG_SUBS_PER_WORKER : RustM Std.Usize
 
 /-- [pcs::ntt::additive_ntt_f64::with_scratch]:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 758:0-776:1 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 760:0-778:1 -/
 axiom ntt.additive_ntt_f64.with_scratch
   {R : Type _} {T1 : Type _} (coreopsfunctionFnOnceT1TupleMutSliceF64RInst :
   core.ops.function.FnOnce T1 (Slice primitives.field.gf2_64.F64) R) :
   Std.Usize → T1 → RustM R
 
 /-- [pcs::ntt::additive_ntt_f64::replicate]:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 782:0-806:1 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 784:0-808:1 -/
 axiom ntt.additive_ntt_f64.replicate
   :
   Slice primitives.field.gf2_64.F64 → parallel.SendPtr

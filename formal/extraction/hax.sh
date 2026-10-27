@@ -47,7 +47,7 @@ setup() {
   version=$(cargo hax tools show | awk '$1 == "charon" { print $2; exit }')
   charon="${XDG_CACHE_HOME:-$HOME/.cache}/hax/tools/charon/$version/charon"
   rustup toolchain install "$("$charon" toolchain-version)" --profile minimal \
-    --component rustc-dev,llvm-tools,rust-src
+    --component rustc-dev,llvm-tools,rust-src,miri # miri builds charon's full-MIR standard library
 }
 
 applied=()
@@ -89,7 +89,7 @@ extract() {
   python3 formal/extraction/wire.py
   if $check; then
     git add --intent-to-add -- crates/*/proofs
-    if ! git diff --exit-code --stat -- crates/*/proofs; then
+    if ! git diff --exit-code -- crates/*/proofs; then
       echo "error: the committed extraction is stale; run formal/extraction/hax.sh extract and commit the result" >&2
       exit 1
     fi

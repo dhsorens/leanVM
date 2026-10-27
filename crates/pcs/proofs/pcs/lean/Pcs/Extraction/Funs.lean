@@ -583,7 +583,7 @@ def ntt.additive_ntt_f64.AdditiveNttF64.twiddles_radix8
   ok (Array.make 7#usize [ t01, a, f, c, f1, f2, f3 ])
 
 /-- [pcs::ntt::additive_ntt_f64::butterfly_lanes]: loop body 0:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 945:4-950:5 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 947:4-952:5 -/
 @[rust_loop_body]
 def ntt.additive_ntt_f64.butterfly_lanes_loop.body
   (twiddle : primitives.field.gf2_64.F64)
@@ -614,7 +614,7 @@ def ntt.additive_ntt_f64.butterfly_lanes_loop.body
     ok (cont (iter1, s, s1))
 
 /-- [pcs::ntt::additive_ntt_f64::butterfly_lanes]: loop 0:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 945:4-950:5 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 947:4-952:5 -/
 @[rust_loop]
 def ntt.additive_ntt_f64.butterfly_lanes_loop
   (iter : core.ops.range.Range Std.Usize)
@@ -630,7 +630,7 @@ def ntt.additive_ntt_f64.butterfly_lanes_loop
     (iter, top, bot)
 
 /-- [pcs::ntt::additive_ntt_f64::butterfly_lanes]:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 868:0-951:1 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 870:0-953:1 -/
 def ntt.additive_ntt_f64.butterfly_lanes
   (top : Slice primitives.field.gf2_64.F64)
   (bot : Slice primitives.field.gf2_64.F64)
@@ -645,7 +645,7 @@ def ntt.additive_ntt_f64.butterfly_lanes
     { start := 0#usize, «end» := left_val } top bot twiddle
 
 /-- [pcs::ntt::additive_ntt_f64::butterfly_interleaved_block]: loop body 0:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 840:4-843:5 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 842:4-845:5 -/
 @[rust_loop_body]
 def ntt.additive_ntt_f64.butterfly_interleaved_block_loop.body
   (twiddle : primitives.field.gf2_64.F64) (num_ntts : Std.Usize)
@@ -679,7 +679,7 @@ def ntt.additive_ntt_f64.butterfly_interleaved_block_loop.body
     ok (cont (iter1, top1, bot1))
 
 /-- [pcs::ntt::additive_ntt_f64::butterfly_interleaved_block]: loop 0:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 840:4-843:5 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 842:4-845:5 -/
 @[rust_loop]
 def ntt.additive_ntt_f64.butterfly_interleaved_block_loop
   (iter : core.ops.range.Range Std.Usize)
@@ -696,7 +696,7 @@ def ntt.additive_ntt_f64.butterfly_interleaved_block_loop
     (iter, top, bot)
 
 /-- [pcs::ntt::additive_ntt_f64::butterfly_interleaved_block]:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 837:0-844:1 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 839:0-846:1 -/
 def ntt.additive_ntt_f64.butterfly_interleaved_block
   (block : Slice primitives.field.gf2_64.F64)
   (twiddle : primitives.field.gf2_64.F64) (block_size_half : Std.Usize)
@@ -1383,18 +1383,18 @@ def ntt.additive_ntt_f64.AdditiveNttF64.inverse_transform
 def ntt.additive_ntt_f64.PREFETCH_ROWS : Std.Usize := 8#usize
 
 /-- [pcs::ntt::additive_ntt_f64::L3_WORDS]
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 743:0-743:32 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 745:0-745:32 -/
 @[global_simps, irreducible]
 def ntt.additive_ntt_f64.L3_WORDS : RustM Std.Usize := 1#usize <<< 18#i32
 
 /-- [pcs::ntt::additive_ntt_f64::STREAM_MIN_WORDS]
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 752:0-752:40 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 754:0-754:40 -/
 @[global_simps, irreducible]
 def ntt.additive_ntt_f64.STREAM_MIN_WORDS : RustM Std.Usize :=
   1#usize <<< 23#i32
 
 /-- [pcs::ntt::additive_ntt_f64::transposed_butterfly_lanes]: loop body 0:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 851:4-853:5 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 853:4-855:5 -/
 @[rust_loop_body]
 def ntt.additive_ntt_f64.transposed_butterfly_lanes_loop0.body
   (bot : Slice primitives.field.gf2_64.F64)
@@ -1418,7 +1418,7 @@ def ntt.additive_ntt_f64.transposed_butterfly_lanes_loop0.body
     ok (cont (iter1, s))
 
 /-- [pcs::ntt::additive_ntt_f64::transposed_butterfly_lanes]: loop 0:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 851:4-853:5 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 853:4-855:5 -/
 @[rust_loop]
 def ntt.additive_ntt_f64.transposed_butterfly_lanes_loop0
   (iter : core.ops.range.Range Std.Usize)
@@ -1433,7 +1433,7 @@ def ntt.additive_ntt_f64.transposed_butterfly_lanes_loop0
     (iter, top)
 
 /-- [pcs::ntt::additive_ntt_f64::transposed_butterfly_lanes]: loop body 1:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 855:4-857:5 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 857:4-859:5 -/
 @[rust_loop_body]
 def ntt.additive_ntt_f64.transposed_butterfly_lanes_loop1.body
   (bot : Slice primitives.field.gf2_64.F64)
@@ -1457,7 +1457,7 @@ def ntt.additive_ntt_f64.transposed_butterfly_lanes_loop1.body
     ok (cont (iter1, s))
 
 /-- [pcs::ntt::additive_ntt_f64::transposed_butterfly_lanes]: loop 1:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 855:4-857:5 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 857:4-859:5 -/
 @[rust_loop]
 def ntt.additive_ntt_f64.transposed_butterfly_lanes_loop1
   (iter : core.ops.range.Range Std.Usize)
@@ -1472,7 +1472,7 @@ def ntt.additive_ntt_f64.transposed_butterfly_lanes_loop1
     (iter, top)
 
 /-- [pcs::ntt::additive_ntt_f64::transposed_butterfly_lanes]:
-    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 848:0-858:1 -/
+    Source: 'crates/pcs/src/ntt/additive_ntt_f64.rs', lines 850:0-860:1 -/
 def ntt.additive_ntt_f64.transposed_butterfly_lanes
   (top : Slice primitives.field.gf2_64.F64)
   (bot : Slice primitives.field.gf2_64.F64)

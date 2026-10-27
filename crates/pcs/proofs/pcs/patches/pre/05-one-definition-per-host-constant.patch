@@ -1,0 +1,35 @@
+diff --git a/crates/pcs/src/ntt/additive_ntt_f64.rs b/crates/pcs/src/ntt/additive_ntt_f64.rs
+index f3b7d092..61d90049 100644
+--- a/crates/pcs/src/ntt/additive_ntt_f64.rs
++++ b/crates/pcs/src/ntt/additive_ntt_f64.rs
+@@ -718,20 +718,22 @@ pub(crate) fn prefetch(p: *const F64, len: usize) {
+ /// - A gathered layer costs more than a deep one, its rows scattered over more streams than the prefetcher follows.
+ /// - So the budget is sized to push layers into the deep pass, not to fit a cache.
+ /// - It exceeds [`L3_WORDS`], which then changes no plan.
+-#[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+-const L2_WORDS: usize = 1 << 16;
+-#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+-const L2_WORDS: usize = 1 << 21;
++const L2_WORDS: usize = if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
++    1 << 21
++} else {
++    1 << 16
++};
+ 
+ /// Deep sub-blocks cut per worker, as a log.
+ ///
+ /// - Apple silicon mixes performance and efficiency cores.
+ /// - With one sub-block each, the performance cores would wait on the efficiency cores' sub-blocks.
+ /// - Elsewhere every core is alike, and one each suffices.
+-#[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+-const LOG_SUBS_PER_WORKER: usize = 0;
+-#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+-const LOG_SUBS_PER_WORKER: usize = 2;
++const LOG_SUBS_PER_WORKER: usize = if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
++    2
++} else {
++    0
++};
+ 
+ /// Words a deep sub-block may span when it alone covers every layer.
+ ///
