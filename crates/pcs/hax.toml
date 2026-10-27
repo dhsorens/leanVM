@@ -70,7 +70,7 @@ opaque = [
   "crate::stack_open::open_batch_mixed_whir_stacked",
 
   # Aeneas internal errors, each still to be reduced to a reportable case.
-  "crate::whir::msg_terms_lone",  # whir.rs:588, a loop over a zip returning its `T::Acc` twice
+  "crate::whir::msg_terms_lone",  # whir.rs:588, a loop over a zip, its accumulator returned twice
 
   # The security analysis computes in `f64`, which Aeneas does not translate.
   "crate::whir_config::ANALYSIS_LOG_Q",
