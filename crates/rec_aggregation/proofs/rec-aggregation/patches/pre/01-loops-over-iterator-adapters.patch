@@ -1,0 +1,133 @@
+diff --git a/crates/rec_aggregation/src/aggregation.rs b/crates/rec_aggregation/src/aggregation.rs
+index 7116b785..b9c89e8e 100644
+--- a/crates/rec_aggregation/src/aggregation.rs
++++ b/crates/rec_aggregation/src/aggregation.rs
+@@ -186,7 +186,7 @@ fn pack_16_bytes(bytes: &[u8]) -> F192 {
+ /// A run of canonical 128-bit cells as the byte string the hash takes: each cell
+ /// is its two low limbs, little-endian, which is the order the VM's hash
+ /// instruction reads a memory cell in.
+-fn cell_bytes(cells: impl IntoIterator<Item = F192>) -> Vec<u8> {
++fn cell_bytes(cells: &[F192]) -> Vec<u8> {
+     let mut bytes = Vec::new();
+     for cell in cells {
+         bytes.extend_from_slice(&cell.c0.to_le_bytes());
+@@ -212,8 +212,12 @@ fn list_split(n: usize) -> Vec<F192> {
+ /// One scheme's declared claims, hashed plainly: 64 bytes a claim, its pubkey then
+ /// the message it signed, and an empty list hashes the empty string. The guest
+ /// computes this same digest [`CLAIM_GROUP`] claims at a time (`claim_list_digest`).
+-fn claim_list_digest(claims: impl IntoIterator<Item = [F192; 4]>) -> [F192; 2] {
+-    pack_hash_state(&primitives::hash::hash(&cell_bytes(claims.into_iter().flatten())))
++fn claim_list_digest(claims: &[[F192; 4]]) -> [F192; 2] {
++    let mut cells = Vec::new();
++    for claim in claims {
++        cells.extend_from_slice(claim);
++    }
++    pack_hash_state(&primitives::hash::hash(&cell_bytes(&cells)))
+ }
+ 
+ /// A claim as the four cells the guest hashes and its verifier reads: the pubkey's
+@@ -240,9 +244,17 @@ fn lean_sphincs_claim_cells((pk, message): &LeanSphincsClaim) -> [F192; 4] {
+ /// list digest binds its own length through the hash's padding, so the pair binds
+ /// both lists whole.
+ fn signers_hash(xmss_signers: &[LeanXmssClaim], lean_sphincs_signers: &[LeanSphincsClaim]) -> [F192; 2] {
+-    let xmss = claim_list_digest(xmss_signers.iter().map(lean_xmss_claim_cells));
+-    let lean_sphincs = claim_list_digest(lean_sphincs_signers.iter().map(lean_sphincs_claim_cells));
+-    pack_hash_state(&primitives::hash::hash(&cell_bytes([
++    let mut xmss_claims = Vec::new();
++    for claim in xmss_signers {
++        xmss_claims.push(lean_xmss_claim_cells(claim));
++    }
++    let mut lean_sphincs_claims = Vec::new();
++    for claim in lean_sphincs_signers {
++        lean_sphincs_claims.push(lean_sphincs_claim_cells(claim));
++    }
++    let xmss = claim_list_digest(&xmss_claims);
++    let lean_sphincs = claim_list_digest(&lean_sphincs_claims);
++    pack_hash_state(&primitives::hash::hash(&cell_bytes(&[
+         xmss[0],
+         xmss[1],
+         lean_sphincs[0],
+@@ -301,7 +313,11 @@ impl DeferredClaim {
+         // Every leaf defers the all-zeros point, where the bytecode polynomial is
+         // just its table's first entry. Worth special-casing: the general path is
+         // a pass over 2^23 entries, and a leaf is the aggregate people verify most.
+-        let bytecode_value = if bytecode_point.iter().all(|x| *x == F192::ZERO) {
++        let mut all_zero = true;
++        for x in &bytecode_point {
++            all_zero &= *x == F192::ZERO;
++        }
++        let bytecode_value = if all_zero {
+             F192::from(stacked_bytecode()[0])
+         } else {
+             bytecode_at(&bytecode_point)
+@@ -327,8 +343,11 @@ const STATEMENT_HEADER: usize = 6;
+ 
+ /// A plain hash over a lane stream, two lanes a 128-bit cell: what the guest gets
+ /// from `keccak_cells` over the same cells.
+-fn lane_hash(lanes: impl Iterator<Item = u64>) -> [F192; 2] {
+-    let bytes: Vec<u8> = lanes.flat_map(u64::to_le_bytes).collect();
++fn lane_hash(lanes: &[u64]) -> [F192; 2] {
++    let mut bytes = Vec::new();
++    for lane in lanes {
++        bytes.extend_from_slice(&lane.to_le_bytes());
++    }
+     pack_hash_state(&primitives::hash::hash(&bytes))
+ }
+ 
+@@ -360,11 +379,18 @@ fn statement_digest(signers_hash: [F192; 2], da_digest: [u8; 32], defer: &Deferr
+     if !cells.len().is_multiple_of(2) {
+         cells.push(F192::ZERO); // the guest pairs the odd cell with a zero scalar
+     }
+-    let head = header.iter().flat_map(|x| {
++    let mut lanes = Vec::new();
++    for x in header.iter() {
+         assert_eq!(x.c2, 0, "a header value is a canonical cell");
+-        [x.c0, x.c1]
+-    });
+-    lane_hash(head.chain(cells.iter().flat_map(|x| [x.c0, x.c1, x.c2])))
++        lanes.push(x.c0);
++        lanes.push(x.c1);
++    }
++    for x in &cells {
++        lanes.push(x.c0);
++        lanes.push(x.c1);
++        lanes.push(x.c2);
++    }
++    lane_hash(&lanes)
+ }
+ 
+ /// The deferred-claim data the guest binds to the outer public input: the outer
+@@ -562,14 +588,20 @@ fn check_da_roots(roots: &[[u8; 32]]) -> Result<(), AggregateVerifyError> {
+ 
+ fn da_claim_cells(root: &[u8; 32]) -> Vec<F192> {
+     let vector_hash = lean_da::vector_digest(&lean_da::membership_vector(root));
+-    [pack_hash_state(root), pack_hash_state(&vector_hash)].concat()
++    let mut cells = Vec::new();
++    cells.extend_from_slice(&pack_hash_state(root));
++    cells.extend_from_slice(&pack_hash_state(&vector_hash));
++    cells
+ }
+ 
+ fn da_list_digest(roots: &[[u8; 32]]) -> [u8; 32] {
+     // Recompute vector hashes from the roots, including when verifying a received proof.
+     // Trusting prover-supplied hashes would let zero weights certify any matrix.
+-    let cells = roots.iter().flat_map(da_claim_cells);
+-    primitives::hash::hash(&cell_bytes(cells))
++    let mut cells = Vec::new();
++    for root in roots {
++        cells.extend_from_slice(&da_claim_cells(root));
++    }
++    primitives::hash::hash(&cell_bytes(&cells))
+ }
+ 
+ impl EthereumProof {
+@@ -887,7 +919,8 @@ fn absorb_round(
+     transcript.observe(g1);
+     transcript.observe(gi);
+     let challenge = transcript.sample();
+-    messages.extend([g1, gi]);
++    messages.push(g1);
++    messages.push(gi);
+     challenges.push(challenge);
+     let g0 = *claim + g1;
+     let c1 = g0 + g1 + gi;

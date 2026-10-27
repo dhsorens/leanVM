@@ -1,0 +1,7 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/leanvm/lean.
+#
+# The crate is the public API: re-exports, and two setup functions over other crates' items,
+# which proofs/leanvm/lean/Leanvm/Assumptions/CratesExternal.lean declares. Nothing is opaque.
+[scenario.leanvm]
+backend = "lean"

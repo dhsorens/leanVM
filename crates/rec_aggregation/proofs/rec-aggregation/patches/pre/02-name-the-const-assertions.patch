@@ -1,0 +1,86 @@
+diff --git a/crates/rec_aggregation/src/aggregation.rs b/crates/rec_aggregation/src/aggregation.rs
+index a5a493a4..c531e4be 100644
+--- a/crates/rec_aggregation/src/aggregation.rs
++++ b/crates/rec_aggregation/src/aggregation.rs
+@@ -86,28 +86,30 @@ pub const MAX_KEYS: usize = 1 << 16;
+ 
+ /// Maximum number of LeanDA roots in one statement, including inherited and direct roots.
+ pub const MAX_DA_ROOTS: usize = 16;
+-const _: () = assert!(MAX_DA_ROOTS < MAX_KEYS);
++const _DA_ROOTS_BELOW_KEYS: () = assert!(MAX_DA_ROOTS < MAX_KEYS);
+ 
+ // The guest bakes a bytecode claim's width from `N_TUPLE_BITS` while `bytecode_vars`
+ // reads it off the stacked table, which is `N_BYTECODE_SELECTORS` wide. Two constants
+ // that happen to agree: were they to drift, a leaf's claim point would be one length in
+ // the guest and another in the statement, and nothing else would notice.
+-const _: () = assert!(leanvm_core::leaf::N_TUPLE_BITS == leanvm_core::leaf::N_BYTECODE_SELECTORS);
++const _TUPLE_BITS_ARE_SELECTORS: () =
++    assert!(leanvm_core::leaf::N_TUPLE_BITS == leanvm_core::leaf::N_BYTECODE_SELECTORS);
+ // Both schemes' one-time keys go through the guest's one WOTS+C walk: the same chain
+ // length, digits dispatched DIGIT_GROUP at a time and the last chain alone, and the
+ // same address types (`signatures`' shared tweak). A chain step's address leaves out the
+ // chain index in leanXMSS, where it follows the value.
+ const DIGIT_GROUP: usize = 3;
+-const _: () = assert!(lean_sphincs::W * lean_sphincs::V == 128 && lean_sphincs::V % DIGIT_GROUP == 1);
+-const _: () = assert!(lean_xmss::W == lean_sphincs::W && lean_xmss::V % DIGIT_GROUP == 1);
++const _SPHINCS_DIGIT_GROUPS: () =
++    assert!(lean_sphincs::W * lean_sphincs::V == 128 && lean_sphincs::V % DIGIT_GROUP == 1);
++const _XMSS_DIGIT_GROUPS: () = assert!(lean_xmss::W == lean_sphincs::W && lean_xmss::V % DIGIT_GROUP == 1);
+ // A leaf index is the two layers' indices, which the guest decomposes into bits at once.
+-const _: () = assert!(lean_xmss::LOG_LIFETIME == 32);
++const _XMSS_LEAF_INDEX_BITS: () = assert!(lean_xmss::LOG_LIFETIME == 32);
+ // The guest takes the leanSPHINCS message digest's first cell as its sixteen
+ // codewords, and reads the index and what the digest leaves unused from the bits
+ // of the second, where it weighs each leaf and each WOTS key as one word of a
+ // 64-bit lane.
+-const _: () = assert!(lean_sphincs::DIGEST_WORD_BYTES == 16 && lean_sphincs::DIGEST_BITS <= 256);
+-const _: () = {
++const _SPHINCS_DIGEST_CELLS: () = assert!(lean_sphincs::DIGEST_WORD_BYTES == 16 && lean_sphincs::DIGEST_BITS <= 256);
++const _SPHINCS_FIELDS_IN_LANES: () = {
+     let mut at = lean_sphincs::H;
+     let mut k = 0;
+     while k < lean_sphincs::FOREST_TREES * (1 + lean_sphincs::SUBTREES) {
+@@ -123,20 +125,20 @@ const _: () = {
+ };
+ // The index and the bits after the last field are each read in one lane: the
+ // first, and the second up to the cell's end.
+-const _: () = assert!(lean_sphincs::H <= 64 && lean_sphincs::DIGEST_BITS - 128 >= 64);
++const _SPHINCS_INDEX_AND_REST_IN_LANES: () = assert!(lean_sphincs::H <= 64 && lean_sphincs::DIGEST_BITS - 128 >= 64);
+ // It hashes a forest WOTS key's leaf, P, A and the six chain tops, as one block.
+-const _: () = assert!(lean_sphincs::FOREST_CHAINS == 6);
++const _SPHINCS_FOREST_CHAINS: () = assert!(lean_sphincs::FOREST_CHAINS == 6);
+ // The guest hashes the encoding as three blocks: P, A and the trees' sixteen top
+ // nodes, then the counter.
+-const _: () = assert!(
++const _SPHINCS_ENCODING_BLOCKS: () = assert!(
+     lean_sphincs::FOREST_TREES == 8
+         && 2 * (1 + lean_sphincs::FOREST_TREES) * lean_sphincs::N + lean_sphincs::COUNTER_LEN == 292
+ );
+ // It hashes a tree leaf over two subtrees, and places the forest's positions in
+ // an address as `lean_sphincs::forest` packs them: the tree in 3 bits, then the leaf
+ // in 4, the subtree in 1, the key in 3 and the chain.
+-const _: () = assert!(lean_sphincs::SUBTREES == 2 && lean_sphincs::FOREST_TREES <= 1 << 3);
+-const _: () = assert!(lean_sphincs::TREE_HEIGHT <= 4 && lean_sphincs::SUBTREE_HEIGHT <= 3);
++const _SPHINCS_FOREST_ADDRESSES: () = assert!(lean_sphincs::SUBTREES == 2 && lean_sphincs::FOREST_TREES <= 1 << 3);
++const _SPHINCS_TREE_HEIGHTS: () = assert!(lean_sphincs::TREE_HEIGHT <= 4 && lean_sphincs::SUBTREE_HEIGHT <= 3);
+ 
+ /// A count as the guest carries it: in the exponent, `g^n`.
+ fn count(n: usize) -> F192 {
+@@ -197,7 +199,7 @@ fn cell_bytes(cells: impl IntoIterator<Item = F192>) -> Vec<u8> {
+ 
+ /// Claims the guest hashes a loop frame: 68 cells, four whole block pairs.
+ const CLAIM_GROUP: usize = 17;
+-const _: () = assert!((CLAIM_GROUP * 64).is_multiple_of(2 * primitives::hash::RATE));
++const _CLAIM_GROUP_BLOCK_PAIRS: () = assert!((CLAIM_GROUP * 64).is_multiple_of(2 * primitives::hash::RATE));
+ 
+ /// How the guest splits a list of `n` claims: the whole groups of [`CLAIM_GROUP`], one
+ /// a loop frame, and the claims after them. Its own product identity and range checks
+@@ -1368,7 +1370,7 @@ fn gen_verify(
+ const MU_MIN: usize = 22;
+ const MU_MAX: usize = leanvm_core::pcs::MAX_MU;
+ 
+-const _: () = assert!(MU_MIN >= leanvm_core::pcs::MIN_MU);
++const _MU_MIN_ABOVE_FLOOR: () = assert!(MU_MIN >= leanvm_core::pcs::MIN_MU);
+ 
+ /// The guest's baked buffer caps, which `placeholder_map` compiles in and
+ /// `gen_verify` admits against: one definition, so a hinted shape can never

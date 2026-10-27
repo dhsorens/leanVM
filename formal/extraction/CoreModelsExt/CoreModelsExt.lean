@@ -3,3 +3,4 @@
 -- upstreaming to CoreModels.
 module
 public import CoreModelsExt.Verifier
+public import CoreModelsExt.RecAggregation

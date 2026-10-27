@@ -15,6 +15,36 @@
   {
    "type": "path",
    "scope": "",
+   "name": "Bench",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/bench/proofs/bench/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Leanvm",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/leanvm/proofs/leanvm/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "RecAggregation",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/rec_aggregation/proofs/rec-aggregation/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "Verifier",
    "manifestFile": "lake-manifest.json",
    "inherited": false,

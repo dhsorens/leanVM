@@ -6,11 +6,23 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.Verifier"]
+roots = ["Extraction.Bench", "Extraction.Leanvm", "Extraction.RecAggregation", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
 path = "CoreModelsExt"
+
+[[require]]
+name = "Bench"
+path = "../../crates/bench/proofs/bench/lean"
+
+[[require]]
+name = "Leanvm"
+path = "../../crates/leanvm/proofs/leanvm/lean"
+
+[[require]]
+name = "RecAggregation"
+path = "../../crates/rec_aggregation/proofs/rec-aggregation/lean"
 
 [[require]]
 name = "Verifier"

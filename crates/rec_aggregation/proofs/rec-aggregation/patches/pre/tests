@@ -1,0 +1,7 @@
+# `cargo test --release` arguments, one run per line, on the patched source. The crate's own
+# suite proves many aggregates; these are the fast tests over what the patches rewrite.
+# The native digests against the prover's and lean_da's, and the guest's hash of a root list.
+-p rec_aggregation --lib -- --exact aggregation::tests::scalar_deferred_claim_matches_the_prover aggregation::tests::leaf_claim_matches_the_general_path aggregation::tests::scalar_da_digest_matches_lean_da aggregation::tests::da_guest_hashes_root_lists
+# End to end: a leaf of both schemes, a DA payload, and a node whose guest rebuilds its children's
+# statement digests and batches their deferred claims (`absorb_round`).
+-p rec_aggregation --lib -- --exact aggregation::tests::aggregate_mixed_leaf aggregation::tests::aggregate_with_a_da_payload aggregation::tests::aggregate_two_to_one
