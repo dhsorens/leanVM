@@ -23,5 +23,10 @@ name = "CoreModelsExt"
 path = "../../../../../formal/extraction/CoreModelsExt"
 
 [[require]]
+name = "Arklib"
+git = "https://github.com/Verified-zkEVM/ArkLib"
+rev = "674952b872874d443d9756be8ac27daf4050b91f"
+
+[[require]]
 name = "Primitives"
 path = "../../../../primitives/proofs/primitives/lean"
