@@ -1,0 +1,74 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/verifier/lean.
+#
+# `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
+# Each is grouped by what stops it, with the line of the code that does, so the list is also
+# the work left: a patch in proofs/verifier/patches/pre that rewrites the construct takes the
+# item off it.
+[scenario.verifier]
+backend = "lean"
+opaque = [
+  # Aeneas does not yet translate an early return or a break out of a loop: the verifier's
+  # `require(..)?` inside its rounds.
+  "crate::bus::table_sumcheck",
+  "crate::bus::verify_gkr_grand_products",  # a break to an outer loop
+  "crate::keccak::verify_keccak",
+  "crate::merkle::_::expand",
+  "crate::transcript::_::merkle",
+
+  # Aeneas cannot join loop states that hold shared borrows of borrowed data.
+  "crate::bus::verify_bus_balance",  # bus.rs:192
+  "crate::bytecode::_::new",  # bytecode.rs:58, a BTreeMap entry pushed per word
+  "crate::bytecode::_::evaluate",  # bytecode.rs:121
+  "crate::transcript::_::samples",  # transcript.rs:130, a closure over `&mut self`
+  "crate::transcript::_::next_scalars",  # transcript.rs:150, the same
+
+  # A table's columns are named by `&str` constants (`ARITH_COLUMNS`, ..) and found by name
+  # (`cols`): Aeneas does not translate the string constants, nor `cols`'s array `map`.
+  "crate::layout::cols",
+  "crate::layout::flushes_arith",
+  "crate::layout::flushes_deref",
+  "crate::layout::flushes_jump",
+  "crate::layout::flushes_keccak",
+  "crate::layout::flushes_set",
+  "crate::layout::jump_constraints",
+  "crate::layout::KECCAK_IN",
+  "crate::layout::TABLE_WIDTHS",
+  "crate::layout::tables",
+
+  # An index into a constant table of tables (whir.rs:51), which Aeneas does not translate.
+  "crate::whir::derive_config",
+
+  # Aeneas internal errors, each still to be reduced to a reportable case.
+  "crate::walk",  # lib.rs:328
+  "crate::verify_keccak_batch",  # lib.rs:224
+  "crate::da::encode",
+  "crate::da::dual_codeword",
+  "crate::da::vector_digest",
+  "crate::keccak::verify_layer",  # keccak.rs:143
+  "crate::layout::build_layout",  # layout.rs:536
+  "crate::layout::keccak_columns",  # layout.rs:440
+  "crate::multilinear::eq_kernel",
+
+  # Builds a `Box<dyn Fn>` weight (bus.rs:90): Aeneas has no higher-ranked vtables.
+  "crate::bus::_::on_stack",
+
+  # Translated by Aeneas, but its closures do not typecheck against the hax Lean library.
+  "crate::da::membership_challenges",
+]
+exclude = [
+  # `dyn Fn` claims and weights: Aeneas has no dynamic trait types, and an opaque item still
+  # needs its signature translated.
+  "crate::verify_stacked_opening",
+  "crate::whir::verify_whir",
+  "crate::whir::GluedClaim",
+  # Derived `Clone` of a container of tuples: Aeneas's builtin `Clone` does not match the hax
+  # Lean library's. Unused by verification.
+  "{impl core::clone::Clone for crate::bytecode::Bytecode}",
+  "{impl core::clone::Clone for crate::transcript::Sponge}",
+  # Their signatures crash Aeneas while translating the `Iterator` trait; patch 01 removes
+  # the crate's uses.
+  "core::iter::traits::iterator::Iterator::copied",
+  "core::iter::traits::iterator::Iterator::find",
+  "core::slice::iter::_::find",
+]

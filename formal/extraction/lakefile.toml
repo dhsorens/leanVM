@@ -1,0 +1,13 @@
+# The workspace of every hax extraction in the repository. Each extraction is the Lean
+# package hax scaffolds beside its crate (crates/<crate>/proofs/<scenario>/lean), required
+# here by path, so their shared dependencies (Aeneas, the hax Lean library, Mathlib) are
+# resolved once, in this directory's manifest and `.lake/packages`.
+name = "extraction"
+defaultTargets = ["Extraction"]
+
+[[lean_lib]]
+name = "Extraction"
+
+[[require]]
+name = "Verifier"
+path = "../../crates/verifier/proofs/verifier/lean"

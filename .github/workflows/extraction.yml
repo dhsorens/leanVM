@@ -1,0 +1,87 @@
+name: Extraction
+
+# The Lean extractions of the Rust crates (formal/extraction/README.md): that the committed
+# extraction is what the Rust source and its patches give, that it typechecks, and that the
+# patches applied for extraction keep the Rust's behaviour.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extraction-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Re-extracts every scenario and fails on any difference from the commit: a Rust change
+  # that alters the extraction must commit the regenerated Lean, and a patch that no longer
+  # applies fails here first.
+  up-to-date:
+    name: Extraction is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the cargo-hax pin
+        id: pin
+        run: echo "rev=$(sed -n 's/^HAX_REV=//p' formal/extraction/hax.sh)" >> "$GITHUB_OUTPUT"
+      - name: Restore cargo-hax
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-hax
+          key: cargo-hax-${{ runner.os }}-${{ steps.pin.outputs.rev }}
+      - name: Restore charon and aeneas
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/hax/tools
+          key: hax-tools-${{ runner.os }}-${{ hashFiles('hax.toml') }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: extraction
+      - name: Install the pinned toolchain
+        run: formal/extraction/hax.sh setup
+      - name: Extract and compare
+        run: formal/extraction/hax.sh extract --check
+
+  # Typechecks the committed extraction with the Lean library each package pins, all of them
+  # from the one workspace in formal/extraction, so the shared dependencies resolve once.
+  typecheck:
+    name: Extraction typechecks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: formal/extraction
+      - name: Report the trusted surface
+        run: formal/extraction/report.sh >> "$GITHUB_STEP_SUMMARY"
+
+  # The pre-extraction patches rewrite the Rust the extraction sees. The crate's tests, and
+  # the suite that checks `crates/verifier` against real proofs, run on the patched source.
+  patches:
+    name: Patched source behaves the same
+    runs-on: ubuntu-latest
+    env:
+      # As in rust.yml: the SIMD backend the tests exercise should not depend on the runner.
+      RUSTFLAGS: -C target-cpu=haswell
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: patched
+      - name: Clippy on the patched source
+        run: formal/extraction/hax.sh patched cargo clippy --release -p verifier --all-targets -- -D warnings
+      - name: The verifier's tests on the patched source
+        run: formal/extraction/hax.sh patched cargo test --release -p verifier
+      - name: The checks against real proofs, on the patched source
+        run: formal/extraction/hax.sh patched cargo test --release -p leanvm_core --test verifiers

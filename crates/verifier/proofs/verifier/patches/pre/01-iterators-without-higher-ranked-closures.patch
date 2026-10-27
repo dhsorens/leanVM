@@ -1,0 +1,259 @@
+diff --git a/crates/verifier/src/bus.rs b/crates/verifier/src/bus.rs
+index c610f5b3..0416dc8b 100644
+--- a/crates/verifier/src/bus.rs
++++ b/crates/verifier/src/bus.rs
+@@ -23,7 +23,7 @@ fn verify_gkr_grand_products(depth: usize, transcript: &mut Transcript) -> Resul
+         let combiner = transcript.sample();
+         let claim = poly_eval(&values, combiner);
+         // The product is degree 2^step, so one more coefficient than that per round.
+-        let equalities: Vec<Option<E>> = point.iter().copied().map(Some).collect();
++        let equalities: Vec<Option<E>> = point.iter().map(|&x| Some(x)).collect();
+         let (x, claim) = sumcheck(transcript, claim, (1 << step) + 1, &equalities)?;
+ 
+         let children = [
+@@ -59,11 +59,10 @@ struct BusLayout {
+ }
+ 
+ fn bus_layout(framework_log_rows: &[usize], blocks: &[BusBlock]) -> BusLayout {
+-    let sizes: Vec<usize> = framework_log_rows
+-        .iter()
+-        .copied()
+-        .chain(blocks.iter().map(|block| block.log_rows))
+-        .collect();
++    let mut sizes: Vec<usize> = framework_log_rows.to_vec();
++    for block in blocks {
++        sizes.push(block.log_rows);
++    }
+     let (offsets, depth) = stack_offsets(&sizes);
+     let mut framework: Vec<Placement> = sizes
+         .iter()
+@@ -225,7 +224,7 @@ pub fn table_sumcheck(
+     target: E,
+     transcript: &mut Transcript,
+ ) -> Result<Vec<TableEvaluations>, VerifierError> {
+-    let n_rounds = table_log_heights.iter().copied().max().unwrap_or(0);
++    let n_rounds = *table_log_heights.iter().max().unwrap_or(&0);
+     let (challenges, claim) = sumcheck(transcript, target, 4, &vec![None; n_rounds])?;
+     let point: Vec<E> = challenges.into_iter().rev().collect();
+     let mut weights = vec![ONE; tables.len()];
+diff --git a/crates/verifier/src/bytecode.rs b/crates/verifier/src/bytecode.rs
+index b3eafe7c..d6756f3c 100644
+--- a/crates/verifier/src/bytecode.rs
++++ b/crates/verifier/src/bytecode.rs
+@@ -35,10 +35,13 @@ const BLOCK_LOG: usize = 14;
+ 
+ /// The nonzero bytes of `word`, each as its bucket: which byte, times 256, plus its value.
+ fn byte_buckets(word: u64) -> impl Iterator<Item = u16> {
+-    let bytes = word.to_le_bytes().into_iter().enumerate();
+-    bytes
+-        .filter(|&(_, value)| value != 0)
+-        .map(|(byte, value)| 256 * byte as u16 + value as u16)
++    let mut buckets = Vec::new();
++    for (byte, value) in word.to_le_bytes().into_iter().enumerate() {
++        if value != 0 {
++            buckets.push(256 * byte as u16 + value as u16);
++        }
++    }
++    buckets.into_iter()
+ }
+ 
+ impl Bytecode {
+@@ -52,8 +55,10 @@ impl Bytecode {
+         let (mut blocks, mut words, mut positions, mut bytes) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+         for (index, block) in table.chunks(1 << BLOCK_LOG).enumerate() {
+             let mut members = std::collections::BTreeMap::<u64, Vec<u16>>::new();
+-            for (position, &word) in block.iter().enumerate().filter(|&(_, &word)| word != 0) {
+-                members.entry(word).or_default().push(position as u16);
++            for (position, &word) in block.iter().enumerate() {
++                if word != 0 {
++                    members.entry(word).or_default().push(position as u16);
++                }
+             }
+             if members.is_empty() {
+                 continue;
+diff --git a/crates/verifier/src/da.rs b/crates/verifier/src/da.rs
+index a25e47d5..c1ebb64a 100644
+--- a/crates/verifier/src/da.rs
++++ b/crates/verifier/src/da.rs
+@@ -53,8 +53,10 @@ fn encode(codeword: &mut [E]) {
+         let row = &evaluations[LOG_M - layer - 1][1..];
+         for (block, points) in codeword.chunks_mut(1 << (LOG_M - layer)).enumerate() {
+             // s_i is F2-linear, so the block's twiddle is the subset sum its index picks.
+-            let bits = (0..layer).filter(|bit| block >> bit & 1 == 1);
+-            let twiddle = bits.fold(K(0), |acc, bit| acc + row[bit]);
++            let twiddle = (0..layer).fold(
++                K(0),
++                |acc, bit| if block >> bit & 1 == 1 { acc + row[bit] } else { acc },
++            );
+             let (top, bottom) = points.split_at_mut(points.len() / 2);
+             for (u, v) in top.iter_mut().zip(bottom) {
+                 *u += *v * twiddle;
+diff --git a/crates/verifier/src/keccak.rs b/crates/verifier/src/keccak.rs
+index 8e9dc0c1..d188b079 100644
+--- a/crates/verifier/src/keccak.rs
++++ b/crates/verifier/src/keccak.rs
+@@ -108,7 +108,7 @@ fn instance_weights(s: E) -> Vec<E> {
+     }
+     RMFE_EMBED
+         .iter()
+-        .map(|&e| E::sum((0..EMBED_BITS).filter(|b| e >> b & 1 == 1).map(|b| powers[b])))
++        .map(|&e| E::sum((0..EMBED_BITS).map(|b| if e >> b & 1 == 1 { powers[b] } else { ZERO })))
+         .collect()
+ }
+ 
+@@ -123,11 +123,13 @@ fn verify_layer(
+     let product = transcript.next_scalars(PRODUCT_BITS)?;
+     if transcript.checked() {
+         let projected = E::sum((0..PRODUCT_BITS).map(|c| {
+-            let functional = E::sum(
+-                (0..PACK)
+-                    .filter(|&i| RMFE_PROJECT[i] >> c & 1 == 1)
+-                    .map(|i| claim.mu[i]),
+-            );
++            let functional = E::sum((0..PACK).map(|i| {
++                if RMFE_PROJECT[i] >> c & 1 == 1 {
++                    claim.mu[i]
++                } else {
++                    ZERO
++                }
++            }));
+             functional * product[c]
+         }));
+         // iota flips known positions of lane 0 in every instance.
+@@ -135,7 +137,7 @@ fn verify_layer(
+         let mut iota = ZERO;
+         for (segment, &weight) in segments.iter().enumerate().take(shape.segments()) {
+             let constant = KECCAK_RC[shape.depth * (segment + 1) - step - 1];
+-            iota += weight * E::sum((0..64).filter(|z| constant >> z & 1 == 1).map(|z| claim.weights[z]));
++            iota += weight * E::sum((0..64).map(|z| if constant >> z & 1 == 1 { claim.weights[z] } else { ZERO }));
+         }
+         require(
+             projected + iota * E::sum(claim.mu.iter().copied()) == claim.value,
+@@ -146,7 +148,7 @@ fn verify_layer(
+     // 2] At a random point a pack is one field element, and the polynomial's value a sumcheck claim.
+     let s = transcript.sample();
+     let mu = instance_weights(s);
+-    let kappa = E::sum(mu.iter().copied());
++    let kappa = mu.iter().fold(ZERO, |acc, &x| acc + x);
+     let mut value = poly_eval(&product, s);
+ 
+     // 3] The pack and the segment.
+diff --git a/crates/verifier/src/layout.rs b/crates/verifier/src/layout.rs
+index 20cdb6a8..b32ff8cc 100644
+--- a/crates/verifier/src/layout.rs
++++ b/crates/verifier/src/layout.rs
+@@ -191,8 +191,14 @@ impl Table {
+         self.columns.len()
+     }
+ 
+-    fn count_columns(&self) -> impl Iterator<Item = usize> {
+-        (0..self.width()).filter(|&i| self.columns[i].starts_with("cnt"))
++    fn count_columns(&self) -> Vec<usize> {
++        let mut columns = Vec::new();
++        for i in 0..self.width() {
++            if self.columns[i].starts_with("cnt") {
++                columns.push(i);
++            }
++        }
++        columns
+     }
+ }
+ 
+@@ -411,7 +417,7 @@ const _: () = {
+ /// there rather than a block of zeros and a block of its own.
+ fn qkeccak_slot(column: usize) -> Option<usize> {
+     let local = column.checked_sub(GLOBAL_COLUMN_BASES[OP_KECCAK])?;
+-    if let Some(k) = (0..QKECCAK_SPARE).find(|&k| spare_local(k) == local) {
++    if let Some(k) = (0..QKECCAK_SPARE).position(|k| spare_local(k) == local) {
+         return Some(QKECCAK_SLOTS + k);
+     }
+     (KECCAK_IN..KECCAK_OUT).contains(&local).then(|| local - KECCAK_IN)
+@@ -509,7 +515,12 @@ pub fn build_layout<'a>(
+         };
+         push.extend(table.flushes.push.iter().map(block));
+         pull.extend(table.flushes.pull.iter().map(block));
+-        count.extend(table.count_columns().map(|local| block(&vec![col(local, 0)])));
++        count.extend(
++            table
++                .count_columns()
++                .into_iter()
++                .map(|local| block(&vec![col(local, 0)])),
++        );
+     }
+ 
+     // Every column's log size, in global order: the framework's, q_keccak's, then each table's block.
+@@ -535,9 +546,12 @@ pub fn build_layout<'a>(
+     // lane is not committed at all, nothing ever opening it.
+     let base = GLOBAL_COLUMN_BASES[OP_KECCAK];
+     let outputs = base + KECCAK_OUT..base + KECCAK_OUT + STATE_LANES;
+-    let blocks: Vec<usize> = (0..kappas.len())
+-        .filter(|column| qkeccak_slot(*column).is_none() && !outputs.contains(column))
+-        .collect();
++    let mut blocks: Vec<usize> = Vec::new();
++    for column in 0..kappas.len() {
++        if qkeccak_slot(column).is_none() && !outputs.contains(&column) {
++            blocks.push(column);
++        }
++    }
+     let block_kappas: Vec<usize> = blocks.iter().map(|&column| kappas[column]).collect();
+     let (block_offsets, total_log) = stack_offsets(&block_kappas);
+     let offsets: BTreeMap<usize, u64> = blocks.into_iter().zip(block_offsets).collect();
+diff --git a/crates/verifier/src/ring_switch.rs b/crates/verifier/src/ring_switch.rs
+index ea0cf27a..552dd1dc 100644
+--- a/crates/verifier/src/ring_switch.rs
++++ b/crates/verifier/src/ring_switch.rs
+@@ -33,6 +33,17 @@ fn ring_weight(r: &[E], r_prime: &[E], coefficients: &[E]) -> E {
+     total
+ }
+ 
++fn frobenius_coefficient(challenges: &[E], k: usize) -> E {
++    let mut acc = ONE;
++    for stage in 0..RING_MAP_SHIFTS.len() {
++        let shift = RING_MAP_SHIFTS[stage];
++        if k & shift != 0 {
++            acc *= challenges[stage].pow(1 << (k % shift));
++        }
++    }
++    acc
++}
++
+ /// The 64 claims s\[i\] = z(i, point) become the one dense claim `sum_u W(u) qkeccak(u) = target`.
+ ///
+ /// Draw Phi once they are fixed, then take the target `T = sum_i x^i Phi(s_i)` against the
+@@ -40,13 +51,7 @@ fn ring_weight(r: &[E], r_prime: &[E], coefficients: &[E]) -> E {
+ pub fn ring_switch(point: Vec<E>, s: &[E], transcript: &mut Transcript) -> (E, impl Fn(&[E]) -> E + use<>) {
+     let challenges = transcript.samples(RING_MAP_SHIFTS.len());
+     // The same map as a Frobenius sum, `Phi(a) = sum_k c_k a^(2^k)` for k < 64.
+-    let coefficient = |k: usize| {
+-        let stages = challenges
+-            .iter()
+-            .zip(RING_MAP_SHIFTS)
+-            .filter(|&(_, shift)| k & shift != 0);
+-        stages.fold(ONE, |acc, (f, shift)| acc * f.pow(1 << (k % shift)))
+-    };
++    let coefficient = |k: usize| frobenius_coefficient(&challenges, k);
+     let coefficients: Vec<E> = (0..K_BITS).map(coefficient).collect();
+     let images: Vec<E> = s.iter().map(|&value| ring_map(value, &challenges)).collect();
+     let target = poly_eval(&images, GEN);
+diff --git a/crates/verifier/src/transcript.rs b/crates/verifier/src/transcript.rs
+index 6a42de57..8478c463 100644
+--- a/crates/verifier/src/transcript.rs
++++ b/crates/verifier/src/transcript.rs
+@@ -243,11 +243,15 @@ impl<'a> Transcript<'a> {
+             // `q(0) + q(1) == claim`. The transcript contains c0, c2, c3 ...
+             let constant = self.next_scalar()?;
+             let tail = self.next_scalars(count - 2)?;
+-            return Ok([vec![constant, claim + E::sum(tail.iter().copied())], tail].concat());
++            return Ok([vec![constant, claim + tail.iter().fold(ZERO, |acc, &x| acc + x)], tail].concat());
+         };
+         // `(1 + r) q(0) + r q(1) == claim`. The transcript contains c1, c2, c3 ... (r := eq_factor)
+         let tail = self.next_scalars(count - 1)?;
+-        Ok([vec![claim + eq_factor * E::sum(tail.iter().copied())], tail].concat())
++        Ok([
++            vec![claim + eq_factor * tail.iter().fold(ZERO, |acc, &x| acc + x)],
++            tail,
++        ]
++        .concat())
+     }
+ 
+     /// Nothing of the proof is left unread. Returns every query's path, in the order they were opened.
