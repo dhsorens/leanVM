@@ -6,11 +6,15 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.Verifier"]
+roots = ["Extraction.Signatures", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
 path = "CoreModelsExt"
+
+[[require]]
+name = "Signatures"
+path = "../../crates/signatures/proofs/signatures/lean"
 
 [[require]]
 name = "Verifier"

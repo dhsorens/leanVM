@@ -1,0 +1,122 @@
+diff --git a/crates/signatures/src/lean_sphincs/scheme.rs b/crates/signatures/src/lean_sphincs/scheme.rs
+index 805bb56a..a7ce4f1e 100644
+--- a/crates/signatures/src/lean_sphincs/scheme.rs
++++ b/crates/signatures/src/lean_sphincs/scheme.rs
+@@ -168,33 +168,44 @@ impl LeanSphincsSignature {
+     }
+ 
+     pub fn from_bytes(bytes: &[u8; SIG_SIZE]) -> Self {
+-        let mut at = 0;
+-        let mut take = |len: usize| {
+-            at += len;
+-            &bytes[at - len..at]
+-        };
+-        let randomizer = take(RANDOMIZER_LEN).try_into().unwrap();
+-        let forest = std::array::from_fn(|_| TreeOpening {
+-            subtrees: std::array::from_fn(|_| SubtreeOpening {
+-                values: std::array::from_fn(|_| take(N).try_into().unwrap()),
+-                path: std::array::from_fn(|_| take(N).try_into().unwrap()),
+-            }),
+-            path: std::array::from_fn(|_| take(N).try_into().unwrap()),
+-        });
+-        let counter = u32::from_le_bytes(take(COUNTER_LEN).try_into().unwrap());
+-        let wots = std::array::from_fn(|_| take(N).try_into().unwrap());
+-        let path = std::array::from_fn(|_| take(N).try_into().unwrap());
+-        debug_assert_eq!(at, SIG_SIZE);
++        let forest_at = RANDOMIZER_LEN;
++        let counter_at = forest_at + FOREST_TREES * TREE_VALUES * N;
++        let wots_at = counter_at + COUNTER_LEN;
++        let path_at = wots_at + V * N;
+         Self {
+-            randomizer,
+-            forest,
+-            counter,
+-            wots,
+-            path,
++            randomizer: bytes[..forest_at].try_into().unwrap(),
++            forest: std::array::from_fn(|c| tree_from_bytes(bytes, forest_at + c * TREE_VALUES * N)),
++            counter: u32::from_le_bytes(bytes[counter_at..wots_at].try_into().unwrap()),
++            wots: std::array::from_fn(|i| digest_at(bytes, wots_at + i * N)),
++            path: std::array::from_fn(|i| digest_at(bytes, path_at + i * N)),
+         }
+     }
+ }
+ 
++/// The 16 bytes at `at`.
++fn digest_at(bytes: &[u8], at: usize) -> Digest {
++    bytes[at..at + N].try_into().unwrap()
++}
++
++/// The opening of one tree serialized at `at`.
++fn tree_from_bytes(bytes: &[u8], at: usize) -> TreeOpening {
++    let subtree = (FOREST_CHAINS + SUBTREE_HEIGHT) * N;
++    let path_at = at + SUBTREES * subtree;
++    TreeOpening {
++        subtrees: std::array::from_fn(|j| subtree_from_bytes(bytes, at + j * subtree)),
++        path: std::array::from_fn(|i| digest_at(bytes, path_at + i * N)),
++    }
++}
++
++/// The opening of one subtree serialized at `at`.
++fn subtree_from_bytes(bytes: &[u8], at: usize) -> SubtreeOpening {
++    let path_at = at + FOREST_CHAINS * N;
++    SubtreeOpening {
++        values: std::array::from_fn(|i| digest_at(bytes, at + i * N)),
++        path: std::array::from_fn(|i| digest_at(bytes, path_at + i * N)),
++    }
++}
++
+ #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+ pub enum LeanSphincsSignError {
+     /// `A_max` randomizers in a row missed the kept subtree.
+diff --git a/crates/signatures/src/lean_xmss/scheme.rs b/crates/signatures/src/lean_xmss/scheme.rs
+index eaf06664..e7952963 100644
+--- a/crates/signatures/src/lean_xmss/scheme.rs
++++ b/crates/signatures/src/lean_xmss/scheme.rs
+@@ -74,27 +74,31 @@ impl LeanXmssSignature {
+     }
+ 
+     pub fn from_bytes(bytes: &[u8; SIG_SIZE]) -> Self {
+-        let mut at = 0;
+-        let mut take = |len: usize| {
+-            at += len;
+-            &bytes[at - len..at]
+-        };
+-        let leaf_index = LeafIndex::from_le_bytes(take(LEAF_INDEX_SIZE).try_into().unwrap());
+-        let mut layer = || LayerSignature {
+-            randomizer: take(RANDOMIZER_LEN).try_into().unwrap(),
+-            chain_values: std::array::from_fn(|_| take(N).try_into().unwrap()),
+-            path: std::array::from_fn(|_| take(N).try_into().unwrap()),
+-        };
+-        let (bottom, top) = (layer(), layer());
+-        debug_assert_eq!(at, SIG_SIZE);
++        let leaf_index = LeafIndex::from_le_bytes(bytes[..LEAF_INDEX_SIZE].try_into().unwrap());
+         Self {
+             leaf_index,
+-            bottom,
+-            top,
++            bottom: layer_from_bytes(bytes, LEAF_INDEX_SIZE),
++            top: layer_from_bytes(bytes, LEAF_INDEX_SIZE + LAYER_SIG_SIZE),
+         }
+     }
+ }
+ 
++/// The 16 bytes at `at`.
++fn digest_at(bytes: &[u8], at: usize) -> Digest {
++    bytes[at..at + N].try_into().unwrap()
++}
++
++/// The layer signature serialized at `at`.
++fn layer_from_bytes(bytes: &[u8], at: usize) -> LayerSignature {
++    let values = at + RANDOMIZER_LEN;
++    let path = values + V * N;
++    LayerSignature {
++        randomizer: bytes[at..values].try_into().unwrap(),
++        chain_values: std::array::from_fn(|i| digest_at(bytes, values + i * N)),
++        path: std::array::from_fn(|i| digest_at(bytes, path + i * N)),
++    }
++}
++
+ pub struct LeanXmssSecretKey {
+     /// The key's seed, which the key serializes.
+     key_seed: Seed,

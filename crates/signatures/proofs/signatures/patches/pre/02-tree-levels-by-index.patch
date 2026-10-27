@@ -1,0 +1,130 @@
+diff --git a/crates/signatures/src/lean_sphincs/forest.rs b/crates/signatures/src/lean_sphincs/forest.rs
+index acdcaf20..f42354c5 100644
+--- a/crates/signatures/src/lean_sphincs/forest.rs
++++ b/crates/signatures/src/lean_sphincs/forest.rs
+@@ -188,10 +188,13 @@ fn tree_node(pp: &PublicParam, idx: u32, c: usize, level: usize, node: usize, ch
+ /// The levels of a Merkle tree from its leaves up to its two top nodes.
+ fn levels(leaves: Vec<Digest>, node: impl Fn(usize, usize, &[Digest; 2]) -> Digest) -> Vec<Vec<Digest>> {
+     let mut levels = vec![leaves];
+-    while levels.last().unwrap().len() > 2 {
++    while levels[levels.len() - 1].len() > 2 {
+         let level = levels.len();
+-        let (pairs, _) = levels[level - 1].as_chunks::<2>();
+-        let up = pairs.iter().enumerate().map(|(j, pair)| node(level, j, pair)).collect();
++        let mut up = Vec::new();
++        for j in 0..levels[level - 1].len() / 2 {
++            let pair = [levels[level - 1][2 * j], levels[level - 1][2 * j + 1]];
++            up.push(node(level, j, &pair));
++        }
+         levels.push(up);
+     }
+     levels
+@@ -226,44 +229,51 @@ pub fn forest_open(
+     marks: &[Mark; FOREST_TREES],
+ ) -> (ForestKey, ForestOpening) {
+     let mut tops = [[[0u8; N]; 2]; FOREST_TREES];
+-    let opening = std::array::from_fn(|c| {
++    let mut trees = Vec::new();
++    for c in 0..FOREST_TREES {
+         let mark = &marks[c];
+         let mut opened = [None; SUBTREES];
+-        let leaves = (0..1 << TREE_HEIGHT)
+-            .map(|s| {
+-                let subtree_tops = std::array::from_fn(|j| {
+-                    let key = |a| KeyPos { idx, c, s, j, a };
+-                    let leaves = (0..1 << SUBTREE_HEIGHT)
+-                        .map(|a| {
+-                            let key = key(a);
+-                            let secrets = key.secrets(pp, master);
+-                            let tops = std::array::from_fn(|i| key.chain(pp, i, 0, FOREST_CHAIN_TOP, secrets[i]));
+-                            key.leaf(pp, &tops)
+-                        })
+-                        .collect();
+-                    let levels = levels(leaves, |level, node, pair| key(0).subtree_node(pp, level, node, pair));
+-                    if s == mark.leaf {
+-                        let key = key(mark.keys[j]);
+-                        let (secrets, word) = (key.secrets(pp, master), codeword(mark.words[j]));
+-                        opened[j] = Some(SubtreeOpening {
+-                            values: std::array::from_fn(|i| {
+-                                key.chain(pp, i, 0, FOREST_CHAIN_TOP - word[i] as usize, secrets[i])
+-                            }),
+-                            path: path(&levels, mark.keys[j]),
+-                        });
+-                    }
+-                    [levels[SUBTREE_HEIGHT - 1][0], levels[SUBTREE_HEIGHT - 1][1]]
+-                });
+-                tree_leaf(pp, idx, c, s, &subtree_tops)
+-            })
+-            .collect();
++        let mut leaves = Vec::new();
++        for s in 0..1 << TREE_HEIGHT {
++            let mut subtree_tops = [[[0u8; N]; 2]; SUBTREES];
++            for j in 0..SUBTREES {
++                let mut keys = Vec::new();
++                for a in 0..1 << SUBTREE_HEIGHT {
++                    let key = KeyPos { idx, c, s, j, a };
++                    let secrets = key.secrets(pp, master);
++                    let tops = std::array::from_fn(|i| key.chain(pp, i, 0, FOREST_CHAIN_TOP, secrets[i]));
++                    keys.push(key.leaf(pp, &tops));
++                }
++                let first = KeyPos { idx, c, s, j, a: 0 };
++                let levels = levels(keys, |level, node, pair| first.subtree_node(pp, level, node, pair));
++                if s == mark.leaf {
++                    let key = KeyPos {
++                        idx,
++                        c,
++                        s,
++                        j,
++                        a: mark.keys[j],
++                    };
++                    let (secrets, word) = (key.secrets(pp, master), codeword(mark.words[j]));
++                    opened[j] = Some(SubtreeOpening {
++                        values: std::array::from_fn(|i| {
++                            key.chain(pp, i, 0, FOREST_CHAIN_TOP - word[i] as usize, secrets[i])
++                        }),
++                        path: path(&levels, mark.keys[j]),
++                    });
++                }
++                subtree_tops[j] = [levels[SUBTREE_HEIGHT - 1][0], levels[SUBTREE_HEIGHT - 1][1]];
++            }
++            leaves.push(tree_leaf(pp, idx, c, s, &subtree_tops));
++        }
+         let levels = levels(leaves, |level, node, pair| tree_node(pp, idx, c, level, node, pair));
+         tops[c] = [levels[TREE_HEIGHT - 1][0], levels[TREE_HEIGHT - 1][1]];
+-        TreeOpening {
+-            subtrees: opened.map(Option::unwrap),
++        trees.push(TreeOpening {
++            subtrees: std::array::from_fn(|j| opened[j].unwrap()),
+             path: path(&levels, mark.leaf),
+-        }
+-    });
++        });
++    }
++    let opening = std::array::from_fn(|c| trees[c]);
+     (tops, opening)
+ }
+ 
+diff --git a/crates/signatures/src/lean_sphincs/scheme.rs b/crates/signatures/src/lean_sphincs/scheme.rs
+index 805bb56a..3bf8d811 100644
+--- a/crates/signatures/src/lean_sphincs/scheme.rs
++++ b/crates/signatures/src/lean_sphincs/scheme.rs
+@@ -282,13 +282,13 @@ fn node(pp: &PublicParam, level: usize, j: u64, children: &[Digest; 2]) -> Diges
+ fn fold_up(pp: &PublicParam, nodes: Vec<Digest>, level: usize, first: u64, top: usize) -> Vec<Vec<Digest>> {
+     let mut levels = vec![nodes];
+     for up in level + 1..=top {
+-        let (pairs, _) = levels[levels.len() - 1].as_chunks::<2>();
++        let below = levels.len() - 1;
+         let first = first >> (up - level);
+-        let nodes = pairs
+-            .iter()
+-            .enumerate()
+-            .map(|(j, pair)| node(pp, up, first + j as u64, pair))
+-            .collect();
++        let mut nodes = Vec::new();
++        for j in 0..levels[below].len() / 2 {
++            let pair = [levels[below][2 * j], levels[below][2 * j + 1]];
++            nodes.push(node(pp, up, first + j as u64, &pair));
++        }
+         levels.push(nodes);
+     }
+     levels

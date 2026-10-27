@@ -1,0 +1,24 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/signatures/lean.
+#
+# The items it uses from other workspace crates (`primitives::hash`, `parallel`) are declared
+# by hand at the top of proofs/signatures/lean/Signatures/Assumptions/*External.lean.
+[scenario.signatures]
+backend = "lean"
+opaque = [
+  # The bottom-tree cache behind a `Mutex` (scheme.rs:229): std's interior mutability.
+  "crate::lean_xmss::scheme::_::bottom_tree",
+]
+exclude = [
+  # Serde: the derived (de)serializers and the array helper, which Aeneas cannot translate
+  # (a visitor mutually recursive with its trait impl). The byte layouts are `to_bytes` and
+  # `from_bytes`, which are extracted.
+  "crate::lean_xmss::array_serialization",
+  "{impl serde_core::ser::Serialize for _}",
+  "{impl serde_core::de::Deserialize for _}",
+  # Derived `Hash`, unused here: hashing an array has no model in the hax Lean library.
+  "{impl core::hash::Hash for _}",
+  # Key generation from an RNG: a `rand` call, then `key_gen_from_seed`, which is extracted.
+  "crate::lean_xmss::scheme::key_gen",
+  "crate::lean_sphincs::scheme::key_gen",
+]

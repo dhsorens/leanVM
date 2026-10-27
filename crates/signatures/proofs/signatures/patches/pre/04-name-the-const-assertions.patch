@@ -1,0 +1,40 @@
+diff --git a/crates/signatures/src/lean_sphincs/mod.rs b/crates/signatures/src/lean_sphincs/mod.rs
+index ae54a6e3..f38a0bb6 100644
+--- a/crates/signatures/src/lean_sphincs/mod.rs
++++ b/crates/signatures/src/lean_sphincs/mod.rs
+@@ -109,9 +109,9 @@ pub const VERIFY_PERMUTATIONS: usize = blocks(MESSAGE_LEN + RANDOMIZER_LEN)
+     + blocks(V * N)
+     + H * blocks(2 * N);
+ 
+-const _: () = assert!(W * V == 8 * N);
+-const _: () = assert!(TARGET_SUM < V * (CHAIN_LEN - 1));
+-const _: () = assert!(CODEWORD_BITS == 8 && DIGEST_BITS == 234);
+-const _: () = assert!(PUB_KEY_SIZE == 32);
+-const _: () = assert!(SIG_SIZE == 4276);
+-const _: () = assert!(VERIFY_PERMUTATIONS == 267);
++const _DIGITS_FILL_A_DIGEST: () = assert!(W * V == 8 * N);
++const _TARGET_SUM_IN_RANGE: () = assert!(TARGET_SUM < V * (CHAIN_LEN - 1));
++const _DIGEST_BITS: () = assert!(CODEWORD_BITS == 8 && DIGEST_BITS == 234);
++const _PUB_KEY_SIZE: () = assert!(PUB_KEY_SIZE == 32);
++const _SIG_SIZE: () = assert!(SIG_SIZE == 4276);
++const _VERIFY_PERMUTATIONS: () = assert!(VERIFY_PERMUTATIONS == 267);
+diff --git a/crates/signatures/src/lean_xmss/mod.rs b/crates/signatures/src/lean_xmss/mod.rs
+index 75a7cb02..5502f593 100644
+--- a/crates/signatures/src/lean_xmss/mod.rs
++++ b/crates/signatures/src/lean_xmss/mod.rs
+@@ -77,11 +77,11 @@ pub const VERIFY_PERMUTATIONS: usize = blocks(RANDOMIZER_LEN + MESSAGE_LEN)
+     + blocks(RANDOMIZER_LEN + N)
+     + 2 * (CHAIN_HASHES * blocks(2 * N) + blocks(V * N) + LAYER_HEIGHT * blocks(2 * N));
+ 
+-const _: () = assert!(V == 58 && TARGET_SUM < V * (CHAIN_LEN - 1));
+-const _: () = assert!(PUB_KEY_SIZE == 32 && LAYER_SIG_SIZE == 1200 && SIG_SIZE == 2404);
+-const _: () = assert!(VERIFY_PERMUTATIONS == 186);
++const _CODE: () = assert!(V == 58 && TARGET_SUM < V * (CHAIN_LEN - 1));
++const _SIZES: () = assert!(PUB_KEY_SIZE == 32 && LAYER_SIG_SIZE == 1200 && SIG_SIZE == 2404);
++const _VERIFY_PERMUTATIONS: () = assert!(VERIFY_PERMUTATIONS == 186);
+ // A leaf index is the two layers' indices side by side.
+-const _: () = assert!(LOG_LIFETIME == 8 * LEAF_INDEX_SIZE);
++const _LEAF_INDEX_BITS: () = assert!(LOG_LIFETIME == 8 * LEAF_INDEX_SIZE);
+ 
+ /// Serde for `[T; N]` with N > 32 (serde only derives arrays up to 32):
+ /// serialized as a fixed-length tuple, exactly like the native array impls.
