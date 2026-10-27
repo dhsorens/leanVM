@@ -6,7 +6,7 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.Bench", "Extraction.LeanCompiler", "Extraction.LeanDa", "Extraction.Leanvm", "Extraction.LeanvmCore", "Extraction.Parallel", "Extraction.Pcs", "Extraction.Primitives", "Extraction.RecAggregation", "Extraction.Signatures", "Extraction.Verifier"]
+roots = ["Extraction.Bench", "Extraction.FiatShamir", "Extraction.KeccakGkr", "Extraction.LeanCompiler", "Extraction.LeanDa", "Extraction.Leanvm", "Extraction.LeanvmCore", "Extraction.Parallel", "Extraction.Pcs", "Extraction.Primitives", "Extraction.RecAggregation", "Extraction.Signatures", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
@@ -15,6 +15,14 @@ path = "CoreModelsExt"
 [[require]]
 name = "Bench"
 path = "../../crates/bench/proofs/bench/lean"
+
+[[require]]
+name = "FiatShamir"
+path = "../../crates/fiat_shamir/proofs/fiat-shamir/lean"
+
+[[require]]
+name = "KeccakGkr"
+path = "../../crates/keccak_gkr/proofs/keccak-gkr/lean"
 
 [[require]]
 name = "LeanCompiler"

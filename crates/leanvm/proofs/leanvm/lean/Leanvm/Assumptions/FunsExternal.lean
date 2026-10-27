@@ -5,6 +5,7 @@
 module
 public import Aeneas
 public import CoreModels
+public import CoreModelsExt
 public import Leanvm.Extraction.Types
 public import Leanvm.Assumptions.CratesExternal
 @[expose] public section

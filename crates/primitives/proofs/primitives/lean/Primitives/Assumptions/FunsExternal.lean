@@ -5,6 +5,7 @@
 module
 public import Aeneas
 public import CoreModels
+public import CoreModelsExt
 public import Primitives.Extraction.Types
 @[expose] public section
 open CoreModels Aeneas

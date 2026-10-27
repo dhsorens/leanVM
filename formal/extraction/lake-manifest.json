@@ -25,6 +25,26 @@
   {
    "type": "path",
    "scope": "",
+   "name": "FiatShamir",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/fiat_shamir/proofs/fiat-shamir/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "KeccakGkr",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/keccak_gkr/proofs/keccak-gkr/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "LeanCompiler",
    "manifestFile": "lake-manifest.json",
    "inherited": false,

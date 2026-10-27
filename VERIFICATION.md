@@ -4,12 +4,13 @@
 
 ## Status
 
-Stage 1 is in place for `crates/verifier`, the native verifier every proof is checked with. [`formal/extraction/README.md`](formal/extraction/README.md) describes how it works and how to keep it current.
+Stage 1 is in place for every crate in `crates/`. [`formal/extraction/README.md`](formal/extraction/README.md) describes how it works and how to keep it current, and [`formal/extraction/LIMITATIONS.md`](formal/extraction/LIMITATIONS.md) what the extractions leave out and why.
 
-- hax's Lean backend extracts the crate into a Lean package beside it, `crates/verifier/proofs/verifier/lean`, and the extraction typechecks.
-- The crate's [`hax.toml`](crates/verifier/hax.toml) lists what is left opaque, each item with the reason, so it is also the list of what remains to extract. The Keccak permutation and hash, the field arithmetic, the ring switch, and most of the transcript, multilinear, Merkle and DA code are extracted with their bodies; the top-level verification loops (the sumchecks, WHIR, the bus and the Keccak reduction), the tables' column layout and a few helpers are opaque for now.
-- Rust the toolchain cannot translate is rewritten by small patches applied only while extracting. The committed source is never patched, and CI runs the verifier's tests, including its checks against real proofs, on the patched source.
-- CI fails when the committed extraction no longer matches the Rust, when it no longer typechecks, or when the patched source fails its tests. Every run reports what the extraction trusts: opaque items, standard-library models, untranslated bodies, patches.
+- hax's Lean backend extracts each crate into a Lean package beside it, `crates/<crate>/proofs/<scenario>/lean`, and every extraction typechecks, with no `sorry`. They share their Lean dependencies through one workspace, `formal/extraction`.
+- Each crate's `hax.toml` lists what is left opaque, grouped by what stops it, so it is also the list of what remains to extract. The arithmetic, hashing, transcripts, signature schemes and most of the verifier's building blocks are extracted with their bodies; concurrency, `unsafe`, the SIMD kernels and the top-level loops of verification and proving are opaque for now.
+- The extraction is of the portable code paths, the same on every host: the hardware features the crates dispatch on are switched off while extracting.
+- Rust the toolchain cannot translate is rewritten by small patches applied only while extracting. The committed source is never patched, and CI runs each patched crate's tests, including checks against real proofs, on the patched source.
+- CI fails when a committed extraction no longer matches the Rust, when one no longer typechecks, or when the patched source fails its tests. Every run reports what each extraction trusts: opaque items, untranslated bodies, patches, and the shared standard-library models.
 
 ## Introduction
 

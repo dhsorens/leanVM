@@ -77,6 +77,7 @@ extract() {
     shift
   fi
   apply_patches
+  rm -f crates/*/proofs/*/lean/aeneas-error.log
   cargo hax extract "$@"
   revert
   for patch in crates/*/proofs/*/patches/post/*.patch; do
@@ -103,20 +104,25 @@ patched() {
 
 test_patched() {
   apply_patches
+  local runs=() dir crate line
   for dir in crates/*/proofs/*/patches/pre; do
-    local patches=("$dir"/*.patch) crate
+    local patches=("$dir"/*.patch)
     [[ ${#patches[@]} -gt 0 ]] || continue
     crate=$(basename "${dir%%/proofs/*}")
     cargo clippy --release -p "$crate" --all-targets -- -D warnings
     if [[ -f "$dir/tests" ]]; then
-      local args
-      while read -r -a args; do
-        [[ ${#args[@]} -eq 0 || "${args[0]}" == \#* ]] || cargo test --release "${args[@]}"
+      while read -r line; do
+        [[ -z "$line" || "$line" == \#* ]] || runs+=("$line")
       done < "$dir/tests"
     else
-      cargo test --release -p "$crate"
+      runs+=("-p $crate")
     fi
   done
+  # A suite several crates name (the verifier's checks against real proofs) runs once.
+  local args
+  while read -r -a args; do
+    cargo test --release "${args[@]}"
+  done < <(printf '%s\n' "${runs[@]}" | awk '!seen[$0]++')
 }
 
 case "${1:-}" in

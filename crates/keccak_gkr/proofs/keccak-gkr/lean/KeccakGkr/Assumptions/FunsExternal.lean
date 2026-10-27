@@ -5,6 +5,7 @@
 module
 public import Aeneas
 public import CoreModels
+public import CoreModelsExt
 public import KeccakGkr.Extraction.Types
 @[expose] public section
 open CoreModels Aeneas
@@ -100,7 +101,7 @@ axiom prover.Layer.pack_products
     primitives.field.gf2_64x3.F192 47#usize))
 
 /-- [keccak_gkr::open::spare_slices]:
-    Source: 'crates/keccak_gkr/src/open.rs', lines 256:0-284:1 -/
+    Source: 'crates/keccak_gkr/src/open.rs', lines 255:0-283:1 -/
 axiom open.spare_slices
   :
   witness.Shape → Slice primitives.field.gf2_64.F64 → Slice
@@ -161,7 +162,7 @@ axiom power.PowerField.dot_pair
     6#usize))
 
 /-- [keccak_gkr::power::dot_pair_portable]:
-    Source: 'crates/keccak_gkr/src/power.rs', lines 193:0-211:1
+    Source: 'crates/keccak_gkr/src/power.rs', lines 196:0-214:1
     Visibility: public -/
 axiom power.dot_pair_portable
   :
@@ -235,7 +236,7 @@ axiom witness.transpose64
   : Array Std.U64 64#usize → RustM (Array Std.U64 64#usize)
 
 /-- [keccak_gkr::witness::block]:
-    Source: 'crates/keccak_gkr/src/witness.rs', lines 201:0-258:1
+    Source: 'crates/keccak_gkr/src/witness.rs', lines 203:0-260:1
     Visibility: public -/
 axiom witness.block
   {T0 : Type _}
@@ -246,7 +247,7 @@ axiom witness.block
     RustM Unit
 
 /-- [keccak_gkr::witness::block_lanes]:
-    Source: 'crates/keccak_gkr/src/witness.rs', lines 264:0-274:1
+    Source: 'crates/keccak_gkr/src/witness.rs', lines 266:0-276:1
     Visibility: public -/
 axiom witness.block_lanes
   :
@@ -254,19 +255,19 @@ axiom witness.block_lanes
     (alloc.vec.Vec Std.U64)
 
 /-- [keccak_gkr::witness::{keccak_gkr::witness::Column<'a>}::write]:
-    Source: 'crates/keccak_gkr/src/witness.rs', lines 316:4-319:5 -/
+    Source: 'crates/keccak_gkr/src/witness.rs', lines 318:4-321:5 -/
 axiom witness.Column.write
   :
   witness.Column → primitives.stream.Stream → Std.Usize → Std.Usize →
     Std.Usize → Slice Std.U64 → RustM witness.Column
 
 /-- [keccak_gkr::witness::{keccak_gkr::witness::Column<'a>}::write_block]:
-    Source: 'crates/keccak_gkr/src/witness.rs', lines 325:4-331:5 -/
+    Source: 'crates/keccak_gkr/src/witness.rs', lines 327:4-333:5 -/
 axiom witness.Column.write_block
   : witness.Column → Std.Usize → Slice Std.U64 → RustM witness.Column
 
 /-- [keccak_gkr::witness::{keccak_gkr::witness::Witness}::generate]:
-    Source: 'crates/keccak_gkr/src/witness.rs', lines 340:4-363:5
+    Source: 'crates/keccak_gkr/src/witness.rs', lines 342:4-365:5
     Visibility: public -/
 axiom witness.Witness.generate
   :
@@ -275,7 +276,7 @@ axiom witness.Witness.generate
     primitives.field.gf2_64.F64))
 
 /-- [keccak_gkr::witness::{keccak_gkr::witness::Witness}::from_blocks]:
-    Source: 'crates/keccak_gkr/src/witness.rs', lines 372:4-385:5
+    Source: 'crates/keccak_gkr/src/witness.rs', lines 374:4-387:5
     Visibility: public -/
 axiom witness.Witness.from_blocks
   :
@@ -284,7 +285,7 @@ axiom witness.Witness.from_blocks
     × (Slice primitives.field.gf2_64.F64))
 
 /-- [keccak_gkr::witness::{keccak_gkr::witness::Witness}::from_extents]:
-    Source: 'crates/keccak_gkr/src/witness.rs', lines 393:4-412:5 -/
+    Source: 'crates/keccak_gkr/src/witness.rs', lines 395:4-414:5 -/
 axiom witness.Witness.from_extents
   :
   witness.Shape → alloc.vec.Vec witness.Extent → Std.Usize →

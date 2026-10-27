@@ -5,6 +5,7 @@
 module
 public import Aeneas
 public import CoreModels
+public import CoreModelsExt
 public import FiatShamir.Extraction.Types
 @[expose] public section
 open CoreModels Aeneas
@@ -27,7 +28,7 @@ set_option maxRecDepth 2048
 open fiat_shamir
 
 /-- [fiat_shamir::{fiat_shamir::FiatShamirState}::grind_pow]:
-    Source: 'crates/fiat_shamir/src/lib.rs', lines 154:4-193:5
+    Source: 'crates/fiat_shamir/src/lib.rs', lines 160:4-199:5
     Visibility: public -/
 axiom FiatShamirState.grind_pow
   : FiatShamirState → Std.U32 → RustM (Std.U64 × FiatShamirState)

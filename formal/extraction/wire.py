@@ -9,7 +9,7 @@ in its hax.toml and nothing else. For each package crates/<crate>/proofs/<scenar
   declares it. Every `fmt` loses the `Formatter`
   write-back Aeneas gives it, which the hax Lean library's `Debug` and `Display` do not have
   (hax seeds a new package's Assumptions/ from the raw template, so the seeded ones need it too).
-  TypesExternal imports CoreModelsExt, the standard-library models every extraction shares.
+  Both import CoreModelsExt, the standard-library models every extraction shares.
 - Its lakefile requires CoreModelsExt and resolves its dependencies into the workspace's
   `.lake/packages`, and its manifest is the workspace's, so the package builds the same alone.
 
@@ -71,7 +71,7 @@ def sync_assumptions(package, name):
             continue
         _, wanted = split(template.read_text())
         header, present = split(assumption.read_text())
-        if stem == "TypesExternal" and "public import CoreModelsExt\n" not in header:
+        if "public import CoreModelsExt\n" not in header:
             header = header.replace("public import CoreModels\n", "public import CoreModels\npublic import CoreModelsExt\n", 1)
         kept = {key: block for key, block in present.items() if HAND_MAINTAINED in block}
         text = header + "".join(drop_formatter_write_back(kept.get(key) or block) for key, block in wanted.items())
