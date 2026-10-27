@@ -1,0 +1,207 @@
+diff --git a/crates/keccak_gkr/src/lib.rs b/crates/keccak_gkr/src/lib.rs
+index 12d2440d..f1caf383 100644
+--- a/crates/keccak_gkr/src/lib.rs
++++ b/crates/keccak_gkr/src/lib.rs
+@@ -157,7 +157,8 @@ impl OutputClaim {
+ /// segment and lane weights.
+ fn first(shape: Shape, output: &OutputClaim, segment: Vec<F192>, r_lane: &[F192]) -> Claim {
+     assert_eq!(output.instance.len(), shape.n_log);
+-    let point = [&output.instance[4..], &segment[..]].concat();
++    let mut point = output.instance[4..].to_vec();
++    point.extend_from_slice(&segment);
+     let mut claim = first_claim(shape, &output.instance[..4], point, r_lane);
+     let last = eq_table(&segment)[shape.segments() - 1];
+     claim.value = last * dot(&eq_table(r_lane)[..keccak::LANES], &output.lanes);
+diff --git a/crates/keccak_gkr/src/open.rs b/crates/keccak_gkr/src/open.rs
+index ee71044d..d4331eee 100644
+--- a/crates/keccak_gkr/src/open.rs
++++ b/crates/keccak_gkr/src/open.rs
+@@ -239,10 +239,9 @@ pub fn open_outputs(
+     let (word, _, slot) = prove_rounds(ps, words, word_weights(shape, claim), 1, F192::ONE, &mut value);
+     let word = word[0];
+     ps.add_scalar(word);
+-    WordOpening {
+-        point: [instance, &slot].concat(),
+-        value: word,
+-    }
++    let mut point = instance.to_vec();
++    point.extend_from_slice(&slot);
++    WordOpening { point, value: word }
+ }
+ 
+ /// The bit slices, at the instance point, of the committed slots the claim weighs nothing on:
+@@ -310,14 +309,15 @@ pub fn open_inputs(ps: &mut ProverState, witness: &Witness, committed: &[F64], c
+             }
+         }
+     }
+-    let spare = spare_slices(shape, committed, &[&low, pack].concat());
++    let mut at = low.clone();
++    at.extend_from_slice(pack);
++    let spare = spare_slices(shape, committed, &at);
+     for slot in 0..spare.len() {
+         at_instance[(shape.slots() + slot) * 64..][..64].copy_from_slice(&spare[slot]);
+     }
+     let (slices, _, slot) = prove_rounds(ps, at_instance, weights, 64, mu[0], &mut value);
+     ps.add_scalars(&slices);
+-    Opening {
+-        point: [&low, pack, &slot].concat(),
+-        slices,
+-    }
++    let mut point = at;
++    point.extend_from_slice(&slot);
++    Opening { point, slices }
+ }
+diff --git a/crates/keccak_gkr/src/power.rs b/crates/keccak_gkr/src/power.rs
+index 39399aad..a35e925b 100644
+--- a/crates/keccak_gkr/src/power.rs
++++ b/crates/keccak_gkr/src/power.rs
+@@ -70,15 +70,18 @@ impl PowerField {
+         let mut dividend = [0u64; 7];
+         dividend[6] = 1;
+         let mut barrett = [0u64; 3];
+-        for bit in (192..=384).rev() {
++        for i in 0..193 {
++            let bit = 384 - i;
+             if dividend[bit / 64] >> (bit % 64) & 1 == 1 {
+                 let shift = bit - 192;
+                 if shift < 192 {
+                     barrett[shift / 64] |= 1 << (shift % 64);
+                 }
+                 dividend[bit / 64] ^= 1 << (bit % 64);
+-                for b in (0..192).filter(|b| modulus[b / 64] >> (b % 64) & 1 == 1) {
+-                    dividend[(b + shift) / 64] ^= 1 << ((b + shift) % 64);
++                for b in 0..192 {
++                    if modulus[b / 64] >> (b % 64) & 1 == 1 {
++                        dividend[(b + shift) / 64] ^= 1 << ((b + shift) % 64);
++                    }
+                 }
+             }
+         }
+@@ -150,7 +153,7 @@ impl PowerField {
+ 
+     /// `dst[j] = a[j] * b[j] + c[j]`.
+     pub fn mul_row(&self, dst: &mut [u64], a: &[u64], b: &[u64], c: &[u64], width: usize) {
+-        assert!(dst.len() >= 3 * width && [a, b, c].iter().all(|row| row.len() >= 3 * width));
++        assert!(dst.len() >= 3 * width && a.len() >= 3 * width && b.len() >= 3 * width && c.len() >= 3 * width);
+         row_kernel!(
+             width,
+             mul_row(self, dst, a, b, c, width),
+diff --git a/crates/keccak_gkr/src/protocol.rs b/crates/keccak_gkr/src/protocol.rs
+index 55025519..2a4d3367 100644
+--- a/crates/keccak_gkr/src/protocol.rs
++++ b/crates/keccak_gkr/src/protocol.rs
+@@ -33,9 +33,13 @@ pub struct Claim {
+ pub fn mu_at(s: F192) -> [F192; PACK] {
+     let powers = powers(s, EMBED_BITS);
+     std::array::from_fn(|i| {
+-        (0..EMBED_BITS)
+-            .filter(|b| RMFE.emb[i] >> b & 1 == 1)
+-            .fold(F192::ZERO, |acc, b| acc + powers[b])
++        let mut acc = F192::ZERO;
++        for b in 0..EMBED_BITS {
++            if RMFE.emb[i] >> b & 1 == 1 {
++                acc += powers[b];
++            }
++        }
++        acc
+     })
+ }
+ 
+@@ -44,7 +48,11 @@ pub fn sum(xs: &[F192]) -> F192 {
+ }
+ 
+ pub fn dot(a: &[F192], b: &[F192]) -> F192 {
+-    a.iter().zip(b).fold(F192::ZERO, |acc, (&x, &y)| acc + x * y)
++    let mut acc = F192::ZERO;
++    for i in 0..a.len().min(b.len()) {
++        acc += a[i] * b[i];
++    }
++    acc
+ }
+ 
+ /// The weights of the claim a layer leaves on the state before `chi`.
+@@ -64,7 +72,7 @@ pub fn chi_weights(eq: &[F192], beta: F192) -> Vec<F192> {
+ /// The claim the layers start from, once its challenges are drawn, valued at zero: a random
+ /// combination of the output lanes as words, bit `z` of a word weighing `x^z`.
+ pub fn first_claim(shape: Shape, r_low: &[F192], point: Vec<F192>, r_lane: &[F192]) -> Claim {
+-    let mu: [F192; PACK] = eq_table(r_low).try_into().expect("four low variables");
++    let mu: [F192; PACK] = eq_table(r_low)[..].try_into().expect("four low variables");
+     assert_eq!(point.len(), shape.y_vars());
+     let lanes = eq_table(r_lane);
+     Claim {
+diff --git a/crates/keccak_gkr/src/prover.rs b/crates/keccak_gkr/src/prover.rs
+index 846e5dac..ef1fab17 100644
+--- a/crates/keccak_gkr/src/prover.rs
++++ b/crates/keccak_gkr/src/prover.rs
+@@ -702,19 +702,19 @@ pub fn prove_layer(
+     for i in 0..SKIP {
+         let later = eq_table(&claim.point[i + 1..SKIP]);
+         let mut h = [F192::ZERO; 3];
+-        for (b, &eq) in later.iter().enumerate() {
+-            for (d, h) in h.iter_mut().enumerate() {
+-                *h += eq * sums[d + 3 * ternary(b)];
++        for b in 0..later.len() {
++            for d in 0..3 {
++                h[d] += later[b] * sums[d + 3 * ternary(b)];
+             }
+         }
+         let coeffs = [scale * h[0], scale * (h[0] + h[1] + h[2]), scale * h[2]];
+         let challenge = bind(ps, &coeffs, claim.point[i], &mut value, &mut scale, &mut point);
+-        sums = sums
+-            .as_chunks::<3>()
+-            .0
+-            .iter()
+-            .map(|v| v[0] + challenge * (v[0] + v[1]) + (challenge.square() + challenge) * v[2])
+-            .collect();
++        let mut next = Vec::with_capacity(sums.len() / 3);
++        for k in 0..sums.len() / 3 {
++            let v = &sums[3 * k..3 * k + 3];
++            next.push(v[0] + challenge * (v[0] + v[1]) + (challenge.square() + challenge) * v[2]);
++        }
++        sums = next;
+     }
+ 
+     // The groups, blocks and segments, on a table in the power basis. Each pass over it writes
+diff --git a/crates/keccak_gkr/src/rmfe.rs b/crates/keccak_gkr/src/rmfe.rs
+index 47c15d8c..4e721c77 100644
+--- a/crates/keccak_gkr/src/rmfe.rs
++++ b/crates/keccak_gkr/src/rmfe.rs
+@@ -120,7 +120,7 @@ impl Rmfe {
+                 inv += 1;
+                 assert!(inv < 1 << deg(f), "coprime factors");
+             }
+-            let lift = pmul(cofactor, inv);
++            let lifted = pmul(cofactor, inv);
+             // A residue is the polynomial taking the bits as its values at 0, 1 and infinity.
+             let residues: &[u64] = match bits {
+                 1 => &[1],
+@@ -129,7 +129,7 @@ impl Rmfe {
+             };
+             let mut k = 0;
+             while k < residues.len() {
+-                emb[bit + k] = pmod(pmul(pmod(lift, modulus), residues[k]), modulus) as u32;
++                emb[bit + k] = pmod(pmul(pmod(lifted, modulus), residues[k]), modulus) as u32;
+                 k += 1;
+             }
+             let mut c = 0;
+diff --git a/crates/keccak_gkr/src/witness.rs b/crates/keccak_gkr/src/witness.rs
+index 79ee3ab7..a7d8e36b 100644
+--- a/crates/keccak_gkr/src/witness.rs
++++ b/crates/keccak_gkr/src/witness.rs
+@@ -175,10 +175,12 @@ pub fn transpose64_portable(a: &mut [u64; 64]) {
+     let mut j = 32;
+     let mut mask = 0x0000_0000_ffff_ffffu64;
+     while j != 0 {
+-        for k in (0..64).filter(|k| k & j == 0) {
+-            let t = ((a[k] >> j) ^ a[k + j]) & mask;
+-            a[k + j] ^= t;
+-            a[k] ^= t << j;
++        for k in 0..64 {
++            if k & j == 0 {
++                let t = ((a[k] >> j) ^ a[k + j]) & mask;
++                a[k + j] ^= t;
++                a[k] ^= t << j;
++            }
+         }
+         j >>= 1;
+         mask ^= mask << j;

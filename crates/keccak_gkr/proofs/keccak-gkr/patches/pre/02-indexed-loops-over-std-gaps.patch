@@ -1,0 +1,268 @@
+diff --git a/crates/keccak_gkr/src/basis.rs b/crates/keccak_gkr/src/basis.rs
+index b5e02c03..412dc977 100644
+--- a/crates/keccak_gkr/src/basis.rs
++++ b/crates/keccak_gkr/src/basis.rs
+@@ -12,8 +12,8 @@ fn bits(a: F192) -> [u64; 3] {
+ }
+ 
+ fn xor3(a: &mut [u64; 3], b: &[u64; 3]) {
+-    for (x, y) in a.iter_mut().zip(b) {
+-        *x ^= y;
++    for i in 0..3 {
++        a[i] ^= b[i];
+     }
+ }
+ 
+@@ -30,43 +30,54 @@ impl PowerBasis {
+         let mut power = F192::ONE;
+         for b in 0..192 {
+             let p = bits(power);
+-            for (r, row) in rows.iter_mut().enumerate() {
+-                row.0[b / 64] |= (p[r / 64] >> (r % 64) & 1) << (b % 64);
++            for r in 0..192 {
++                rows[r].0[b / 64] |= (p[r / 64] >> (r % 64) & 1) << (b % 64);
+             }
+             power *= s;
+         }
+-        for (r, row) in rows.iter_mut().enumerate() {
+-            row.1[r / 64] = 1 << (r % 64);
++        for r in 0..192 {
++            rows[r].1[r / 64] = 1 << (r % 64);
+         }
++        let mut singular = false;
+         for b in 0..192 {
+-            let pivot = (b..192).find(|&r| rows[r].0[b / 64] >> (b % 64) & 1 == 1)?;
+-            rows.swap(b, pivot);
+-            let (pa, pi) = rows[b];
+-            for (r, row) in rows.iter_mut().enumerate() {
+-                if r != b && row.0[b / 64] >> (b % 64) & 1 == 1 {
+-                    xor3(&mut row.0, &pa);
+-                    xor3(&mut row.1, &pi);
++            let mut pivot = 192;
++            for r in b..192 {
++                if pivot == 192 && rows[r].0[b / 64] >> (b % 64) & 1 == 1 {
++                    pivot = r;
++                }
++            }
++            singular |= pivot == 192;
++            if !singular {
++                rows.swap(b, pivot);
++                let (pa, pi) = rows[b];
++                for r in 0..192 {
++                    if r != b && rows[r].0[b / 64] >> (b % 64) & 1 == 1 {
++                        xor3(&mut rows[r].0, &pa);
++                        xor3(&mut rows[r].1, &pi);
++                    }
+                 }
+             }
+         }
++        if singular {
++            return None;
++        }
+         // Row `b` of the inverse is coefficient `b` as a function of the element's bits.
+         let mut columns = [[0u64; 3]; 192];
+-        for (b, row) in rows.iter().enumerate() {
+-            for (r, column) in columns.iter_mut().enumerate() {
+-                column[b / 64] |= (row.1[r / 64] >> (r % 64) & 1) << (b % 64);
++        for b in 0..192 {
++            for r in 0..192 {
++                columns[r][b / 64] |= (rows[b].1[r / 64] >> (r % 64) & 1) << (b % 64);
+             }
+         }
+-        let tables = (0..24)
+-            .map(|k| {
+-                let mut t = [[0u64; 3]; 256];
+-                for byte in 1..256usize {
+-                    let low = byte.trailing_zeros() as usize;
+-                    t[byte] = t[byte & (byte - 1)];
+-                    xor3(&mut t[byte], &columns[8 * k + low]);
+-                }
+-                t
+-            })
+-            .collect();
++        let mut tables = Vec::with_capacity(24);
++        for k in 0..24 {
++            let mut t = [[0u64; 3]; 256];
++            for byte in 1..256usize {
++                let low = byte.trailing_zeros() as usize;
++                t[byte] = t[byte & (byte - 1)];
++                xor3(&mut t[byte], &columns[8 * k + low]);
++            }
++            tables.push(t);
++        }
+         Some(Self { tables })
+     }
+ 
+@@ -83,9 +94,9 @@ impl PowerBasis {
+ /// The sum of every subset of eight weights, indexed by the byte whose bits pick it.
+ pub fn byte_sums(weights: &[F192; 8]) -> [F192; 256] {
+     let mut t = [F192::ZERO; 256];
+-    for (bit, &w) in weights.iter().enumerate() {
++    for bit in 0..8 {
+         for byte in 1usize << bit..2 << bit {
+-            t[byte] = t[byte - (1 << bit)] + w;
++            t[byte] = t[byte - (1 << bit)] + weights[bit];
+         }
+     }
+     t
+@@ -98,14 +109,12 @@ pub struct PolyEval {
+ 
+ impl PolyEval {
+     pub fn new(s: F192, n_bytes: usize) -> Self {
+-        Self {
+-            tables: powers(s, 8 * n_bytes)
+-                .as_chunks::<8>()
+-                .0
+-                .iter()
+-                .map(byte_sums)
+-                .collect(),
++        let powers = powers(s, 8 * n_bytes);
++        let mut tables = Vec::with_capacity(n_bytes);
++        for k in 0..n_bytes {
++            tables.push(byte_sums(powers[8 * k..8 * k + 8].try_into().unwrap()));
+         }
++        Self { tables }
+     }
+ 
+     #[inline]
+diff --git a/crates/keccak_gkr/src/open.rs b/crates/keccak_gkr/src/open.rs
+index b3e1be06..ee71044d 100644
+--- a/crates/keccak_gkr/src/open.rs
++++ b/crates/keccak_gkr/src/open.rs
+@@ -169,10 +169,15 @@ fn round_values(a: &[F192], b: &[F192], width: usize) -> (F192, F192) {
+ }
+ 
+ pub(crate) fn fold(table: &[F192], width: usize, challenge: F192) -> Vec<F192> {
+-    table
+-        .chunks_exact(2 * width)
+-        .flat_map(|pair| (0..width).map(move |j| pair[j] + challenge * (pair[j] + pair[width + j])))
+-        .collect()
++    let pairs = table.len() / (2 * width);
++    let mut out = Vec::with_capacity(pairs * width);
++    for p in 0..pairs {
++        let pair = &table[2 * width * p..2 * width * (p + 1)];
++        for j in 0..width {
++            out.push(pair[j] + challenge * (pair[j] + pair[width + j]));
++        }
++    }
++    out
+ }
+ 
+ /// Bind the leading variable of `scale * sum of a * b` in every round, down to one row of `a`.
+@@ -285,30 +290,29 @@ pub fn open_inputs(ps: &mut ProverState, witness: &Witness, committed: &[F64], c
+     let folded = fold_packs(witness, pack);
+     let weights = slot_weights(shape, claim, 0, shape.segments());
+     // Per instance of a pack, the weighted sum over slots and positions.
+-    let per_instance: Vec<F192> = (0..16)
+-        .map(|i| {
+-            (0..1usize << shape.slot_log()).fold(F192::ZERO, |acc, slot| {
+-                acc + dot(&folded[(i + 16 * slot) * 64..][..64], &weights[slot * 64..][..64])
+-            })
+-        })
+-        .collect();
++    let mut per_instance = Vec::with_capacity(16);
++    for i in 0..16 {
++        let mut acc = F192::ZERO;
++        for slot in 0..1usize << shape.slot_log() {
++            acc += dot(&folded[(i + 16 * slot) * 64..][..64], &weights[slot * 64..][..64]);
++        }
++        per_instance.push(acc);
++    }
+     let mut value = claim.value;
+     let (_, mu, low) = prove_rounds(ps, per_instance, claim.mu.to_vec(), 1, F192::ONE, &mut value);
+     // The slots of the stack at that instance: entry `(i + 16 * slot) * 64 + z` folds over `i`.
+     let mut at_instance = vec![F192::ZERO; 64 << shape.slot_log()];
+     let low_eq = eq_table(&low);
+-    for (slot, out) in at_instance.as_chunks_mut::<64>().0.iter_mut().enumerate() {
++    for slot in 0..at_instance.len() / 64 {
+         for i in 0..16 {
+             for z in 0..64 {
+-                out[z] += low_eq[i] * folded[(i + 16 * slot) * 64 + z];
++                at_instance[64 * slot + z] += low_eq[i] * folded[(i + 16 * slot) * 64 + z];
+             }
+         }
+     }
+-    for (slot, slices) in spare_slices(shape, committed, &[&low, pack].concat())
+-        .into_iter()
+-        .enumerate()
+-    {
+-        at_instance[(shape.slots() + slot) * 64..][..64].copy_from_slice(&slices);
++    let spare = spare_slices(shape, committed, &[&low, pack].concat());
++    for slot in 0..spare.len() {
++        at_instance[(shape.slots() + slot) * 64..][..64].copy_from_slice(&spare[slot]);
+     }
+     let (slices, _, slot) = prove_rounds(ps, at_instance, weights, 64, mu[0], &mut value);
+     ps.add_scalars(&slices);
+diff --git a/crates/keccak_gkr/src/prover.rs b/crates/keccak_gkr/src/prover.rs
+index d5095dff..846e5dac 100644
+--- a/crates/keccak_gkr/src/prover.rs
++++ b/crates/keccak_gkr/src/prover.rs
+@@ -45,13 +45,13 @@ const PART_WORDS: usize = 48 * PART / 64;
+ // `pack` reads four products to three words and `add` XORs whole vectors, so `PART` divides by four
+ // and `PART_WORDS` by each arm's lane count. A `PART` that broke either would drop products or store
+ // past the array rather than fail to build.
+-const _: () = assert!(PART.is_multiple_of(4));
++const _PART_IN_FOURS: () = assert!(PART.is_multiple_of(4));
+ #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
+-const _: () = assert!(PART_WORDS.is_multiple_of(8));
++const _PART_IN_AVX512: () = assert!(PART_WORDS.is_multiple_of(8));
+ #[cfg(all(target_arch = "x86_64", target_feature = "avx2", not(target_feature = "avx512f")))]
+-const _: () = assert!(PART_WORDS.is_multiple_of(4));
++const _PART_IN_AVX2: () = assert!(PART_WORDS.is_multiple_of(4));
+ #[cfg(target_arch = "aarch64")]
+-const _: () = assert!(PART_WORDS.is_multiple_of(2));
++const _PART_IN_NEON: () = assert!(PART_WORDS.is_multiple_of(2));
+ 
+ /// The products of a part of a block position's packs, 48 bits each, grouped while every digit
+ /// of the weights groups the block's positions.
+@@ -136,18 +136,21 @@ impl Groups {
+     fn new(weights: &[F192]) -> Self {
+         let mut order = vec![[0u16; BITS]; DIGITS];
+         let mut starts = vec![[0u16; (1 << DIGIT_BITS) + 1]; DIGITS];
+-        for (d, (order, starts)) in order.iter_mut().zip(&mut starts).enumerate() {
+-            let digits: Vec<usize> = weights[..BITS].iter().map(|&w| digit(w, d)).collect();
+-            for &v in &digits {
+-                starts[v + 1] += 1;
++        for d in 0..DIGITS {
++            let mut digits = Vec::with_capacity(BITS);
++            for j in 0..BITS {
++                digits.push(digit(weights[j], d));
++            }
++            for p in 0..BITS {
++                starts[d][digits[p] + 1] += 1;
+             }
+             for v in 0..1 << DIGIT_BITS {
+-                starts[v + 1] += starts[v];
++                starts[d][v + 1] += starts[d][v];
+             }
+-            let mut next = *starts;
+-            for (p, &v) in digits.iter().enumerate() {
+-                order[next[v] as usize] = p as u16;
+-                next[v] += 1;
++            let mut next = starts[d];
++            for p in 0..BITS {
++                order[d][next[digits[p]] as usize] = p as u16;
++                next[digits[p]] += 1;
+             }
+         }
+         Self { order, starts }
+diff --git a/crates/keccak_gkr/src/witness.rs b/crates/keccak_gkr/src/witness.rs
+index a8642c1e..79ee3ab7 100644
+--- a/crates/keccak_gkr/src/witness.rs
++++ b/crates/keccak_gkr/src/witness.rs
+@@ -424,8 +424,13 @@ impl Witness {
+             let padding = self.padding.as_ref().expect("a block of the batch");
+             return padding.round(round, padding.first);
+         }
+-        let extent = self.extents.iter().find(|e| g < e.end()).expect("a written block");
+-        extent.round(round, g)
++        let mut first = self.extents.len();
++        for k in 0..self.extents.len() {
++            if first == self.extents.len() && g < self.extents[k].end() {
++                first = k;
++            }
++        }
++        self.extents.get(first).expect("a written block").round(round, g)
+     }
+ }
+ 

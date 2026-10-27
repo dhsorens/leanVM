@@ -1,0 +1,70 @@
+diff --git a/crates/keccak_gkr/src/lib.rs b/crates/keccak_gkr/src/lib.rs
+index 8d1542b4..12d2440d 100644
+--- a/crates/keccak_gkr/src/lib.rs
++++ b/crates/keccak_gkr/src/lib.rs
+@@ -179,8 +179,7 @@ impl Witness {
+         let (segment, r_lane) = (ps.sample_vec(shape.seg_log()), ps.sample_vec(LANE_VARS));
+         let mut first = first(shape, output, segment, &r_lane);
+         let instance = &output.instance;
+-        let (folded, committed_value) =
+-            tracing::info_span!("Outputs").in_scope(|| open::output_claim(shape, committed, instance, &first));
++        let (folded, committed_value) = open::output_claim(shape, committed, instance, &first);
+         if shape.segments() > 1 {
+             ps.add_scalar(committed_value);
+         }
+@@ -189,10 +188,8 @@ impl Witness {
+         let mut claim = first.clone();
+         let mut scratch = prover::Scratch::new(shape);
+         for step in 0..shape.depth {
+-            claim = tracing::info_span!("Layer", step)
+-                .in_scope(|| prover::prove_layer(ps, self, &mut scratch, step, &claim));
++            claim = prover::prove_layer(ps, self, &mut scratch, step, &claim);
+         }
+-        let _span = tracing::info_span!("Openings").entered();
+         let outputs =
+             (shape.segments() > 1).then(|| open::open_outputs(ps, shape, instance, &first, committed_value, folded));
+         let inputs = open::open_inputs(ps, self, committed, &claim);
+diff --git a/crates/keccak_gkr/src/prover.rs b/crates/keccak_gkr/src/prover.rs
+index 021c952e..d5095dff 100644
+--- a/crates/keccak_gkr/src/prover.rs
++++ b/crates/keccak_gkr/src/prover.rs
+@@ -677,7 +677,7 @@ pub fn prove_layer(
+             .collect(),
+     };
+ 
+-    let per_pack = tracing::info_span!("Product").in_scope(|| layer.pack_products(claim));
++    let per_pack = layer.pack_products(claim);
+     let pack_weights = eq_table(&claim.point[..SKIP + 1]);
+     let product: [F192; PROD_BITS] =
+         std::array::from_fn(|c| (0..PACKS).fold(F192::ZERO, |acc, q| acc + pack_weights[q] * per_pack[q][c]));
+@@ -693,7 +693,7 @@ pub fn prove_layer(
+         let half = claim.point[SKIP];
+         (F192::ONE + half) * poly_eval(&per_pack[q], s) + half * poly_eval(&per_pack[GROUP + q], s)
+     });
+-    let mut sums = tracing::info_span!("Skip").in_scope(|| layer.skip_sums(claim, &field, s, &binary));
++    let mut sums = layer.skip_sums(claim, &field, s, &binary);
+     let mut scale = F192::ONE;
+     let mut point = Vec::with_capacity(claim.point.len());
+     for i in 0..SKIP {
+@@ -724,11 +724,8 @@ pub fn prove_layer(
+     };
+     let (mut src, mut dst) = scratch.table.split_at_mut(layout.m * layout.segments * ROW);
+     let pads = &mut scratch.pads;
+-    let mut values = tracing::info_span!("Tables").in_scope(|| {
+-        let eq = eq_table(&claim.point[SKIP + 1..]);
+-        layer.table(&round, &point, &eq, layout, src, pads)
+-    });
+-    let tail = tracing::info_span!("Tail").entered();
++    let eq = eq_table(&claim.point[SKIP + 1..]);
++    let mut values = layer.table(&round, &point, &eq, layout, src, pads);
+     for i in SKIP..claim.point.len() {
+         let coeffs = round_coefficients(scale, values.0, values.1, value, claim.point[i]);
+         let challenge = bind(ps, &coeffs, claim.point[i], &mut value, &mut scale, &mut point);
+@@ -738,7 +735,6 @@ pub fn prove_layer(
+         (src, dst) = (dst, src);
+     }
+     let table = &src[..ROW];
+-    drop(tail);
+ 
+     // The bit positions, in the standard basis.
+     let cube = 1usize << LOCAL_VARS;

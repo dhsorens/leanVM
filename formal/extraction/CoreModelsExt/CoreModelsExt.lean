@@ -9,3 +9,4 @@ public import CoreModelsExt.Pcs
 public import CoreModelsExt.RecAggregation
 public import CoreModelsExt.SignaturesLeanDa
 public import CoreModelsExt.Primitives
+public import CoreModelsExt.FiatShamirKeccakGkr

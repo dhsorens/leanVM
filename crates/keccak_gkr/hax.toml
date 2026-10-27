@@ -1,0 +1,69 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/keccak-gkr/lean.
+#
+# `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
+[scenario.keccak-gkr]
+backend = "lean"
+opaque = [
+  # Parallel dispatch (`parallel::*`, threads) over closures that borrow the caller's state, and
+  # the raw pointers (`SendPtr`) the workers write their disjoint slices through.
+  "crate::_::of_inputs",
+  "crate::open::fold_packs",
+  "crate::open::output_claim",
+  "crate::open::spare_slices",
+  "crate::prover::_::pack_products",
+  "crate::prover::_::skip_sums",
+  "crate::prover::_::table",
+  "crate::prover::_::fold",
+  "crate::witness::_::generate",
+  "crate::witness::_::from_blocks",
+  "crate::witness::_::from_extents",
+  "crate::witness::block",
+  "crate::witness::block_lanes",
+  "crate::witness::_::write",
+  "crate::witness::_::write_block",
+  "crate::witness::_::slot",  # a raw pointer into the extent
+
+  # Reached only from the parallel passes above, and each stops Aeneas on its own: arrays of
+  # borrows (`[&[u64; 3]; 5]`, `[(&mut _, _); 2]`), `as_chunks`/`iter_mut` zips, `get_unchecked`.
+  "crate::prover::_::pack",
+  "crate::prover::_::add_rows",
+  "crate::prover::_::factors",  # two mutable sub-slices in one tuple
+  "crate::prover::_::add_pair",  # a loop over `[low, high]`
+  "crate::prover::_::add_padding",  # an `as_chunks` zip
+  "crate::kernels::skip_row_portable",  # an array of borrows: Aeneas's nested borrows
+  "crate::kernels::_::run",  # builds that array of borrows
+  "crate::power::dot_pair_portable",  # a loop over `[(&mut _, _); 2]`
+  "crate::power::_::dot_pair",  # its arrays of rows and a `chain(..).all(..)`
+  "crate::open::le_bytes",
+
+  # A loop over two mutably borrowed tables, the step of a Gaussian elimination: Aeneas reports
+  # it unimplemented (basis.rs, `clear_column` of patch 05).
+  "crate::basis::clear_column",
+
+  # Its NEON arm is under a bare `cfg(target_arch = "aarch64")`, so its body differs by host.
+  "crate::prover::_::add",
+
+  # Its body is chosen by `cfg_select!` on a bare `target_arch` (the NEON transpose on every
+  # aarch64 host), so only the signature is the same on every host.
+  "crate::witness::transpose64",
+]
+exclude = [
+  # Their signatures crash Aeneas while translating the `Iterator` trait.
+  "core::iter::traits::iterator::Iterator::find",
+  "core::slice::iter::_::find",
+  # The vector kernels, under `cfg(target_arch)`: out of scope, and the NEON ones exist on every
+  # aarch64 host, not only with a feature on.
+  "crate::witness::neon",
+  "crate::witness::avx2",
+  "crate::witness::x86",
+  # The derived `Clone` of a column, whose phantom field borrows the committed block mutably:
+  # Aeneas gives its `clone` a backward function the `Clone` model has no room for. Used only by
+  # the opaque witness writers.
+  "{impl core::clone::Clone for crate::witness::Column}",
+  "{impl core::marker::Copy for crate::witness::Column}",
+  # The checks that `Part` fits the vector arms, one per arm (named by patch 02).
+  "crate::prover::_PART_IN_AVX512",
+  "crate::prover::_PART_IN_AVX2",
+  "crate::prover::_PART_IN_NEON",
+]

@@ -1,0 +1,18 @@
+diff --git a/crates/keccak_gkr/src/power.rs b/crates/keccak_gkr/src/power.rs
+index 4c955b39..39399aad 100644
+--- a/crates/keccak_gkr/src/power.rs
++++ b/crates/keccak_gkr/src/power.rs
+@@ -41,12 +41,12 @@ macro_rules! row_kernel {
+ }
+ 
+ pub struct PowerField {
+-    pub basis: PowerBasis,
+     /// `s^192`, the modulus without its leading term.
+     modulus: Element,
+     /// `floor(x^384 / modulus)` without its leading term, for Barrett's reduction.
+     barrett: Element,
+     eval: PolyEval,
++    pub basis: PowerBasis,
+ }
+ 
+ /// The carry-less product of two elements, six words.

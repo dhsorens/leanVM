@@ -1,0 +1,77 @@
+diff --git a/crates/fiat_shamir/src/merkle.rs b/crates/fiat_shamir/src/merkle.rs
+index fdf0b333..c2929631 100644
+--- a/crates/fiat_shamir/src/merkle.rs
++++ b/crates/fiat_shamir/src/merkle.rs
+@@ -42,6 +42,39 @@ fn sorted_unique(queries: &[usize]) -> Vec<usize> {
+     unique
+ }
+ 
++/// The siblings authenticating the leaves at `active`, level by level.
++fn octopus(tree: &[Hash], num_leaves: usize, mut active: Vec<usize>) -> Vec<Hash> {
++    let mut sibling_hashes = Vec::new();
++    let (mut level_start, mut level_len) = (0usize, num_leaves);
++    while level_len > 1 {
++        // `next` stays sorted-unique: sibling pairs collapse to one parent,
++        // and `p >> 1` is otherwise strictly increasing.
++        active = prune_level(tree, level_start, &active, &mut sibling_hashes);
++        level_start += level_len;
++        level_len >>= 1;
++    }
++    sibling_hashes
++}
++
++/// The parents of one level's `active` positions, pushing the siblings not among them.
++fn prune_level(tree: &[Hash], level_start: usize, active: &[usize], sibling_hashes: &mut Vec<Hash>) -> Vec<usize> {
++    let mut next = Vec::with_capacity(active.len());
++    let mut i = 0;
++    while i < active.len() {
++        let p = active[i];
++        // Both children active: they fold into the same parent, so no
++        // sibling is needed. Otherwise the sibling has to be sent.
++        if i + 1 < active.len() && active[i + 1] == (p ^ 1) {
++            i += 2;
++        } else {
++            sibling_hashes.push(tree[level_start + (p ^ 1)]);
++            i += 1;
++        }
++        next.push(p >> 1);
++    }
++    next
++}
++
+ /// One opening phase's Merkle data: the rows opened at each distinct queried
+ /// position (sorted), and one octopus authenticating all of them.
+ ///
+@@ -71,31 +104,7 @@ impl PrunedMerklePaths {
+         let sorted = sorted_unique(positions);
+         debug_assert!(sorted.iter().all(|&p| p < num_leaves));
+ 
+-        let mut sibling_hashes = Vec::new();
+-        let mut active = sorted.clone();
+-        let (mut level_start, mut level_len) = (0usize, num_leaves);
+-        while level_len > 1 {
+-            let mut next = Vec::with_capacity(active.len());
+-            let mut i = 0;
+-            while i < active.len() {
+-                let p = active[i];
+-                // Both children active: they fold into the same parent, so no
+-                // sibling is needed. Otherwise the sibling has to be sent.
+-                if i + 1 < active.len() && active[i + 1] == (p ^ 1) {
+-                    i += 2;
+-                } else {
+-                    sibling_hashes.push(tree[level_start + (p ^ 1)]);
+-                    i += 1;
+-                }
+-                next.push(p >> 1);
+-            }
+-            // `next` stays sorted-unique: sibling pairs collapse to one parent,
+-            // and `p >> 1` is otherwise strictly increasing.
+-            active = next;
+-            level_start += level_len;
+-            level_len >>= 1;
+-        }
+-
++        let sibling_hashes = octopus(tree, num_leaves, sorted.clone());
+         Self {
+             leaf_data: sorted.iter().map(|&q| row(q)).collect(),
+             sibling_hashes,
