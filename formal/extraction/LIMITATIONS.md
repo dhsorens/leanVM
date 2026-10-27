@@ -75,6 +75,7 @@ The workspace builds with Lean linter warnings that cannot be fixed without sile
 
 - `nameCheck` on `<module>.__1` and the like in generated `Funs.lean`: Aeneas's names for the `const _: () = { .. }` items `serde_derive` wraps its impls in. No Charon pattern can name them, and the alternatives are a post-extraction patch per file or dropping the derives.
 - `dupNamespace` on `alloc.alloc.Global.Insts.CoreAllocAllocatorClone` (in `CoreModelsExt`): the generated code names it, after the Rust path.
+- Lake's note that a file importing ArkLib, a package written for the module system, is not a `module` (`Verifier/Verification/EqKernel.lean`): a module can import only modules, and neither the generated extraction nor the hax Lean library is one.
 
 ## What the patch tests establish
 
