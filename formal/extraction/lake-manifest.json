@@ -15,6 +15,16 @@
   {
    "type": "path",
    "scope": "",
+   "name": "Pcs",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/pcs/proofs/pcs/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "Verifier",
    "manifestFile": "lake-manifest.json",
    "inherited": false,

@@ -1,0 +1,6 @@
+# `cargo test --release` arguments, one run per line, on the patched source.
+# The crate's own tests, without the doctests: rustdoc does not take the RUSTFLAGS that
+# hax.sh sets, so on aarch64 it builds pcs for a CPU primitives was not built for.
+-p pcs --lib
+# Proofs end to end, the PCS opening among them, checked by every verifier at every rate.
+-p leanvm_core --test verifiers

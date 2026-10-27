@@ -1,0 +1,23 @@
+name = "Pcs"
+version = "0.1.0"
+defaultTargets = ["Pcs"]
+# Shared with every extraction: the workspace in formal/extraction resolves the dependencies once.
+packagesDir = "../../../../../formal/extraction/.lake/packages"
+
+[[lean_lib]]
+name = "Pcs"
+
+[[require]]
+name = "aeneas"
+git = "https://github.com/cryspen/aeneas"
+rev = "build-41977a5"
+subDir = "backends/lean"
+
+[[require]]
+name = "hax"
+git = "https://github.com/cryspen/hax-lean"
+rev = "v0.3.34"
+
+[[require]]
+name = "CoreModelsExt"
+path = "../../../../../formal/extraction/CoreModelsExt"

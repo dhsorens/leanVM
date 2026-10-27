@@ -1,0 +1,36 @@
+diff --git a/crates/pcs/src/ntt/additive_ntt_f64.rs b/crates/pcs/src/ntt/additive_ntt_f64.rs
+index 0e432697..f3b7d092 100644
+--- a/crates/pcs/src/ntt/additive_ntt_f64.rs
++++ b/crates/pcs/src/ntt/additive_ntt_f64.rs
+@@ -848,12 +848,12 @@ fn butterfly_interleaved_block(block: &mut [F64], twiddle: F64, block_size_half:
+ pub(crate) fn transposed_butterfly_lanes(top: &mut [F64], bot: &mut [F64], twiddle: F64) {
+     assert_eq!(top.len(), bot.len());
+     // The forward butterfly of (v, s) leaves v + s*t in v and s + (v + s*t) in s, which one more XOR undoes.
+-    for (u, v) in top.iter_mut().zip(bot.iter()) {
+-        *u += *v;
++    for i in 0..top.len() {
++        top[i] += bot[i];
+     }
+     butterfly_lanes(bot, top, twiddle);
+-    for (u, v) in top.iter_mut().zip(bot.iter()) {
+-        *u += *v;
++    for i in 0..top.len() {
++        top[i] += bot[i];
+     }
+ }
+ 
+diff --git a/crates/pcs/src/ring_switch.rs b/crates/pcs/src/ring_switch.rs
+index 85c2169e..66673c3e 100644
+--- a/crates/pcs/src/ring_switch.rs
++++ b/crates/pcs/src/ring_switch.rs
+@@ -191,8 +191,8 @@ pub fn fold_1b_rows(packed_witness: &[F64], suffix_tensor: &[F192]) -> Vec<F192>
+ /// XOR-reduce two per-worker partial accumulators of the bit-slice folds
+ /// (E addition is XOR, so the reduction order does not matter).
+ fn xor_accs(mut a: Vec<F192>, b: Vec<F192>) -> Vec<F192> {
+-    for (av, bv) in a.iter_mut().zip(b.iter()) {
+-        *av += *bv;
++    for i in 0..a.len().min(b.len()) {
++        a[i] += b[i];
+     }
+     a
+ }
