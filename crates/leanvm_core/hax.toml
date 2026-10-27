@@ -65,15 +65,13 @@ opaque = [
   "{impl core::clone::Clone for crate::cpu::RowForm}",
   "crate::cpu::Stats",
   "crate::cpu::_::details",
-  # Their bodies call other crates (the hasher, the transcript, `verifier`'s types), which this
-  # extraction would have to declare by hand (Assumptions/CratesExternal.lean).
-  "crate::cpu::fs_seed",
-  "crate::cpu::announce_public",
+  # `.map(to_scalar)` (cpu/mod.rs:717): a function item as a closure over a reference, whose
+  # higher-ranked lifetime Aeneas does not translate.
   "crate::cpu::scalar_proof",
-  "crate::cpu::to_scalar",
-  "crate::cpu::from_scalar",
+  # Writes through `as_chunks_mut().iter_mut()` zipped with a `flat_map` (cpu/mod.rs:723).
   "crate::cpu::public_input_bytes",
-  "crate::cpu::_::assemble",  # also reads the bytecode table as bytes, by `unsafe`
+  # Reads the bytecode table as bytes, by `unsafe`.
+  "crate::cpu::_::assemble",
 
   # `Program`'s diagnostics and prover-side advice: string formatting (`site_at`), a slice
   # pattern Aeneas mistranslates ("Inconsistent projection", `code_len`), `find` (excluded

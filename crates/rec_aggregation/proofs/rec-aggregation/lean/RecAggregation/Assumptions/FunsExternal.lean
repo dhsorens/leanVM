@@ -218,11 +218,6 @@ axiom aggregation.aggregate_deferred_claims
     RustM ((alloc.vec.Vec (Str × (alloc.vec.Vec
     primitives.field.gf2_64x3.F192))) × aggregation.DeferredClaim)
 
-/-- [rec_aggregation::aggregation::whir_shape]:
-    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1088:0-1099:1 -/
-axiom aggregation.whir_shape
-  : Std.Usize → Std.Usize → RustM aggregation.WhirShape
-
 /-- [rec_aggregation::aggregation::coord_kind]:
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1117:0-1127:1 -/
 axiom aggregation.coord_kind : leanvm_core.leaf.Coord → RustM Std.Usize

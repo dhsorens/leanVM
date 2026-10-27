@@ -1764,6 +1764,140 @@ def aggregation.absorb_round
     primitives.field.gf2_64x3.F192.Insts.CoreOpsArithAddF192F192.add f3 g0
   ok (challenge, transcript3, messages2, challenges1, claim1)
 
+/-- [rec_aggregation::aggregation::whir_shape::{impl core::ops::function::FnMut<(&'_0 usize,), usize> for rec_aggregation::aggregation::whir_shape::{closure#1}}::call_mut]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1092:39-1092:51 -/
+def
+  aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize.call_mut
+  (c : aggregation.whir_shape.closure_1) (tupled_args : Std.Usize) :
+  RustM (Std.Usize × aggregation.whir_shape.closure_1)
+  := do
+  let i ← 192#usize / tupled_args
+  ok (i, c)
+
+/-- [rec_aggregation::aggregation::whir_shape::{impl core::ops::function::FnOnce<(&'_0 usize,), usize> for rec_aggregation::aggregation::whir_shape::{closure#1}}::call_once]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1092:39-1092:51 -/
+def
+  aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnOnceTupleShared0UsizeUsize.call_once
+  (c : aggregation.whir_shape.closure_1) (i : Std.Usize) :
+  RustM Std.Usize
+  := do
+  let (i1, _) ←
+    aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize.call_mut
+      c i
+  ok i1
+
+/-- Trait implementation: [rec_aggregation::aggregation::whir_shape::{impl core::ops::function::FnOnce<(&'_0 usize,), usize> for rec_aggregation::aggregation::whir_shape::{closure#1}}]
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1092:39-1092:51 -/
+@[reducible]
+def
+  aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnOnceTupleShared0UsizeUsize
+  : core.ops.function.FnOnce aggregation.whir_shape.closure_1 Std.Usize
+  Std.Usize := {
+  call_once :=
+    aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnOnceTupleShared0UsizeUsize.call_once
+}
+
+/-- Trait implementation: [rec_aggregation::aggregation::whir_shape::{impl core::ops::function::FnMut<(&'_0 usize,), usize> for rec_aggregation::aggregation::whir_shape::{closure#1}}]
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1092:39-1092:51 -/
+@[reducible]
+def
+  aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize
+  : core.ops.function.FnMut aggregation.whir_shape.closure_1 Std.Usize
+  Std.Usize := {
+  FnOnceInst :=
+    aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnOnceTupleShared0UsizeUsize
+  call_mut :=
+    aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize.call_mut
+}
+
+/-- [rec_aggregation::aggregation::whir_shape::{impl core::ops::function::FnMut<(&'_0 usize,), usize> for rec_aggregation::aggregation::whir_shape::{closure}}::call_mut]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1091:56-1091:87 -/
+def
+  aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize.call_mut
+  (c : aggregation.whir_shape.closure) (tupled_args : Std.Usize) :
+  RustM (Std.Usize × aggregation.whir_shape.closure)
+  := do
+  let i ← core.num.Usize.trailing_zeros tupled_args
+  let i1 ← lift (UScalar.cast .Usize i)
+  ok (i1, c)
+
+/-- [rec_aggregation::aggregation::whir_shape::{impl core::ops::function::FnOnce<(&'_0 usize,), usize> for rec_aggregation::aggregation::whir_shape::{closure}}::call_once]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1091:56-1091:87 -/
+def
+  aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnOnceTupleShared0UsizeUsize.call_once
+  (c : aggregation.whir_shape.closure) (i : Std.Usize) : RustM Std.Usize := do
+  let (i1, _) ←
+    aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize.call_mut
+      c i
+  ok i1
+
+/-- Trait implementation: [rec_aggregation::aggregation::whir_shape::{impl core::ops::function::FnOnce<(&'_0 usize,), usize> for rec_aggregation::aggregation::whir_shape::{closure}}]
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1091:56-1091:87 -/
+@[reducible]
+def
+  aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnOnceTupleShared0UsizeUsize
+  : core.ops.function.FnOnce aggregation.whir_shape.closure Std.Usize Std.Usize
+  := {
+  call_once :=
+    aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnOnceTupleShared0UsizeUsize.call_once
+}
+
+/-- Trait implementation: [rec_aggregation::aggregation::whir_shape::{impl core::ops::function::FnMut<(&'_0 usize,), usize> for rec_aggregation::aggregation::whir_shape::{closure}}]
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1091:56-1091:87 -/
+@[reducible]
+def
+  aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize
+  : core.ops.function.FnMut aggregation.whir_shape.closure Std.Usize Std.Usize
+  := {
+  FnOnceInst :=
+    aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnOnceTupleShared0UsizeUsize
+  call_mut :=
+    aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize.call_mut
+}
+
+/-- [rec_aggregation::aggregation::whir_shape]:
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1088:0-1099:1 -/
+def aggregation.whir_shape
+  (mu : Std.Usize) (log_inv_rate : Std.Usize) :
+  RustM aggregation.WhirShape
+  := do
+  let r ← pcs.whir.config_for_rate mu log_inv_rate
+  let config ←
+    core.result.Result.expect alloc.string.String.Insts.CoreFmtDebug r (toStr
+      "stacked whir config")
+  let levels ← pcs.whir_config.ProverConfig.level_shapes config mu
+  let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref levels.block_len
+  let i ← core.slice.Slice.iter s
+  let m ←
+    core.iter.traits.iterator.Iterator.map.default
+      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
+      Std.Usize)
+      aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize
+      i ()
+  let depth ←
+    core.iter.traits.iterator.Iterator.collect.default
+      (core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator
+      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
+      Std.Usize)
+      aggregation.whir_shape.closure.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize)
+      (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator Std.Usize) m
+  let s1 ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref depth
+  let i1 ← core.slice.Slice.iter s1
+  let m1 ←
+    core.iter.traits.iterator.Iterator.map.default
+      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
+      Std.Usize)
+      aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize
+      i1 ()
+  let per_squeeze ←
+    core.iter.traits.iterator.Iterator.collect.default
+      (core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator
+      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
+      Std.Usize)
+      aggregation.whir_shape.closure_1.Insts.CoreOpsFunctionFnMutTupleShared0UsizeUsize)
+      (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator Std.Usize) m1
+  ok { config, levels, depth, per_squeeze }
+
 /-- [rec_aggregation::aggregation::merkle_cap_depth]:
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1101:0-1103:1 -/
 def aggregation.merkle_cap_depth

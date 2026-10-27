@@ -167,6 +167,11 @@ structure cpu.Program where
   src_lines : alloc.vec.Vec Std.U32
   min_log_committed : Std.Usize
 
+/-- [leanvm_core::cpu::fs_seed::{closure}]
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 78:15-78:77 -/
+@[reducible]
+def cpu.fs_seed.closure := Array Std.U8 32#usize
+
 /-- [leanvm_core::cpu::ProveError]
     Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 234:0-246:1
     Visibility: public -/

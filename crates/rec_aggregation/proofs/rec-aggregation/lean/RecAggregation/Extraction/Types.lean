@@ -126,6 +126,16 @@ structure aggregation.WhirShape where
   depth : alloc.vec.Vec Std.Usize
   per_squeeze : alloc.vec.Vec Std.Usize
 
+/-- [rec_aggregation::aggregation::whir_shape::{closure#1}]
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1092:39-1092:51 -/
+@[reducible]
+def aggregation.whir_shape.closure_1 := Unit
+
+/-- [rec_aggregation::aggregation::whir_shape::{closure}]
+    Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1091:56-1091:87 -/
+@[reducible]
+def aggregation.whir_shape.closure := Unit
+
 /-- [rec_aggregation::aggregation::ClaimSite]
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 1106:0-1113:1 -/
 @[discriminant isize]

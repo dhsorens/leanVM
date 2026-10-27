@@ -86,18 +86,10 @@ axiom cpu.isa.DerefMode.Insts.CoreFmtDebug.fmt
   cpu.isa.DerefMode → core.fmt.Formatter → RustM ((core.result.Result Unit
     core.fmt.Error) × core.fmt.Formatter)
 
-/-- [leanvm_core::cpu::fs_seed]:
-    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 68:0-80:1
+/-- [leanvm_core::keccak::relation_digest]:
+    Source: 'crates/leanvm_core/src/keccak.rs', lines 50:0-52:1
     Visibility: public -/
-axiom cpu.fs_seed
-  : cpu.Program → RustM (Array primitives.field.gf2_64x3.F192 2#usize)
-
-/-- [leanvm_core::cpu::announce_public]:
-    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 101:0-107:1 -/
-axiom cpu.announce_public
-  :
-  fiat_shamir.transcript.ProverState → Std.Usize → Array Std.Usize 6#usize
-    → Std.Usize → RustM fiat_shamir.transcript.ProverState
+axiom keccak.relation_digest : RustM (Array Std.U8 32#usize)
 
 /-- [leanvm_core::cpu::{impl core::clone::Clone for leanvm_core::cpu::Program}::clone]:
     Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 109:9-109:14
@@ -264,17 +256,6 @@ axiom cpu.bind_pi_claim
   :
   primitives.field.gf2_64x3.F192 → cpu.layout.Layout → RustM (Array
     leaf.ColumnClaim 3#usize)
-
-/-- [leanvm_core::cpu::to_scalar]:
-    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 698:0-700:1
-    Visibility: public -/
-axiom cpu.to_scalar : primitives.field.gf2_64x3.F192 → RustM verifier.field.E
-
-/-- [leanvm_core::cpu::from_scalar]:
-    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 702:0-704:1
-    Visibility: public -/
-axiom cpu.from_scalar
-  : verifier.field.E → RustM primitives.field.gf2_64x3.F192
 
 /-- [leanvm_core::cpu::scalar_proof]:
     Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 707:0-720:1

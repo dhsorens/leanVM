@@ -889,6 +889,62 @@ def cpu.isa.DerefMode.f_fp
     Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 50:0-50:31 -/
 @[global_simps, irreducible] def cpu.MAX_LOG_ROWS : Std.Usize := 32#usize
 
+/-- [leanvm_core::cpu::fs_seed::{impl core::ops::function::Fn<(usize,), u64> for leanvm_core::cpu::fs_seed::{closure}<'_0>}::call]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 78:15-78:77 -/
+def cpu.fs_seed.closure.Insts.CoreOpsFunctionFnTupleUsizeU64.call
+  (c : cpu.fs_seed.closure) (tupled_args : Std.Usize) : RustM Std.U64 := do
+  let i ← tupled_args + 8#usize
+  let s ←
+    core.Array.Insts.CoreOpsIndexIndex.index
+      (core.Slice.Insts.CoreOpsIndexIndex
+      (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+      Std.U8)) c { start := tupled_args, «end» := i }
+  let r ←
+    core.Array.Insts.CoreConvertTryFromShared0SliceTryFromSliceError.try_from
+      8#usize core.U8.Insts.CoreMarkerCopy s
+  let a ←
+    core.result.Result.unwrap core.array.TryFromSliceError.Insts.CoreFmtDebug r
+  core.num.U64.from_le_bytes a
+
+/-- [leanvm_core::cpu::fs_seed]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 68:0-80:1
+    Visibility: public -/
+def cpu.fs_seed
+  (program : cpu.Program) :
+  RustM (Array primitives.field.gf2_64x3.F192 2#usize)
+  := do
+  let h ← primitives.hash.Hasher.new
+  let s ←
+    core.array.Array.as_slice
+      (Array.make 6#usize [ 108#u8, 101#u8, 97#u8, 110#u8, 118#u8, 109#u8 ])
+  let (h1, update_back) ← primitives.hash.Hasher.update h s
+  let relation ← keccak.relation_digest
+  let h2 := update_back h1
+  let s1 ← core.array.Array.as_slice relation
+  let i ← core.slice.Slice.len s1
+  let i1 ← lift (UScalar.cast .U64 i)
+  let a ← core.num.U64.to_le_bytes i1
+  let s2 ← core.array.Array.as_slice a
+  let (h3, update_back1) ← primitives.hash.Hasher.update h2 s2
+  let h4 := update_back1 h3
+  let (h5, update_back2) ← primitives.hash.Hasher.update h4 s1
+  let h6 := update_back2 h5
+  let s3 ← core.array.Array.as_slice program.bytecode_hash
+  let (h7, update_back3) ← primitives.hash.Hasher.update h6 s3
+  let h8 := update_back3 h7
+  let d ← primitives.hash.Hasher.finalize h8
+  let i2 ←
+    cpu.fs_seed.closure.Insts.CoreOpsFunctionFnTupleUsizeU64.call d 0#usize
+  let i3 ←
+    cpu.fs_seed.closure.Insts.CoreOpsFunctionFnTupleUsizeU64.call d 8#usize
+  let f ← primitives.field.gf2_64x3.F192.new i2 i3 0#u64
+  let i4 ←
+    cpu.fs_seed.closure.Insts.CoreOpsFunctionFnTupleUsizeU64.call d 16#usize
+  let i5 ←
+    cpu.fs_seed.closure.Insts.CoreOpsFunctionFnTupleUsizeU64.call d 24#usize
+  let f1 ← primitives.field.gf2_64x3.F192.new i4 i5 0#u64
+  ok (Array.make 2#usize [ f, f1 ])
+
 /-- [leanvm_core::cpu::digest_words]:
     Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 86:0-93:1 -/
 def cpu.digest_words
@@ -898,6 +954,54 @@ def cpu.digest_words
   let f ← Array.index_usize halves 0#usize
   let f1 ← Array.index_usize halves 1#usize
   ok (Array.make 4#usize [ f.c0, f.c1, f1.c0, f1.c1 ])
+
+/-- [leanvm_core::cpu::announce_public]: loop body 0:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 103:4-105:5 -/
+@[rust_loop_body]
+def cpu.announce_public_loop.body
+  (iter : core.array.iter.IntoIter Std.Usize 6#usize)
+  (ps : fiat_shamir.transcript.ProverState) :
+  RustM (ControlFlow ((core.array.iter.IntoIter Std.Usize 6#usize) ×
+    fiat_shamir.transcript.ProverState) fiat_shamir.transcript.ProverState)
+  := do
+  let (o, iter1) ←
+    core.array.iter.IntoIter.Insts.CoreIterTraitsIteratorIterator.next iter
+  match o with
+  | core.option.Option.None => ok (done ps)
+  | core.option.Option.Some n =>
+    let i ← lift (UScalar.cast .U64 n)
+    let f ← primitives.field.gf2_64x3.F192.new i 0#u64 0#u64
+    let ps1 ← fiat_shamir.transcript.ProverState.add_scalar ps f
+    ok (cont (iter1, ps1))
+
+/-- [leanvm_core::cpu::announce_public]: loop 0:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 103:4-105:5 -/
+@[rust_loop]
+def cpu.announce_public_loop
+  (iter : core.array.iter.IntoIter Std.Usize 6#usize)
+  (ps : fiat_shamir.transcript.ProverState) :
+  RustM fiat_shamir.transcript.ProverState
+  := do
+  loop
+    (fun (iter1, ps1) => cpu.announce_public_loop.body iter1 ps1)
+    (iter, ps)
+
+/-- [leanvm_core::cpu::announce_public]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 101:0-107:1 -/
+def cpu.announce_public
+  (ps : fiat_shamir.transcript.ProverState) (log_mem : Std.Usize)
+  (rows : Array Std.Usize 6#usize) (log_inv_rate : Std.Usize) :
+  RustM fiat_shamir.transcript.ProverState
+  := do
+  let i ← lift (UScalar.cast .U64 log_mem)
+  let f ← primitives.field.gf2_64x3.F192.new i 0#u64 0#u64
+  let ps1 ← fiat_shamir.transcript.ProverState.add_scalar ps f
+  let iter ←
+    core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter.into_iter rows
+  let ps2 ← cpu.announce_public_loop iter ps1
+  let i1 ← lift (UScalar.cast .U64 log_inv_rate)
+  let f1 ← primitives.field.gf2_64x3.F192.new i1 0#u64 0#u64
+  fiat_shamir.transcript.ProverState.add_scalar ps2 f1
 
 /-- Trait implementation: [leanvm_core::cpu::{impl core::clone::Clone for leanvm_core::cpu::Program}]
     Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 109:9-109:14 -/
@@ -1115,6 +1219,20 @@ def cpu.Stats.TABLES : Array Str 6#usize :=
     toStr "XOR", toStr "MUL", toStr "SET", toStr "DEREF", toStr "JUMP", toStr
     "KECCAK"
     ]
+
+/-- [leanvm_core::cpu::to_scalar]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 698:0-700:1
+    Visibility: public -/
+def cpu.to_scalar
+  (value : primitives.field.gf2_64x3.F192) : RustM verifier.field.E := do
+  verifier.field.E.new value.c0 value.c1 value.c2
+
+/-- [leanvm_core::cpu::from_scalar]:
+    Source: 'crates/leanvm_core/src/cpu/mod.rs', lines 702:0-704:1
+    Visibility: public -/
+def cpu.from_scalar
+  (value : verifier.field.E) : RustM primitives.field.gf2_64x3.F192 := do
+  primitives.field.gf2_64x3.F192.new value.c0 value.c1 value.c2
 
 /-- [leanvm_core::keccak::STATE_CELLS]
     Source: 'crates/leanvm_core/src/keccak.rs', lines 62:0-62:34

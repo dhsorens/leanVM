@@ -53,6 +53,10 @@ structure alloc.string.ToString (Self : Type) where
 
 /-! ## Formatting -/
 
+/-- `Debug` for `String`, as CoreModels gives every type it models: the formatter, unwritten. -/
+def alloc.string.String.Insts.CoreFmtDebug : core.fmt.Debug alloc.string.String where
+  fmt := fun _ f => ok (.Ok (), f)
+
 /-- `Arguments::from_str`, the message of a `panic!` or `assert!` with a literal: CoreModels'
 `Arguments` is `Unit`. -/
 def core.fmt.Arguments.from_str (_ : Str) : RustM core.fmt.Arguments :=

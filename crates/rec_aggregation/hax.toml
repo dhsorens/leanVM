@@ -64,9 +64,6 @@ opaque = [
   "crate::aggregation::coord_kind",
   "crate::aggregation::coord_scale",
   "crate::aggregation::push_coord_terms",
-
-  # Reads the fields of `pcs`'s WHIR configuration, another crate's internals.
-  "crate::aggregation::whir_shape",
 ]
 exclude = [
   # `Error::source` is not a field of the hax Lean library's `Error`.
