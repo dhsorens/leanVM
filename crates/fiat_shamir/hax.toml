@@ -20,4 +20,3 @@ exclude = [
   "core::iter::traits::iterator::Iterator::find",
   "core::slice::iter::_::find",
 ]
-charon-args = ["--include", "primitives::field::gf2_64::F64", "--include", "primitives::field::gf2_64x3::F192"]

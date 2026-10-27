@@ -1,0 +1,93 @@
+diff --git a/crates/keccak_gkr/src/basis.rs b/crates/keccak_gkr/src/basis.rs
+index 412dc977..aca76a01 100644
+--- a/crates/keccak_gkr/src/basis.rs
++++ b/crates/keccak_gkr/src/basis.rs
+@@ -17,6 +17,17 @@ fn xor3(a: &mut [u64; 3], b: &[u64; 3]) {
+     }
+ }
+ 
++/// Clear bit `b` from every row but row `b`, adding row `b` to them.
++fn clear_column(rows: &mut [[u64; 3]; 192], ids: &mut [[u64; 3]; 192], b: usize) {
++    let (pa, pi) = (rows[b], ids[b]);
++    for r in 0..192 {
++        if r != b && rows[r][b / 64] >> (b % 64) & 1 == 1 {
++            xor3(&mut rows[r], &pa);
++            xor3(&mut ids[r], &pi);
++        }
++    }
++}
++
+ /// The map from a field element to its coefficients on `1, s, ..., s^191`.
+ pub struct PowerBasis {
+     tables: Vec<[[u64; 3]; 256]>,
+@@ -26,36 +37,32 @@ impl PowerBasis {
+     /// `None` when `s` lies in a proper subfield, where its powers do not span the field.
+     pub fn new(s: F192) -> Option<Self> {
+         // Row `r` holds bit `r` of every power, beside the identity.
+-        let mut rows = vec![([0u64; 3], [0u64; 3]); 192];
++        let mut rows = [[0u64; 3]; 192];
++        let mut ids = [[0u64; 3]; 192];
+         let mut power = F192::ONE;
+         for b in 0..192 {
+             let p = bits(power);
+             for r in 0..192 {
+-                rows[r].0[b / 64] |= (p[r / 64] >> (r % 64) & 1) << (b % 64);
++                rows[r][b / 64] |= (p[r / 64] >> (r % 64) & 1) << (b % 64);
+             }
+             power *= s;
+         }
+         for r in 0..192 {
+-            rows[r].1[r / 64] = 1 << (r % 64);
++            ids[r][r / 64] = 1 << (r % 64);
+         }
+         let mut singular = false;
+         for b in 0..192 {
+             let mut pivot = 192;
+             for r in b..192 {
+-                if pivot == 192 && rows[r].0[b / 64] >> (b % 64) & 1 == 1 {
++                if pivot == 192 && rows[r][b / 64] >> (b % 64) & 1 == 1 {
+                     pivot = r;
+                 }
+             }
+             singular |= pivot == 192;
+             if !singular {
+                 rows.swap(b, pivot);
+-                let (pa, pi) = rows[b];
+-                for r in 0..192 {
+-                    if r != b && rows[r].0[b / 64] >> (b % 64) & 1 == 1 {
+-                        xor3(&mut rows[r].0, &pa);
+-                        xor3(&mut rows[r].1, &pi);
+-                    }
+-                }
++                ids.swap(b, pivot);
++                clear_column(&mut rows, &mut ids, b);
+             }
+         }
+         if singular {
+@@ -65,7 +72,7 @@ impl PowerBasis {
+         let mut columns = [[0u64; 3]; 192];
+         for b in 0..192 {
+             for r in 0..192 {
+-                columns[r][b / 64] |= (rows[b].1[r / 64] >> (r % 64) & 1) << (b % 64);
++                columns[r][b / 64] |= (ids[b][r / 64] >> (r % 64) & 1) << (b % 64);
+             }
+         }
+         let mut tables = Vec::with_capacity(24);
+diff --git a/crates/keccak_gkr/src/lib.rs b/crates/keccak_gkr/src/lib.rs
+index f1caf383..f60bddf5 100644
+--- a/crates/keccak_gkr/src/lib.rs
++++ b/crates/keccak_gkr/src/lib.rs
+@@ -191,8 +191,11 @@ impl Witness {
+         for step in 0..shape.depth {
+             claim = prover::prove_layer(ps, self, &mut scratch, step, &claim);
+         }
+-        let outputs =
+-            (shape.segments() > 1).then(|| open::open_outputs(ps, shape, instance, &first, committed_value, folded));
++        let outputs = if shape.segments() > 1 {
++            Some(open::open_outputs(ps, shape, instance, &first, committed_value, folded))
++        } else {
++            None
++        };
+         let inputs = open::open_inputs(ps, self, committed, &claim);
+         Openings { outputs, inputs }
+     }
