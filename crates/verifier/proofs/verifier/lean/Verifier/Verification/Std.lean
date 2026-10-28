@@ -70,6 +70,21 @@ theorem from_elem_triple (x : verifier.field.E) (n : Std.Usize) :
     rw [hm, RustM.match.ok]
     simp only [dite_eq_left hb]
     exact Hax.triple_of_ok (Aeneas.Std.bind_ok _ _) (by rw [← hn]; exact Data.ListN.ListN.from_to_inverse)
+@[spec]
+theorem vec_new_triple (T : Type) :
+    ⦃ ⌜ True ⌝ ⦄ alloc.vec.Vec.new T ⦃ ⇓ v => ⌜ v.val = [] ⌝ ⦄ := by
+  simp only [alloc.vec.Vec.new, rust_primitives.sequence.seq_empty]
+  exact Hax.triple_of_ok (Aeneas.Std.bind_ok _ _) rfl
+
+@[spec]
+theorem vec_push_triple {T : Type} (v : alloc.vec.Vec T) (x : T) (h : v.length < Usize.max) :
+    ⦃ ⌜ True ⌝ ⦄ alloc.vec.Vec.push v x ⦃ ⇓ r => ⌜ r.val = v.val ++ [x] ⌝ ⦄ := by
+  have h' : (v.val ++ [x]).length ≤ Usize.max := by
+    have : v.val.length < Usize.max := h
+    simp; omega
+  simp only [alloc.vec.Vec.push, rust_primitives.sequence.seq_push, dite_eq_left h']
+  exact Hax.triple_of_ok (Aeneas.Std.bind_ok _ _) Data.ListN.ListN.from_to_inverse
+
 theorem getElem!_set {α : Type} [Inhabited α] (l : List α) (a j : ℕ) (x : α) :
     (l.set a x)[j]! = if a = j ∧ j < l.length then x else l[j]! := by
   by_cases h : a = j

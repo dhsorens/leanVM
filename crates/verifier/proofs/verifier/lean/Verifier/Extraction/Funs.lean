@@ -6260,23 +6260,20 @@ def multilinear.eq_eval
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.dot_loop.body
-  (iter : core.iter.adapters.zip.Zip (core.slice.iter.Iter field.E)
-  (core.slice.iter.Iter field.E)) (result : field.E) :
-  RustM (ControlFlow ((core.iter.adapters.zip.Zip (core.slice.iter.Iter
-    field.E) (core.slice.iter.Iter field.E)) × field.E) field.E)
+  (left : Slice field.E) (right : Slice field.E)
+  (iter : core.ops.range.Range Std.Usize) (result : field.E) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × field.E) field.E)
   := do
   let (o, iter1) ←
-    core.iter.adapters.zip.Zip.Insts.CoreIterTraitsIteratorIteratorPair.next
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      field.E)
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      field.E) iter
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
   match o with
   | core.option.Option.None => ok (done result)
-  | core.option.Option.Some p =>
-    let (x, y) := p
-    let e ← field.E.Insts.CoreOpsArithMulEE.mul x y
-    let result1 ← field.E.Insts.CoreOpsArithAddAssignE.add_assign result e
+  | core.option.Option.Some i =>
+    let e ← Slice.index_usize left i
+    let e1 ← Slice.index_usize right i
+    let e2 ← field.E.Insts.CoreOpsArithMulEE.mul e e1
+    let result1 ← field.E.Insts.CoreOpsArithAddAssignE.add_assign result e2
     ok (cont (iter1, result1))
 
 /-- [verifier::multilinear::dot]: loop 0:
@@ -6284,12 +6281,13 @@ def multilinear.dot_loop.body
     Visibility: public -/
 @[rust_loop]
 def multilinear.dot_loop
-  (iter : core.iter.adapters.zip.Zip (core.slice.iter.Iter field.E)
-  (core.slice.iter.Iter field.E)) (result : field.E) :
+  (iter : core.ops.range.Range Std.Usize) (left : Slice field.E)
+  (right : Slice field.E) (result : field.E) :
   RustM field.E
   := do
   loop
-    (fun (iter1, result1) => multilinear.dot_loop.body iter1 result1)
+    (fun (iter1, result1) => multilinear.dot_loop.body left right iter1
+      result1)
     (iter, result)
 
 /-- [verifier::multilinear::dot]:
@@ -6301,14 +6299,8 @@ def multilinear.dot
   let right_val ← core.slice.Slice.len right
   massert (left_val = right_val)
   let result ← field.ZERO
-  let i ← core.slice.Slice.iter left
-  let iter ←
-    core.iter.traits.iterator.Iterator.zip.default
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      field.E)
-      (core.SharedASlice.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter
-      field.E) i right
-  multilinear.dot_loop iter result
+  multilinear.dot_loop { start := 0#usize, «end» := left_val } left right
+    result
 
 /-- [verifier::multilinear::padding_weight::{impl core::ops::function::Fn<(usize,), verifier::field::E> for verifier::multilinear::padding_weight::{closure}<'_0>}::call]:
     Source: 'crates/verifier/src/multilinear.rs', lines 91:14-91:49 -/
