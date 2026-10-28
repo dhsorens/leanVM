@@ -12,6 +12,8 @@ Stage 1 is in place for every crate in `crates/`. [`formal/extraction/README.md`
 - Rust the toolchain cannot translate is rewritten by small patches applied only while extracting. The committed source is never patched, and CI runs each patched crate's tests, including checks against real proofs, on the patched source.
 - CI fails when a committed extraction no longer matches the Rust, when one no longer typechecks, or when the patched source fails its tests. Every run reports what each extraction trusts: opaque items, untranslated bodies, patches, and the shared standard-library models.
 
+Stage 2 has begun with the native verifier, whose proofs live in `crates/verifier/proofs/verifier/lean/Verifier/Verification/` and are built with every extraction. They show that the extracted field arithmetic is CompPoly's `BF64` and its cubic extension `Ext3`, that `eq_kernel` computes ArkLib's `multilinearWeight`, and that the verifier's level-0 WHIR fold of a queried row is ArkLib's `multilinearCombine` of the row's lanes (`level0_fold`), resting on no opaque item's assumption.
+
 ## Introduction
 
 Every day, LLMs become more capable of finding and exploiting vulnerabilities in software. However, for those of us shipping production, security-critical code, LLMs can be an equally (if not more) powerful defensive tool. In order to ship secure software moving forward, **we must establish a culture of formally verifying our production codebases**. Formal verification should complement existing security tools and measures, not replace them.

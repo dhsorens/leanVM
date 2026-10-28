@@ -30,7 +30,7 @@ noncomputable section
 namespace verifier
 
 /-- [verifier::multilinear::log2_ceil]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 61:0-63:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 62:0-64:1
     Visibility: public -/
 def multilinear.log2_ceil (value : Std.U64) : RustM Std.Usize := do
   let i ← core.num.U64.saturating_sub value 1#u64
@@ -39,7 +39,7 @@ def multilinear.log2_ceil (value : Std.U64) : RustM Std.Usize := do
   ok (UScalar.cast .Usize i2)
 
 /-- [verifier::multilinear::stack_offsets]: loop body 1:
-    Source: 'crates/verifier/src/multilinear.rs', lines 145:8-147:9
+    Source: 'crates/verifier/src/multilinear.rs', lines 146:8-148:9
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.stack_offsets_loop0_loop0.body
@@ -61,7 +61,7 @@ def multilinear.stack_offsets_loop0_loop0.body
   else ok (done position)
 
 /-- [verifier::multilinear::stack_offsets]: loop 1:
-    Source: 'crates/verifier/src/multilinear.rs', lines 145:8-147:9
+    Source: 'crates/verifier/src/multilinear.rs', lines 146:8-148:9
     Visibility: public -/
 @[rust_loop]
 def multilinear.stack_offsets_loop0_loop0
@@ -75,7 +75,7 @@ def multilinear.stack_offsets_loop0_loop0
     position
 
 /-- [verifier::multilinear::stack_offsets]: loop body 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 143:4-149:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 144:4-150:5
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.stack_offsets_loop0.body
@@ -97,7 +97,7 @@ def multilinear.stack_offsets_loop0.body
     ok (cont (iter1, order1))
 
 /-- [verifier::multilinear::stack_offsets]: loop 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 143:4-149:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 144:4-150:5
     Visibility: public -/
 @[rust_loop]
 def multilinear.stack_offsets_loop0
@@ -111,7 +111,7 @@ def multilinear.stack_offsets_loop0
     (iter, order)
 
 /-- [verifier::multilinear::stack_offsets]: loop body 2:
-    Source: 'crates/verifier/src/multilinear.rs', lines 152:4-155:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 153:4-156:5
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.stack_offsets_loop1.body
@@ -135,7 +135,7 @@ def multilinear.stack_offsets_loop1.body
     ok (cont (iter1, offsets1, total1))
 
 /-- [verifier::multilinear::stack_offsets]: loop 2:
-    Source: 'crates/verifier/src/multilinear.rs', lines 152:4-155:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 153:4-156:5
     Visibility: public -/
 @[rust_loop]
 def multilinear.stack_offsets_loop1
@@ -149,7 +149,7 @@ def multilinear.stack_offsets_loop1
     (iter, offsets, total)
 
 /-- [verifier::multilinear::stack_offsets]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 140:0-157:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 141:0-158:1
     Visibility: public -/
 def multilinear.stack_offsets
   (sizes : Slice Std.Usize) :
@@ -3154,6 +3154,122 @@ def keccak.instance_weights (s : field.E) : RustM (alloc.vec.Vec field.E) := do
     keccak.instance_weights.closure.Insts.CoreOpsFunctionFnMutTupleShared1U32E)
     (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator field.E) m
 
+/-- [verifier::multilinear::{verifier::multilinear::Scaler}::mul]:
+    Source: 'crates/verifier/src/multilinear.rs', lines 38:4-43:5 -/
+def multilinear.Scaler.mul
+  (self : multilinear.Scaler) (value : field.E) : RustM field.E := do
+  match self with
+  | multilinear.Scaler.Table table => field.Scaled.mul table value
+  | multilinear.Scaler.Plain r => field.E.Insts.CoreOpsArithMulEE.mul value r
+
+/-- [verifier::multilinear::{verifier::multilinear::Scaler}::new]:
+    Source: 'crates/verifier/src/multilinear.rs', lines 29:4-35:5 -/
+def multilinear.Scaler.new
+  (r : field.E) (uses : Std.Usize) : RustM multilinear.Scaler := do
+  if uses >= 256#usize
+  then let s ← field.Scaled.new r
+       ok (multilinear.Scaler.Table s)
+  else ok (multilinear.Scaler.Plain r)
+
+/-- [verifier::multilinear::eq_kernel]: loop body 1:
+    Source: 'crates/verifier/src/multilinear.rs', lines 13:8-17:9
+    Visibility: public -/
+@[rust_loop_body]
+def multilinear.eq_kernel_loop0_loop0.body
+  (half : Std.Usize) (scale : multilinear.Scaler)
+  (iter : core.ops.range.Range Std.Usize) (out : alloc.vec.Vec field.E) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (alloc.vec.Vec
+    field.E)) (alloc.vec.Vec field.E))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done out)
+  | core.option.Option.Some i =>
+    let e ←
+      alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
+        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out i
+    let h ← multilinear.Scaler.mul scale e
+    let i1 ← i + half
+    let (_, index_mut_back) ←
+      alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
+        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out i1
+    let out1 := index_mut_back h
+    let (e1, index_mut_back1) ←
+      alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
+        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out1 i
+    let e2 ← field.E.Insts.CoreOpsArithAddAssignE.add_assign e1 h
+    let out2 := index_mut_back1 e2
+    ok (cont (iter1, out2))
+
+/-- [verifier::multilinear::eq_kernel]: loop 1:
+    Source: 'crates/verifier/src/multilinear.rs', lines 13:8-17:9
+    Visibility: public -/
+@[rust_loop]
+def multilinear.eq_kernel_loop0_loop0
+  (iter : core.ops.range.Range Std.Usize) (out : alloc.vec.Vec field.E)
+  (half : Std.Usize) (scale : multilinear.Scaler) :
+  RustM (alloc.vec.Vec field.E)
+  := do
+  loop
+    (fun (iter1, out1) => multilinear.eq_kernel_loop0_loop0.body half scale
+      iter1 out1)
+    (iter, out)
+
+/-- [verifier::multilinear::eq_kernel]: loop body 0:
+    Source: 'crates/verifier/src/multilinear.rs', lines 10:4-18:5
+    Visibility: public -/
+@[rust_loop_body]
+def multilinear.eq_kernel_loop0.body
+  (point : Slice field.E) (iter : core.ops.range.Range Std.Usize)
+  (out : alloc.vec.Vec field.E) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (alloc.vec.Vec
+    field.E)) (alloc.vec.Vec field.E))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done out)
+  | core.option.Option.Some k =>
+    let half ← 1#usize <<< k
+    let e ← Slice.index_usize point k
+    let scale ← multilinear.Scaler.new e half
+    let out1 ←
+      multilinear.eq_kernel_loop0_loop0 { start := 0#usize, «end» := half }
+        out half scale
+    ok (cont (iter1, out1))
+
+/-- [verifier::multilinear::eq_kernel]: loop 0:
+    Source: 'crates/verifier/src/multilinear.rs', lines 10:4-18:5
+    Visibility: public -/
+@[rust_loop]
+def multilinear.eq_kernel_loop0
+  (iter : core.ops.range.Range Std.Usize) (point : Slice field.E)
+  (out : alloc.vec.Vec field.E) :
+  RustM (alloc.vec.Vec field.E)
+  := do
+  loop
+    (fun (iter1, out1) => multilinear.eq_kernel_loop0.body point iter1 out1)
+    (iter, out)
+
+/-- [verifier::multilinear::eq_kernel]:
+    Source: 'crates/verifier/src/multilinear.rs', lines 7:0-20:1
+    Visibility: public -/
+def multilinear.eq_kernel
+  (point : Slice field.E) : RustM (alloc.vec.Vec field.E) := do
+  let i ← core.slice.Slice.len point
+  let i1 ← 1#usize <<< i
+  let e ← field.ZERO
+  let out ← alloc.vec.from_elem field.E.Insts.CoreCloneClone e i1
+  let (_, index_mut_back) ←
+    alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
+      (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out 0#usize
+  let e1 ← field.ONE
+  let out1 := index_mut_back e1
+  multilinear.eq_kernel_loop0 { start := 0#usize, «end» := i } point out1
+
 /-- [verifier::keccak::slot_weights]: loop body 1:
     Source: 'crates/verifier/src/keccak.rs', lines 196:8-198:9 -/
 @[rust_loop_body]
@@ -3604,7 +3720,7 @@ def transcript.Transcript.sample
   ok (e, { self with sponge := s })
 
 /-- [verifier::multilinear::poly_eval]: loop body 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 112:4-114:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 113:4-115:5
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.poly_eval_loop.body
@@ -3627,7 +3743,7 @@ def multilinear.poly_eval_loop.body
     ok (cont (iter1, acc1))
 
 /-- [verifier::multilinear::poly_eval]: loop 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 112:4-114:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 113:4-115:5
     Visibility: public -/
 @[rust_loop]
 def multilinear.poly_eval_loop
@@ -3641,7 +3757,7 @@ def multilinear.poly_eval_loop
     (iter, acc)
 
 /-- [verifier::multilinear::poly_eval]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 110:0-116:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 111:0-117:1
     Visibility: public -/
 def multilinear.poly_eval
   (coefficients : Slice field.E) (point : field.E) : RustM field.E := do
@@ -5874,25 +5990,8 @@ def merkle.MerklePath.root (self : merkle.MerklePath) : RustM hash.Digest := do
       Std.U8 32#usize)) i
   merkle.MerklePath.root_loop iter self.leaf_index node
 
-/-- [verifier::multilinear::{verifier::multilinear::Scaler}::new]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 28:4-34:5 -/
-def multilinear.Scaler.new
-  (r : field.E) (uses : Std.Usize) : RustM multilinear.Scaler := do
-  if uses >= 256#usize
-  then let s ← field.Scaled.new r
-       ok (multilinear.Scaler.Table s)
-  else ok (multilinear.Scaler.Plain r)
-
-/-- [verifier::multilinear::{verifier::multilinear::Scaler}::mul]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 37:4-42:5 -/
-def multilinear.Scaler.mul
-  (self : multilinear.Scaler) (value : field.E) : RustM field.E := do
-  match self with
-  | multilinear.Scaler.Table table => field.Scaled.mul table value
-  | multilinear.Scaler.Plain r => field.E.Insts.CoreOpsArithMulEE.mul value r
-
 /-- [verifier::multilinear::multilinear_eval::{impl core::ops::function::FnMut<(&'_0 T,), verifier::field::E> for verifier::multilinear::multilinear_eval::{closure}<T>}::call_mut]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 50:41-50:62 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 51:41-51:62 -/
 def
   multilinear.multilinear_eval.closure.Insts.CoreOpsFunctionFnMutTupleShared0TE.call_mut
   {T : Type _} (coremarkerCopyInst : core.marker.Copy T) (coreconvertIntoTEInst
@@ -5904,7 +6003,7 @@ def
   ok (e, c)
 
 /-- [verifier::multilinear::multilinear_eval::{impl core::ops::function::FnOnce<(&'_0 T,), verifier::field::E> for verifier::multilinear::multilinear_eval::{closure}<T>}::call_once]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 50:41-50:62 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 51:41-51:62 -/
 def
   multilinear.multilinear_eval.closure.Insts.CoreOpsFunctionFnOnceTupleShared0TE.call_once
   {T : Type _} (coremarkerCopyInst : core.marker.Copy T) (coreconvertIntoTEInst
@@ -5918,7 +6017,7 @@ def
   ok e
 
 /-- Trait implementation: [verifier::multilinear::multilinear_eval::{impl core::ops::function::FnOnce<(&'_0 T,), verifier::field::E> for verifier::multilinear::multilinear_eval::{closure}<T>}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 50:41-50:62 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 51:41-51:62 -/
 @[reducible]
 def
   multilinear.multilinear_eval.closure.Insts.CoreOpsFunctionFnOnceTupleShared0TE
@@ -5931,7 +6030,7 @@ def
 }
 
 /-- Trait implementation: [verifier::multilinear::multilinear_eval::{impl core::ops::function::FnMut<(&'_0 T,), verifier::field::E> for verifier::multilinear::multilinear_eval::{closure}<T>}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 50:41-50:62 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 51:41-51:62 -/
 @[reducible]
 def
   multilinear.multilinear_eval.closure.Insts.CoreOpsFunctionFnMutTupleShared0TE
@@ -5947,7 +6046,7 @@ def
 }
 
 /-- [verifier::multilinear::multilinear_eval]: loop body 1:
-    Source: 'crates/verifier/src/multilinear.rs', lines 53:8-55:9
+    Source: 'crates/verifier/src/multilinear.rs', lines 54:8-56:9
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.multilinear_eval_loop0_loop0.body
@@ -5983,7 +6082,7 @@ def multilinear.multilinear_eval_loop0_loop0.body
     ok (cont (iter1, cur1))
 
 /-- [verifier::multilinear::multilinear_eval]: loop 1:
-    Source: 'crates/verifier/src/multilinear.rs', lines 53:8-55:9
+    Source: 'crates/verifier/src/multilinear.rs', lines 54:8-56:9
     Visibility: public -/
 @[rust_loop]
 def multilinear.multilinear_eval_loop0_loop0
@@ -5997,7 +6096,7 @@ def multilinear.multilinear_eval_loop0_loop0
     (iter, cur)
 
 /-- [verifier::multilinear::multilinear_eval]: loop body 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 51:4-57:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 52:4-58:5
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.multilinear_eval_loop0.body
@@ -6023,7 +6122,7 @@ def multilinear.multilinear_eval_loop0.body
     ok (cont (iter1, cur2))
 
 /-- [verifier::multilinear::multilinear_eval]: loop 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 51:4-57:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 52:4-58:5
     Visibility: public -/
 @[rust_loop]
 def multilinear.multilinear_eval_loop0
@@ -6035,7 +6134,7 @@ def multilinear.multilinear_eval_loop0
     (iter, cur)
 
 /-- [verifier::multilinear::multilinear_eval]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 45:0-59:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 46:0-60:1
     Visibility: public -/
 def multilinear.multilinear_eval
   {T : Type _} (coremarkerCopyInst : core.marker.Copy T) (coreconvertIntoTEInst
@@ -6081,7 +6180,7 @@ def multilinear.multilinear_eval
       field.E (core.convert.From.Blanket VerifierError) residual
 
 /-- [verifier::multilinear::log2_strict]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 65:0-68:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 66:0-69:1
     Visibility: public -/
 def multilinear.log2_strict
   (value : Std.U64) : RustM (core.result.Result Std.Usize VerifierError) := do
@@ -6098,7 +6197,7 @@ def multilinear.log2_strict
       Std.Usize (core.convert.From.Blanket VerifierError) residual
 
 /-- [verifier::multilinear::eq_eval]: loop body 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 73:4-75:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 74:4-76:5
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.eq_eval_loop.body
@@ -6124,7 +6223,7 @@ def multilinear.eq_eval_loop.body
     ok (cont (iter1, result2))
 
 /-- [verifier::multilinear::eq_eval]: loop 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 73:4-75:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 74:4-76:5
     Visibility: public -/
 @[rust_loop]
 def multilinear.eq_eval_loop
@@ -6139,7 +6238,7 @@ def multilinear.eq_eval_loop
     (iter, result1)
 
 /-- [verifier::multilinear::eq_eval]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 70:0-77:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 71:0-78:1
     Visibility: public -/
 def multilinear.eq_eval
   (left : Slice field.E) (right : Slice field.E) : RustM field.E := do
@@ -6157,7 +6256,7 @@ def multilinear.eq_eval
   multilinear.eq_eval_loop result iter result
 
 /-- [verifier::multilinear::dot]: loop body 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 82:4-84:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 83:4-85:5
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.dot_loop.body
@@ -6181,7 +6280,7 @@ def multilinear.dot_loop.body
     ok (cont (iter1, result1))
 
 /-- [verifier::multilinear::dot]: loop 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 82:4-84:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 83:4-85:5
     Visibility: public -/
 @[rust_loop]
 def multilinear.dot_loop
@@ -6194,7 +6293,7 @@ def multilinear.dot_loop
     (iter, result)
 
 /-- [verifier::multilinear::dot]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 79:0-86:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 80:0-87:1
     Visibility: public -/
 def multilinear.dot
   (left : Slice field.E) (right : Slice field.E) : RustM field.E := do
@@ -6212,7 +6311,7 @@ def multilinear.dot
   multilinear.dot_loop iter result
 
 /-- [verifier::multilinear::padding_weight::{impl core::ops::function::Fn<(usize,), verifier::field::E> for verifier::multilinear::padding_weight::{closure}<'_0>}::call]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 90:14-90:49 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 91:14-91:49 -/
 def multilinear.padding_weight.closure.Insts.CoreOpsFunctionFnTupleUsizeE.call
   (c : multilinear.padding_weight.closure) (tupled_args : Std.Usize) :
   RustM field.E
@@ -6222,7 +6321,7 @@ def multilinear.padding_weight.closure.Insts.CoreOpsFunctionFnTupleUsizeE.call
   field.E.new i1 0#u64 0#u64
 
 /-- [verifier::multilinear::padding_weight::{impl core::ops::function::FnMut<(verifier::field::E, (usize, &'_2 verifier::field::E)), verifier::field::E> for verifier::multilinear::padding_weight::{closure#1}<'_0, '_1>}::call_mut]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 94:19-94:79 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 95:19-95:79 -/
 def
   multilinear.padding_weight.closure_1.Insts.CoreOpsFunctionFnMutPairEPairUsizeShared2EE.call_mut
   (c : multilinear.padding_weight.closure_1)
@@ -6243,7 +6342,7 @@ def
   ok (e7, c)
 
 /-- [verifier::multilinear::padding_weight::{impl core::ops::function::FnOnce<(verifier::field::E, (usize, &'_2 verifier::field::E)), verifier::field::E> for verifier::multilinear::padding_weight::{closure#1}<'_0, '_1>}::call_once]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 94:19-94:79 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 95:19-95:79 -/
 def
   multilinear.padding_weight.closure_1.Insts.CoreOpsFunctionFnOncePairEPairUsizeShared2EE.call_once
   (c : multilinear.padding_weight.closure_1)
@@ -6256,7 +6355,7 @@ def
   ok e
 
 /-- Trait implementation: [verifier::multilinear::padding_weight::{impl core::ops::function::FnOnce<(verifier::field::E, (usize, &'_2 verifier::field::E)), verifier::field::E> for verifier::multilinear::padding_weight::{closure#1}<'_0, '_1>}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 94:19-94:79 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 95:19-95:79 -/
 @[reducible]
 def
   multilinear.padding_weight.closure_1.Insts.CoreOpsFunctionFnOncePairEPairUsizeShared2EE
@@ -6267,7 +6366,7 @@ def
 }
 
 /-- Trait implementation: [verifier::multilinear::padding_weight::{impl core::ops::function::FnMut<(verifier::field::E, (usize, &'_2 verifier::field::E)), verifier::field::E> for verifier::multilinear::padding_weight::{closure#1}<'_0, '_1>}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 94:19-94:79 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 95:19-95:79 -/
 @[reducible]
 def
   multilinear.padding_weight.closure_1.Insts.CoreOpsFunctionFnMutPairEPairUsizeShared2EE
@@ -6280,7 +6379,7 @@ def
 }
 
 /-- [verifier::multilinear::padding_weight]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 89:0-96:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 90:0-97:1
     Visibility: public -/
 def multilinear.padding_weight
   (point : Slice field.E) (n : Std.U64) : RustM field.E := do
@@ -6304,7 +6403,7 @@ def multilinear.padding_weight
   field.E.Insts.CoreOpsArithMulEE.mul e3 low
 
 /-- [verifier::multilinear::index_mle]: loop body 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 102:4-105:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 103:4-106:5
     Visibility: public -/
 @[rust_loop_body]
 def multilinear.index_mle_loop.body
@@ -6326,7 +6425,7 @@ def multilinear.index_mle_loop.body
     ok (cont (iter1, result2, generator_power1))
 
 /-- [verifier::multilinear::index_mle]: loop 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 102:4-105:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 103:4-106:5
     Visibility: public -/
 @[rust_loop]
 def multilinear.index_mle_loop
@@ -6340,7 +6439,7 @@ def multilinear.index_mle_loop
     (iter, result1, generator_power)
 
 /-- [verifier::multilinear::index_mle]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 99:0-107:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 100:0-108:1
     Visibility: public -/
 def multilinear.index_mle (point : Slice field.E) : RustM field.E := do
   let result ← field.ONE
@@ -6351,14 +6450,14 @@ def multilinear.index_mle (point : Slice field.E) : RustM field.E := do
   multilinear.index_mle_loop result iter result generator_power
 
 /-- [verifier::multilinear::{impl core::clone::Clone for verifier::multilinear::Placement}::clone]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 119:9-119:14
+    Source: 'crates/verifier/src/multilinear.rs', lines 120:9-120:14
     Visibility: public -/
 def multilinear.Placement.Insts.CoreCloneClone.clone
   (self : multilinear.Placement) : RustM multilinear.Placement := do
   ok self
 
 /-- Trait implementation: [verifier::multilinear::{impl core::clone::Clone for verifier::multilinear::Placement}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 119:9-119:14 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 120:9-120:14 -/
 @[reducible]
 impl_def multilinear.Placement.Insts.CoreCloneClone : core.clone.Clone
   multilinear.Placement := {
@@ -6368,7 +6467,7 @@ impl_def multilinear.Placement.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- Trait implementation: [verifier::multilinear::{impl core::marker::Copy for verifier::multilinear::Placement}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 119:16-119:20 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 120:16-120:20 -/
 @[reducible]
 def multilinear.Placement.Insts.CoreMarkerCopy : core.marker.Copy
   multilinear.Placement := {
@@ -6376,7 +6475,7 @@ def multilinear.Placement.Insts.CoreMarkerCopy : core.marker.Copy
 }
 
 /-- Trait implementation: [verifier::multilinear::{impl core::fmt::Debug for verifier::multilinear::Placement}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 119:22-119:27 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 120:22-120:27 -/
 @[reducible]
 def multilinear.Placement.Insts.CoreFmtDebug : core.fmt.Debug
   multilinear.Placement := {
@@ -6384,7 +6483,7 @@ def multilinear.Placement.Insts.CoreFmtDebug : core.fmt.Debug
 }
 
 /-- [verifier::multilinear::selector_point::{impl core::ops::function::FnMut<(usize,), verifier::field::E> for verifier::multilinear::selector_point::{closure}<'_0>}::call_mut]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 160:20-160:59 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 161:20-161:59 -/
 def
   multilinear.selector_point.closure.Insts.CoreOpsFunctionFnMutTupleUsizeE.call_mut
   (c : multilinear.selector_point.closure) (tupled_args : Std.Usize) :
@@ -6396,7 +6495,7 @@ def
   ok (e, c)
 
 /-- [verifier::multilinear::selector_point::{impl core::ops::function::FnOnce<(usize,), verifier::field::E> for verifier::multilinear::selector_point::{closure}<'_0>}::call_once]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 160:20-160:59 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 161:20-161:59 -/
 def
   multilinear.selector_point.closure.Insts.CoreOpsFunctionFnOnceTupleUsizeE.call_once
   (c : multilinear.selector_point.closure) (i : Std.Usize) :
@@ -6408,7 +6507,7 @@ def
   ok e
 
 /-- Trait implementation: [verifier::multilinear::selector_point::{impl core::ops::function::FnOnce<(usize,), verifier::field::E> for verifier::multilinear::selector_point::{closure}<'_0>}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 160:20-160:59 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 161:20-161:59 -/
 @[reducible]
 def multilinear.selector_point.closure.Insts.CoreOpsFunctionFnOnceTupleUsizeE :
   core.ops.function.FnOnce multilinear.selector_point.closure Std.Usize field.E
@@ -6418,7 +6517,7 @@ def multilinear.selector_point.closure.Insts.CoreOpsFunctionFnOnceTupleUsizeE :
 }
 
 /-- Trait implementation: [verifier::multilinear::selector_point::{impl core::ops::function::FnMut<(usize,), verifier::field::E> for verifier::multilinear::selector_point::{closure}<'_0>}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 160:20-160:59 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 161:20-161:59 -/
 @[reducible]
 def multilinear.selector_point.closure.Insts.CoreOpsFunctionFnMutTupleUsizeE :
   core.ops.function.FnMut multilinear.selector_point.closure Std.Usize field.E
@@ -6430,7 +6529,7 @@ def multilinear.selector_point.closure.Insts.CoreOpsFunctionFnMutTupleUsizeE :
 }
 
 /-- [verifier::multilinear::selector_point]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 159:0-161:1 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 160:0-162:1 -/
 def multilinear.selector_point
   (selector : Std.U64) (length : Std.Usize) :
   RustM (alloc.vec.Vec field.E)
@@ -6449,7 +6548,7 @@ def multilinear.selector_point
     (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator field.E) m
 
 /-- [verifier::multilinear::{verifier::multilinear::Placement}::stack_point]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 126:4-131:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 127:4-132:5
     Visibility: public -/
 def multilinear.Placement.stack_point
   (self : multilinear.Placement) (point : Slice field.E)
@@ -6464,7 +6563,7 @@ def multilinear.Placement.stack_point
   alloc.vec.Vec.extend_from_slice field.E.Insts.CoreCloneClone stacked s
 
 /-- [verifier::multilinear::{verifier::multilinear::Placement}::eq_above]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 134:4-137:5
+    Source: 'crates/verifier/src/multilinear.rs', lines 135:4-138:5
     Visibility: public -/
 def multilinear.Placement.eq_above
   (self : multilinear.Placement) (point : Slice field.E) : RustM field.E := do
@@ -7412,8 +7511,54 @@ def whir.ext_row (words : Slice field.K) : RustM (alloc.vec.Vec field.E) := do
   let i1 ← i / 3#usize
   whir.ext_row_loop { start := 0#usize, «end» := i1 } words row
 
+/-- [verifier::whir::base_fold]: loop body 0:
+    Source: 'crates/verifier/src/whir.rs', lines 74:4-76:5 -/
+@[rust_loop_body]
+def whir.base_fold_loop.body
+  (row : Slice field.K) (lane_weights : Slice field.E) (n : Std.Usize)
+  (iter : core.ops.range.Range Std.Usize) (sum : field.E) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × field.E) field.E)
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done sum)
+  | core.option.Option.Some t =>
+    let e ← Slice.index_usize lane_weights t
+    let i ← n - 1#usize
+    let i1 ← i - t
+    let k ← Slice.index_usize row i1
+    let e1 ← field.E.Insts.CoreOpsArithMulKE.mul e k
+    let sum1 ← field.E.Insts.CoreOpsArithAddAssignE.add_assign sum e1
+    ok (cont (iter1, sum1))
+
+/-- [verifier::whir::base_fold]: loop 0:
+    Source: 'crates/verifier/src/whir.rs', lines 74:4-76:5 -/
+@[rust_loop]
+def whir.base_fold_loop
+  (iter : core.ops.range.Range Std.Usize) (row : Slice field.K)
+  (lane_weights : Slice field.E) (n : Std.Usize) (sum : field.E) :
+  RustM field.E
+  := do
+  loop
+    (fun (iter1, sum1) => whir.base_fold_loop.body row lane_weights n iter1
+      sum1)
+    (iter, sum)
+
+/-- [verifier::whir::base_fold]:
+    Source: 'crates/verifier/src/whir.rs', lines 70:0-78:1 -/
+def whir.base_fold
+  (row : Slice field.K) (lane_weights : Slice field.E) : RustM field.E := do
+  let left_val ← core.slice.Slice.len row
+  let right_val ← core.slice.Slice.len lane_weights
+  massert (left_val = right_val)
+  let sum ← field.ZERO
+  whir.base_fold_loop { start := 0#usize, «end» := left_val } row
+    lane_weights left_val sum
+
 /-- [verifier::whir::sample_queries]: loop body 1:
-    Source: 'crates/verifier/src/whir.rs', lines 76:8-81:9 -/
+    Source: 'crates/verifier/src/whir.rs', lines 87:8-92:9 -/
 @[rust_loop_body]
 def whir.sample_queries_loop0_loop0.body
   (transcript1 : transcript.Transcript) (block_length : Std.U64)
@@ -7450,7 +7595,7 @@ def whir.sample_queries_loop0_loop0.body
     ok (cont (iter1, result1))
 
 /-- [verifier::whir::sample_queries]: loop 1:
-    Source: 'crates/verifier/src/whir.rs', lines 76:8-81:9 -/
+    Source: 'crates/verifier/src/whir.rs', lines 87:8-92:9 -/
 @[rust_loop]
 def whir.sample_queries_loop0_loop0
   (iter : core.ops.range.Range Std.Usize) (transcript1 : transcript.Transcript)
@@ -7465,7 +7610,7 @@ def whir.sample_queries_loop0_loop0
     (iter, result)
 
 /-- [verifier::whir::sample_queries]: loop body 0:
-    Source: 'crates/verifier/src/whir.rs', lines 73:4-82:5 -/
+    Source: 'crates/verifier/src/whir.rs', lines 84:4-93:5 -/
 @[rust_loop_body]
 def whir.sample_queries_loop0.body
   (block_length : Std.U64) (count : Std.Usize) (depth : Std.Usize)
@@ -7500,7 +7645,7 @@ def whir.sample_queries_loop0.body
   else ok (done (p, s, i, i1, b, v, result))
 
 /-- [verifier::whir::sample_queries]: loop 0:
-    Source: 'crates/verifier/src/whir.rs', lines 73:4-82:5 -/
+    Source: 'crates/verifier/src/whir.rs', lines 84:4-93:5 -/
 @[rust_loop]
 def whir.sample_queries_loop0
   (p : transcript.Proof) (s : transcript.Sponge) (i : Std.Usize)
@@ -7516,7 +7661,7 @@ def whir.sample_queries_loop0
     (p, s, i, i1, b, v, result)
 
 /-- [verifier::whir::sample_queries]:
-    Source: 'crates/verifier/src/whir.rs', lines 69:0-84:1 -/
+    Source: 'crates/verifier/src/whir.rs', lines 80:0-95:1 -/
 def whir.sample_queries
   (transcript1 : transcript.Transcript) (block_length : Std.U64)
   (count : Std.Usize) :
@@ -7551,7 +7696,7 @@ def whir.sample_queries
     ok (r1, transcript1)
 
 /-- [verifier::whir::subspace_roots::{impl core::ops::function::FnMut<(usize,), verifier::field::K> for verifier::whir::subspace_roots::{closure}}::call_mut]:
-    Source: 'crates/verifier/src/whir.rs', lines 89:47-89:60 -/
+    Source: 'crates/verifier/src/whir.rs', lines 100:47-100:60 -/
 def whir.subspace_roots.closure.Insts.CoreOpsFunctionFnMutTupleUsizeK.call_mut
   (c : whir.subspace_roots.closure) (tupled_args : Std.Usize) :
   RustM (field.K × whir.subspace_roots.closure)
@@ -7560,7 +7705,7 @@ def whir.subspace_roots.closure.Insts.CoreOpsFunctionFnMutTupleUsizeK.call_mut
   ok (i, c)
 
 /-- [verifier::whir::subspace_roots::{impl core::ops::function::FnOnce<(usize,), verifier::field::K> for verifier::whir::subspace_roots::{closure}}::call_once]:
-    Source: 'crates/verifier/src/whir.rs', lines 89:47-89:60 -/
+    Source: 'crates/verifier/src/whir.rs', lines 100:47-100:60 -/
 def
   whir.subspace_roots.closure.Insts.CoreOpsFunctionFnOnceTupleUsizeK.call_once
   (c : whir.subspace_roots.closure) (i : Std.Usize) : RustM field.K := do
@@ -7570,7 +7715,7 @@ def
   ok k
 
 /-- Trait implementation: [verifier::whir::subspace_roots::{impl core::ops::function::FnOnce<(usize,), verifier::field::K> for verifier::whir::subspace_roots::{closure}}]
-    Source: 'crates/verifier/src/whir.rs', lines 89:47-89:60 -/
+    Source: 'crates/verifier/src/whir.rs', lines 100:47-100:60 -/
 @[reducible]
 def whir.subspace_roots.closure.Insts.CoreOpsFunctionFnOnceTupleUsizeK :
   core.ops.function.FnOnce whir.subspace_roots.closure Std.Usize field.K := {
@@ -7579,7 +7724,7 @@ def whir.subspace_roots.closure.Insts.CoreOpsFunctionFnOnceTupleUsizeK :
 }
 
 /-- Trait implementation: [verifier::whir::subspace_roots::{impl core::ops::function::FnMut<(usize,), verifier::field::K> for verifier::whir::subspace_roots::{closure}}]
-    Source: 'crates/verifier/src/whir.rs', lines 89:47-89:60 -/
+    Source: 'crates/verifier/src/whir.rs', lines 100:47-100:60 -/
 @[reducible]
 def whir.subspace_roots.closure.Insts.CoreOpsFunctionFnMutTupleUsizeK :
   core.ops.function.FnMut whir.subspace_roots.closure Std.Usize field.K := {
@@ -7590,7 +7735,7 @@ def whir.subspace_roots.closure.Insts.CoreOpsFunctionFnMutTupleUsizeK :
 }
 
 /-- [verifier::whir::subspace_roots]: loop body 1:
-    Source: 'crates/verifier/src/whir.rs', lines 92:8-94:9 -/
+    Source: 'crates/verifier/src/whir.rs', lines 103:8-105:9 -/
 @[rust_loop_body]
 def whir.subspace_roots_loop0_loop0.body
   (root : field.K) (iter : core.ops.range.Range Std.Usize)
@@ -7617,7 +7762,7 @@ def whir.subspace_roots_loop0_loop0.body
     ok (cont (iter1, layer1))
 
 /-- [verifier::whir::subspace_roots]: loop 1:
-    Source: 'crates/verifier/src/whir.rs', lines 92:8-94:9 -/
+    Source: 'crates/verifier/src/whir.rs', lines 103:8-105:9 -/
 @[rust_loop]
 def whir.subspace_roots_loop0_loop0
   (iter : core.ops.range.Range Std.Usize) (layer : alloc.vec.Vec field.K)
@@ -7630,7 +7775,7 @@ def whir.subspace_roots_loop0_loop0
     (iter, layer)
 
 /-- [verifier::whir::subspace_roots]: loop body 0:
-    Source: 'crates/verifier/src/whir.rs', lines 90:4-96:5 -/
+    Source: 'crates/verifier/src/whir.rs', lines 101:4-107:5 -/
 @[rust_loop_body]
 def whir.subspace_roots_loop0.body
   (iter : core.ops.range.Range Std.Usize) (roots : alloc.vec.Vec field.K)
@@ -7658,7 +7803,7 @@ def whir.subspace_roots_loop0.body
     ok (cont (iter1, roots1, layer2))
 
 /-- [verifier::whir::subspace_roots]: loop 0:
-    Source: 'crates/verifier/src/whir.rs', lines 90:4-96:5 -/
+    Source: 'crates/verifier/src/whir.rs', lines 101:4-107:5 -/
 @[rust_loop]
 def whir.subspace_roots_loop0
   (iter : core.ops.range.Range Std.Usize) (roots : alloc.vec.Vec field.K)
@@ -7671,7 +7816,7 @@ def whir.subspace_roots_loop0
     (iter, roots, layer)
 
 /-- [verifier::whir::subspace_roots]:
-    Source: 'crates/verifier/src/whir.rs', lines 87:0-98:1 -/
+    Source: 'crates/verifier/src/whir.rs', lines 98:0-109:1 -/
 def whir.subspace_roots
   (log_n : Std.Usize) : RustM (alloc.vec.Vec field.K) := do
   let y ←
@@ -7695,7 +7840,7 @@ def whir.subspace_roots
   whir.subspace_roots_loop0 { start := 0#usize, «end» := log_n } ret layer
 
 /-- [verifier::whir::induced_weight::{impl core::ops::function::FnMut<(&'_0 verifier::field::K,), verifier::field::K> for verifier::whir::induced_weight::{closure}}::call_mut]:
-    Source: 'crates/verifier/src/whir.rs', lines 108:44-108:63 -/
+    Source: 'crates/verifier/src/whir.rs', lines 119:44-119:63 -/
 def
   whir.induced_weight.closure.Insts.CoreOpsFunctionFnMutTupleShared0KK.call_mut
   (c : whir.induced_weight.closure) (tupled_args : field.K) :
@@ -7705,7 +7850,7 @@ def
   ok (k, c)
 
 /-- [verifier::whir::induced_weight::{impl core::ops::function::FnOnce<(&'_0 verifier::field::K,), verifier::field::K> for verifier::whir::induced_weight::{closure}}::call_once]:
-    Source: 'crates/verifier/src/whir.rs', lines 108:44-108:63 -/
+    Source: 'crates/verifier/src/whir.rs', lines 119:44-119:63 -/
 def
   whir.induced_weight.closure.Insts.CoreOpsFunctionFnOnceTupleShared0KK.call_once
   (c : whir.induced_weight.closure) (k : field.K) : RustM field.K := do
@@ -7715,7 +7860,7 @@ def
   ok k1
 
 /-- Trait implementation: [verifier::whir::induced_weight::{impl core::ops::function::FnOnce<(&'_0 verifier::field::K,), verifier::field::K> for verifier::whir::induced_weight::{closure}}]
-    Source: 'crates/verifier/src/whir.rs', lines 108:44-108:63 -/
+    Source: 'crates/verifier/src/whir.rs', lines 119:44-119:63 -/
 @[reducible]
 def whir.induced_weight.closure.Insts.CoreOpsFunctionFnOnceTupleShared0KK :
   core.ops.function.FnOnce whir.induced_weight.closure field.K field.K := {
@@ -7724,7 +7869,7 @@ def whir.induced_weight.closure.Insts.CoreOpsFunctionFnOnceTupleShared0KK :
 }
 
 /-- Trait implementation: [verifier::whir::induced_weight::{impl core::ops::function::FnMut<(&'_0 verifier::field::K,), verifier::field::K> for verifier::whir::induced_weight::{closure}}]
-    Source: 'crates/verifier/src/whir.rs', lines 108:44-108:63 -/
+    Source: 'crates/verifier/src/whir.rs', lines 119:44-119:63 -/
 @[reducible]
 def whir.induced_weight.closure.Insts.CoreOpsFunctionFnMutTupleShared0KK :
   core.ops.function.FnMut whir.induced_weight.closure field.K field.K := {
@@ -7735,7 +7880,7 @@ def whir.induced_weight.closure.Insts.CoreOpsFunctionFnMutTupleShared0KK :
 }
 
 /-- [verifier::whir::induced_weight]: loop body 1:
-    Source: 'crates/verifier/src/whir.rs', lines 113:8-116:9 -/
+    Source: 'crates/verifier/src/whir.rs', lines 124:8-127:9 -/
 @[rust_loop_body]
 def whir.induced_weight_loop0_loop0.body
   (roots : alloc.vec.Vec field.K) (inverses : alloc.vec.Vec field.K)
@@ -7772,7 +7917,7 @@ def whir.induced_weight_loop0_loop0.body
     ok (cont (iter1, basis1, product1))
 
 /-- [verifier::whir::induced_weight]: loop 1:
-    Source: 'crates/verifier/src/whir.rs', lines 113:8-116:9 -/
+    Source: 'crates/verifier/src/whir.rs', lines 124:8-127:9 -/
 @[rust_loop]
 def whir.induced_weight_loop0_loop0
   (iter : core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter
@@ -7786,7 +7931,7 @@ def whir.induced_weight_loop0_loop0
     (iter, basis, product)
 
 /-- [verifier::whir::induced_weight]: loop body 0:
-    Source: 'crates/verifier/src/whir.rs', lines 110:4-118:5 -/
+    Source: 'crates/verifier/src/whir.rs', lines 121:4-129:5 -/
 @[rust_loop_body]
 def whir.induced_weight_loop0.body
   (point : Slice field.E) (roots : alloc.vec.Vec field.K)
@@ -7818,7 +7963,7 @@ def whir.induced_weight_loop0.body
     ok (cont (iter1, total1))
 
 /-- [verifier::whir::induced_weight]: loop 0:
-    Source: 'crates/verifier/src/whir.rs', lines 110:4-118:5 -/
+    Source: 'crates/verifier/src/whir.rs', lines 121:4-129:5 -/
 @[rust_loop]
 def whir.induced_weight_loop0
   (iter : core.iter.adapters.zip.Zip (core.slice.iter.Iter field.E)
@@ -7833,7 +7978,7 @@ def whir.induced_weight_loop0
     (iter, total)
 
 /-- [verifier::whir::induced_weight]:
-    Source: 'crates/verifier/src/whir.rs', lines 105:0-120:1 -/
+    Source: 'crates/verifier/src/whir.rs', lines 116:0-131:1 -/
 def whir.induced_weight
   (message_log : Std.Usize) (queries : Slice Std.U64)
   (query_weights : Slice field.E) (point : Slice field.E) :

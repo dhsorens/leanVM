@@ -48,7 +48,6 @@ opaque = [
   "crate::keccak::verify_layer",  # keccak.rs:143
   "crate::layout::build_layout",  # layout.rs:536
   "crate::layout::keccak_columns",  # layout.rs:440
-  "crate::multilinear::eq_kernel",
 
   # Builds a `Box<dyn Fn>` weight (bus.rs:90): Aeneas has no higher-ranked vtables.
   "crate::bus::_::on_stack",

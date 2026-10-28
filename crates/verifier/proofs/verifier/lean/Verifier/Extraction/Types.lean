@@ -123,7 +123,7 @@ inductive VerifierError where
 | CommittedSize : VerifierError
 
 /-- [verifier::multilinear::Placement]
-    Source: 'crates/verifier/src/multilinear.rs', lines 120:0-123:1
+    Source: 'crates/verifier/src/multilinear.rs', lines 121:0-124:1
     Visibility: public -/
 structure multilinear.Placement where
   «variables» : Std.Usize
@@ -303,6 +303,13 @@ def keccak.instance_weights.closure.closure :=
 @[reducible]
 def keccak.instance_weights.closure := Array field.E 24#usize
 
+/-- [verifier::multilinear::Scaler]
+    Source: 'crates/verifier/src/multilinear.rs', lines 23:0-26:1 -/
+@[discriminant isize]
+inductive multilinear.Scaler where
+| Table : field.Scaled → multilinear.Scaler
+| Plain : field.E → multilinear.Scaler
+
 /-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure#1}]
     Source: 'crates/verifier/src/transcript.rs', lines 249:71-249:88 -/
 @[reducible]
@@ -390,30 +397,23 @@ structure Summary where
   keccak_scalars : core.ops.range.Range Std.Usize
   merkle_paths : alloc.vec.Vec merkle.MerklePath
 
-/-- [verifier::multilinear::Scaler]
-    Source: 'crates/verifier/src/multilinear.rs', lines 22:0-25:1 -/
-@[discriminant isize]
-inductive multilinear.Scaler where
-| Table : field.Scaled → multilinear.Scaler
-| Plain : field.E → multilinear.Scaler
-
 /-- [verifier::multilinear::multilinear_eval::{closure}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 50:41-50:62 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 51:41-51:62 -/
 @[reducible]
 def multilinear.multilinear_eval.closure (T : Type _) := Unit
 
 /-- [verifier::multilinear::padding_weight::{closure}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 90:14-90:49 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 91:14-91:49 -/
 @[reducible]
 def multilinear.padding_weight.closure := Std.U64
 
 /-- [verifier::multilinear::padding_weight::{closure#1}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 94:19-94:79 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 95:19-95:79 -/
 @[reducible]
 def multilinear.padding_weight.closure_1 := multilinear.padding_weight.closure
 
 /-- [verifier::multilinear::selector_point::{closure}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 160:20-160:59 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 161:20-161:59 -/
 @[reducible]
 def multilinear.selector_point.closure := Std.U64
 
@@ -450,12 +450,12 @@ structure whir.WhirConfig where
   queries : Slice Std.Usize
 
 /-- [verifier::whir::subspace_roots::{closure}]
-    Source: 'crates/verifier/src/whir.rs', lines 89:47-89:60 -/
+    Source: 'crates/verifier/src/whir.rs', lines 100:47-100:60 -/
 @[reducible]
 def whir.subspace_roots.closure := Unit
 
 /-- [verifier::whir::induced_weight::{closure}]
-    Source: 'crates/verifier/src/whir.rs', lines 108:44-108:63 -/
+    Source: 'crates/verifier/src/whir.rs', lines 119:44-119:63 -/
 @[reducible]
 def whir.induced_weight.closure := Unit
 

@@ -1,0 +1,60 @@
+--- a/crates/verifier/src/whir.rs
++++ b/crates/verifier/src/whir.rs
+@@ -64,6 +64,17 @@
+         row.push(E::new(words[3 * k].0, words[3 * k + 1].0, words[3 * k + 2].0));
+     }
+     row
++}
++
++/// A level-0 row's fold: lane `t` is the row's word `n - 1 - t`, the prover having laid the lanes out in reverse.
++fn base_fold(row: &[K], lane_weights: &[E]) -> E {
++    assert_eq!(row.len(), lane_weights.len());
++    let n = row.len();
++    let mut sum = ZERO;
++    for t in 0..n {
++        sum += lane_weights[t] * row[n - 1 - t];
++    }
++    sum
+ }
+ 
+ fn sample_queries(transcript: &mut Transcript, block_length: u64, count: usize) -> Result<Vec<u64>, VerifierError> {
+@@ -199,16 +210,7 @@
+         let words = transcript.merkle(current_root, block_length, &queries, row_words, leaf_words)?;
+         let lane_weights = eq_kernel(&level_folds);
+         let row_values: Vec<E> = if level == 0 {
+-            let base_dot = |row: &Vec<K>| {
+-                assert_eq!(row.len(), lane_weights.len());
+-                E::sum(
+-                    row.iter()
+-                        .rev()
+-                        .zip(&lane_weights)
+-                        .map(|(&word, &weight)| weight * word),
+-                )
+-            };
+-            words.iter().map(base_dot).collect()
++            words.iter().map(|row| base_fold(row, &lane_weights)).collect()
+         } else {
+             words.iter().map(|row| dot(&ext_row(row), &lane_weights)).collect()
+         };
+--- a/crates/verifier/src/multilinear.rs
++++ b/crates/verifier/src/multilinear.rs
+@@ -7,12 +7,13 @@
+ pub fn eq_kernel(point: &[E]) -> Vec<E> {
+     let mut out = vec![ZERO; 1 << point.len()];
+     out[0] = ONE;
+-    for (k, &r) in point.iter().enumerate() {
+-        let (low, high) = out[..2 << k].split_at_mut(1 << k);
+-        let scale = Scaler::new(r, low.len());
+-        for (v, h) in low.iter_mut().zip(high) {
+-            *h = scale.mul(*v);
+-            *v += *h;
++    for k in 0..point.len() {
++        let half = 1 << k;
++        let scale = Scaler::new(point[k], half);
++        for i in 0..half {
++            let h = scale.mul(out[i]);
++            out[i + half] = h;
++            out[i] += h;
+         }
+     }
+     out

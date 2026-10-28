@@ -14,7 +14,7 @@ crates/<crate>/proofs/<scenario>/
   lean/                                   the Lean package hax scaffolds, e.g. `Verifier`
     <Pkg>/Extraction/                     generated: hax rewrites it on every extraction, never edit
     <Pkg>/Assumptions/                    the Rust items left opaque, as axioms, kept in step by wire.py
-    <Pkg>/Verification/                   hand-written proofs (none yet)
+    <Pkg>/Verification/                   hand-written proofs about the extraction
 formal/extraction/
   hax.sh                                  setup, extract, test, and run commands on the patched source
   wire.py                                 wires every package into this workspace (run by hax.sh)
