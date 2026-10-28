@@ -61,7 +61,7 @@ theorem base_fold_spec (row : Slice verifier.field.K) (w : Slice verifier.field.
 def lanes (row : List verifier.field.K) (ϑ : ℕ) : Fin (2 ^ ϑ) → Unit → BF64.Ext3 :=
   fun i _ => toBF64 row[2 ^ ϑ - 1 - (i : ℕ)]! • 1
 
-theorem level0_fold (point : Slice verifier.field.E) (hn : point.length ≤ 8)
+theorem level0_fold (point : Slice verifier.field.E) (hn : point.length ≤ 31)
     (lw : alloc.vec.Vec verifier.field.E) (hlw : verifier.multilinear.eq_kernel point = ok lw)
     (row : Slice verifier.field.K) (hrow : row.length = 2 ^ point.length)
     (w : Slice verifier.field.E) (hw : w.val = lw.val) :

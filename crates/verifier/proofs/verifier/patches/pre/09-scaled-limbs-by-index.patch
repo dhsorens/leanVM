@@ -1,0 +1,15 @@
+diff --git a/crates/verifier/src/field.rs b/crates/verifier/src/field.rs
+index 2377efc0..e781280a 100644
+--- a/crates/verifier/src/field.rs
++++ b/crates/verifier/src/field.rs
+@@ -256,7 +256,9 @@ impl Scaled {
+     pub fn mul(&self, a: E) -> E {
+         let mut product = ZERO;
+         let mut table = 0;
+-        for limb in [a.c0, a.c1, a.c2] {
++        let limbs = [a.c0, a.c1, a.c2];
++        for t in 0..3 {
++            let limb = limbs[t];
+             for window in 0..WINDOWS_PER_LIMB {
+                 product += self.0[(table << WINDOW) | ((limb >> (WINDOW * window)) as usize % (1 << WINDOW))];
+                 table += 1;
