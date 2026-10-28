@@ -2312,7 +2312,7 @@ def field.Scaled.new (r : field.E) : RustM field.Scaled := do
   ok tables1
 
 /-- [verifier::field::{verifier::field::Scaled}::mul]: loop body 1:
-    Source: 'crates/verifier/src/field.rs', lines 261:12-264:13
+    Source: 'crates/verifier/src/field.rs', lines 263:12-266:13
     Visibility: public -/
 @[rust_loop_body]
 def field.Scaled.mul_loop0_loop0.body
@@ -2342,7 +2342,7 @@ def field.Scaled.mul_loop0_loop0.body
     ok (cont (iter1, self, product1, table1))
 
 /-- [verifier::field::{verifier::field::Scaled}::mul]: loop 1:
-    Source: 'crates/verifier/src/field.rs', lines 261:12-264:13
+    Source: 'crates/verifier/src/field.rs', lines 263:12-266:13
     Visibility: public -/
 @[rust_loop]
 def field.Scaled.mul_loop0_loop0
@@ -2356,20 +2356,22 @@ def field.Scaled.mul_loop0_loop0
     (iter, self, product, table)
 
 /-- [verifier::field::{verifier::field::Scaled}::mul]: loop body 0:
-    Source: 'crates/verifier/src/field.rs', lines 260:8-265:9
+    Source: 'crates/verifier/src/field.rs', lines 261:8-267:9
     Visibility: public -/
 @[rust_loop_body]
 def field.Scaled.mul_loop0.body
-  (iter : core.array.iter.IntoIter Std.U64 3#usize) (self : field.Scaled)
-  (product : field.E) (table : Std.Usize) :
-  RustM (ControlFlow ((core.array.iter.IntoIter Std.U64 3#usize) ×
-    field.Scaled × field.E × Std.Usize) field.E)
+  (limbs : Array Std.U64 3#usize) (iter : core.ops.range.Range Std.Usize)
+  (self : field.Scaled) (product : field.E) (table : Std.Usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × field.Scaled ×
+    field.E × Std.Usize) field.E)
   := do
   let (o, iter1) ←
-    core.array.iter.IntoIter.Insts.CoreIterTraitsIteratorIterator.next iter
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
   match o with
   | core.option.Option.None => ok (done product)
-  | core.option.Option.Some limb =>
+  | core.option.Option.Some t =>
+    let limb ← Array.index_usize limbs t
     let i ← field.WINDOWS_PER_LIMB
     let (self1, product1, table1) ←
       field.Scaled.mul_loop0_loop0 { start := 0#usize, «end» := i } self
@@ -2377,31 +2379,29 @@ def field.Scaled.mul_loop0.body
     ok (cont (iter1, self1, product1, table1))
 
 /-- [verifier::field::{verifier::field::Scaled}::mul]: loop 0:
-    Source: 'crates/verifier/src/field.rs', lines 260:8-265:9
+    Source: 'crates/verifier/src/field.rs', lines 261:8-267:9
     Visibility: public -/
 @[rust_loop]
 def field.Scaled.mul_loop0
-  (iter : core.array.iter.IntoIter Std.U64 3#usize) (self : field.Scaled)
-  (product : field.E) (table : Std.Usize) :
+  (iter : core.ops.range.Range Std.Usize) (self : field.Scaled)
+  (product : field.E) (table : Std.Usize) (limbs : Array Std.U64 3#usize) :
   RustM field.E
   := do
   loop
-    (fun (iter1, self1, product1, table1) => field.Scaled.mul_loop0.body iter1
-      self1 product1 table1)
+    (fun (iter1, self1, product1, table1) => field.Scaled.mul_loop0.body limbs
+      iter1 self1 product1 table1)
     (iter, self, product, table)
 
 /-- [verifier::field::{verifier::field::Scaled}::mul]:
-    Source: 'crates/verifier/src/field.rs', lines 257:4-267:5
+    Source: 'crates/verifier/src/field.rs', lines 257:4-269:5
     Visibility: public -/
 def field.Scaled.mul (self : field.Scaled) (a : field.E) : RustM field.E := do
   let product ← field.ZERO
-  let iter ←
-    core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter.into_iter
-      (Array.make 3#usize [ a.c0, a.c1, a.c2 ])
-  field.Scaled.mul_loop0 iter self product 0#usize
+  field.Scaled.mul_loop0 { start := 0#usize, «end» := 3#usize } self product
+    0#usize (Array.make 3#usize [ a.c0, a.c1, a.c2 ])
 
 /-- [verifier::field::powers]: loop body 0:
-    Source: 'crates/verifier/src/field.rs', lines 274:4-277:5
+    Source: 'crates/verifier/src/field.rs', lines 276:4-279:5
     Visibility: public -/
 @[rust_loop_body]
 def field.powers_loop.body
@@ -2421,7 +2421,7 @@ def field.powers_loop.body
     ok (cont (iter1, out1, power1))
 
 /-- [verifier::field::powers]: loop 0:
-    Source: 'crates/verifier/src/field.rs', lines 274:4-277:5
+    Source: 'crates/verifier/src/field.rs', lines 276:4-279:5
     Visibility: public -/
 @[rust_loop]
 def field.powers_loop
@@ -2435,7 +2435,7 @@ def field.powers_loop
     (iter, out, power)
 
 /-- [verifier::field::powers]:
-    Source: 'crates/verifier/src/field.rs', lines 271:0-279:1
+    Source: 'crates/verifier/src/field.rs', lines 273:0-281:1
     Visibility: public -/
 def field.powers
   (base : field.E) (count : Std.Usize) : RustM (alloc.vec.Vec field.E) := do
