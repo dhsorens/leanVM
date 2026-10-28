@@ -108,7 +108,7 @@ element of the row's words `3i, 3i + 1, 3i + 2`. -/
 def extLanes (words : List verifier.field.K) (ϑ : ℕ) : Fin (2 ^ ϑ) → Unit → BF64.Ext3 :=
   fun i _ => toExt3 (wordsE words i)
 
-theorem deeper_fold (point : Slice verifier.field.E) (hn : point.length ≤ 8)
+theorem deeper_fold (point : Slice verifier.field.E) (hn : point.length ≤ 31)
     (lw : alloc.vec.Vec verifier.field.E) (hlw : verifier.multilinear.eq_kernel point = ok lw)
     (words : Slice verifier.field.K) (hwords : words.length = 3 * 2 ^ point.length)
     (row : alloc.vec.Vec verifier.field.E) (hrow : verifier.whir.ext_row words = ok row)

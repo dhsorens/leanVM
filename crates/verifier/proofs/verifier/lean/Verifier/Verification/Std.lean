@@ -85,6 +85,51 @@ theorem vec_push_triple {T : Type} (v : alloc.vec.Vec T) (x : T) (h : v.length <
   simp only [alloc.vec.Vec.push, rust_primitives.sequence.seq_push, dite_eq_left h']
   exact Hax.triple_of_ok (Aeneas.Std.bind_ok _ _) Data.ListN.ListN.from_to_inverse
 
+set_option maxHeartbeats 2000000 in
+/-- `Hax.loop_range_spec_unsigned` for a loop whose result is not its state: it holds `inv` while it runs
+and `Q` of what it returns. -/
+theorem loop_range_spec_result {β γ : Type}
+    (body : (core.ops.range.Range Std.Usize × β) → RustM (ControlFlow (core.ops.range.Range Std.Usize × β) γ))
+    (init : β) (s e : Std.Usize) (inv : Std.Usize → β → RustM Prop) (Q : γ → Prop)
+    (h_le : s.val ≤ e.val) (h_init : (inv s init).holds)
+    (h_step : ∀ acc (i : Std.Usize), s.val ≤ i.val → i.val ≤ e.val → (inv i acc).holds →
+      ⦃ ⌜ True ⌝ ⦄
+      body ({ start := i, «end» := e }, acc)
+      ⦃ ⇓ r => match r with
+        | .cont (iter', acc') =>
+          ⌜ i.val < e.val ∧ iter'.«end» = e ∧ iter'.start.val = i.val + 1 ∧ (inv iter'.start acc').holds ⌝
+        | .done y => ⌜ Q y ⌝ ⦄) :
+    ⦃ ⌜ True ⌝ ⦄ loop body ({ start := s, «end» := e }, init) ⦃ ⇓ r => ⌜ Q r ⌝ ⦄ := by
+  suffices gen : ∀ (n : Nat) (acc : β) (start : Std.Usize), e.val - start.val = n → s.val ≤ start.val →
+      start.val ≤ e.val → (inv start acc).holds →
+      ⦃ ⌜ True ⌝ ⦄ loop body ({ start := start, «end» := e }, acc) ⦃ ⇓ r => ⌜ Q r ⌝ ⦄ by
+    exact gen _ init s rfl (Nat.le_refl _) h_le h_init
+  intro n
+  induction n with
+  | zero =>
+    intro acc start hn hs_le hse_le hinv
+    have hs := h_step acc start hs_le hse_le hinv
+    obtain ⟨r, hbody⟩ := Hax.triple_noThrow_exists_ok hs
+    have hpost := Hax.triple_noThrow_elim hs hbody
+    rw [loop.eq_def, hbody, Aeneas.Std.bind_ok]
+    match r with
+    | .cont (iter', acc') => simp at hpost; exact absurd hpost.1 (by omega)
+    | .done y => simp at hpost; exact Hax.triple_of_ok rfl hpost
+  | succ n ih =>
+    intro acc start hn hs_le hse_le hinv
+    have hs := h_step acc start hs_le hse_le hinv
+    obtain ⟨r, hbody⟩ := Hax.triple_noThrow_exists_ok hs
+    have hpost := Hax.triple_noThrow_elim hs hbody
+    rw [loop.eq_def, hbody, Aeneas.Std.bind_ok]
+    match r with
+    | .done y => simp at hpost; exact Hax.triple_of_ok rfl hpost
+    | .cont (iter', acc') =>
+      simp at hpost
+      obtain ⟨hlt, hend, hstart, hinv'⟩ := hpost
+      have hiter : iter' = { start := iter'.start, «end» := e } := by cases iter'; cases hend; rfl
+      rw [hiter]
+      exact ih acc' iter'.start (by rw [hstart]; omega) (by rw [hstart]; omega) (by rw [hstart]; omega) hinv'
+
 theorem getElem!_set {α : Type} [Inhabited α] (l : List α) (a j : ℕ) (x : α) :
     (l.set a x)[j]! = if a = j ∧ j < l.length then x else l[j]! := by
   by_cases h : a = j
@@ -98,9 +143,9 @@ theorem getElem!_set {α : Type} [Inhabited α] (l : List α) (a j : ℕ) (x : �
 @[simp] theorem wp_ok_prop (P : Prop) :
     (wp⟦(ok P : RustM Prop)⟧ (PostCond.noThrow fun p => ⌜p⌝)).down ↔ P := by
   simp [WP.wp, PredTrans.apply]
-theorem one_shl (k : Std.Usize) (hk : k.val ≤ 8) : (1#usize).val <<< k.val % Usize.size = 2 ^ k.val := by
-  have : 2 ^ k.val ≤ 2 ^ 8 := Nat.pow_le_pow_right (by omega) hk
-  have hs : 2 ^ 8 < Usize.size := by
+theorem one_shl (k : Std.Usize) (hk : k.val ≤ 31) : (1#usize).val <<< k.val % Usize.size = 2 ^ k.val := by
+  have : 2 ^ k.val ≤ 2 ^ 31 := Nat.pow_le_pow_right (by omega) hk
+  have hs : 2 ^ 31 < Usize.size := by
     rw [Usize.size_def]
     exact Nat.pow_lt_pow_right (by omega) (by cases System.Platform.numBits_eq <;> simp [Usize.numBits, *])
   have h1 : (1#usize).val = 1 := by simp

@@ -1,9 +1,9 @@
-import Verifier.Verification.Std
+import Verifier.Verification.Scaled
 import ArkLib.Data.CodingTheory.Prelims
 
 /-! `eq_kernel(point)` is the table of ArkLib's `multilinearWeight point i` over every index `i`
-(`eq_kernel_spec`, `eqw_eq_multilinearWeight`), for the points of at most 8 coordinates on which it
-multiplies without `Scaled`'s table, which covers every fold. -/
+(`eq_kernel_spec`, `eqw_eq_multilinearWeight`), for points of at most 31 coordinates, whose `1 << len` fits
+a 32-bit `usize`, through `Scaled`'s table or not. -/
 
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -16,6 +16,19 @@ namespace Verifier
 theorem scaler_plain_mul (r v : verifier.field.E) :
     verifier.multilinear.Scaler.mul (.Plain r) v = ok (ofExt3 (toExt3 v * toExt3 r)) := by
   simp [verifier.multilinear.Scaler.mul, E_mul_ok]
+
+/-- A `Scaler` multiplies by its factor, through `Scaled`'s table or not. -/
+@[spec]
+theorem scaler_new_spec (r : verifier.field.E) (uses : Std.Usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    verifier.multilinear.Scaler.new r uses
+    ⦃ ⇓ sc => ⌜ ∀ v, verifier.multilinear.Scaler.mul sc v = ok (ofExt3 (toExt3 v * toExt3 r)) ⌝ ⦄ := by
+  unfold verifier.multilinear.Scaler.new
+  split
+  · obtain ⟨s, hs⟩ := Hax.triple_noThrow_exists_ok (new_spec r)
+    rw [hs, Aeneas.Std.bind_ok]
+    exact Hax.triple_of_ok rfl fun v => scaled_mul r s hs v
+  · exact Hax.triple_of_ok rfl fun v => scaler_plain_mul r v
 
 /-- What the inner loop of `eq_kernel` leaves at entry `j`, after `i` of its `half` steps. -/
 def innerAt (out0 : List verifier.field.E) (r : BF64.Ext3) (half i j : ℕ) : BF64.Ext3 :=
@@ -138,7 +151,7 @@ def outerInv (point : Slice verifier.field.E) (n : ℕ) (k : Std.Usize) (out : a
     toExt3 out.val[j]! = if j < 2 ^ k.val then eqw (fun t => toExt3 point.val[t]!) k.val j else 0)
 
 @[spec]
-theorem outer_spec (point : Slice verifier.field.E) (hn : point.length ≤ 8) (out0 : alloc.vec.Vec verifier.field.E)
+theorem outer_spec (point : Slice verifier.field.E) (hn : point.length ≤ 31) (out0 : alloc.vec.Vec verifier.field.E)
     (h0 : (outerInv point point.length 0#usize out0).holds) (e : Std.Usize) (he : e = point.len) :
     ⦃ ⌜ True ⌝ ⦄
     verifier.multilinear.eq_kernel_loop0 { start := 0#usize, «end» := e } point out0
@@ -152,26 +165,17 @@ theorem outer_spec (point : Slice verifier.field.E) (hn : point.length ≤ 8) (o
     simp only [outerInv, holds_ok] at hinv
     obtain ⟨hlen, hval⟩ := hinv
     clear h0
-    hax_mvcgen [verifier.multilinear.eq_kernel_loop0.body, verifier.multilinear.Scaler.new, inner_spec, innerInv, outerInv]
-    case vc1.h_ok.isTrue =>
-      rename_i hlt s hs h hh1 _ _ _ _ hge
-      have hk7 : k.val ≤ 7 := by scalar_tac
-      have : 2 ^ k.val ≤ 2 ^ 7 := Nat.pow_le_pow_right (by omega) hk7
-      have hh : h.val = 2 ^ k.val := hh1.trans (one_shl k (by omega))
-      exfalso; scalar_tac
-    case vc3.hmul => exact scaler_plain_mul _ _
-    case vc4.hh =>
-      rename_i hlt s hs h hh1 _ _ _ _ _
-      have hk7 : k.val ≤ 7 := by scalar_tac
-      have : 2 ^ k.val ≤ 2 ^ 7 := Nat.pow_le_pow_right (by omega) hk7
+    hax_mvcgen [verifier.multilinear.eq_kernel_loop0.body, scaler_new_spec, inner_spec, innerInv, outerInv]
+    case vc3.hh =>
+      rename_i hlt s hs h hh1 _ _ _ _ _ _
+      have hk30 : k.val ≤ 30 := by scalar_tac
       have hh : h.val = 2 ^ k.val := hh1.trans (one_shl k (by omega))
       have : 2 ^ (k.val + 1) ≤ 2 ^ point.length := Nat.pow_le_pow_right (by omega) (by scalar_tac)
       rw [hh, hlen, ← pow_succ']
       exact this
-    case vc5 =>
-      rename_i hlt s hs h hh1 _ _ x hx _ out hol hov
-      have hk7 : k.val ≤ 7 := by scalar_tac
-      have : 2 ^ k.val ≤ 2 ^ 7 := Nat.pow_le_pow_right (by omega) hk7
+    case vc4 =>
+      rename_i hlt s hs h hh1 _ _ x hx _ _ out hol hov
+      have hk30 : k.val ≤ 30 := by scalar_tac
       have hh : h.val = 2 ^ k.val := hh1.trans (one_shl k (by omega))
       obtain ⟨hxk, rfl⟩ := hx
       refine ⟨hlt, trivial, hs, ?_⟩
@@ -180,9 +184,9 @@ theorem outer_spec (point : Slice verifier.field.E) (hn : point.length ≤ 8) (o
       refine outer_step _ point.length k.val (by scalar_tac) acc.val out.val hval (fun j hj => ?_)
       rw [hov j (by rw [hlen]; exact hj), hh]
       simp [getElem!_pos, hxk]
-    case vc6.h_fail => scalar_tac
-    case vc7.h_fail =>
-      have : k.val ≤ 7 := by scalar_tac
+    case vc5.h_fail => scalar_tac
+    case vc6.h_fail =>
+      have : k.val ≤ 30 := by scalar_tac
       exfalso; cases System.Platform.numBits_eq <;> omega
     case vc1.hQ =>
       rename_i hge
@@ -190,7 +194,7 @@ theorem outer_spec (point : Slice verifier.field.E) (hn : point.length ≤ 8) (o
       refine ⟨hlen, fun j hj => ?_⟩
       rw [hval j hj, Slice.len_val, ← hkl]
 
-theorem eq_kernel_spec (point : Slice verifier.field.E) (hn : point.length ≤ 8) :
+theorem eq_kernel_spec (point : Slice verifier.field.E) (hn : point.length ≤ 31) :
     ⦃ ⌜ True ⌝ ⦄
     verifier.multilinear.eq_kernel point
     ⦃ ⇓ out => ⌜ out.length = 2 ^ point.length ∧
