@@ -1,0 +1,274 @@
+-- [stable_primitives]: external functions.
+-- Seeded by hax from Extraction/FunsExternal_Template.lean: fill the holes.
+-- hax never modifies this file; after re-extraction, compare it against the
+-- regenerated template to see what changed.
+module
+public import Aeneas
+public import CoreModels
+public import CoreModelsExt
+public import Primitives.Extraction.Types
+@[expose] public section
+open CoreModels Aeneas
+open Aeneas.Std hiding namespace core alloc
+open RustM ControlFlow Error
+open Std.Do
+set_option linter.dupNamespace false
+set_option linter.hashCommand false
+set_option linter.unusedVariables false
+set_option linter.style.whitespace false
+set_option linter.style.setOption false
+set_option linter.style.longLine false
+set_option linter.internalConstructors false
+
+/- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
+set_option maxHeartbeats 1000000
+
+/- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
+set_option maxRecDepth 2048
+
+namespace stable_primitives
+
+/-- [stable_primitives::bit_fold::{impl core::fmt::Debug for stable_primitives::bit_fold::BitFold}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/bit_fold.rs', lines 18:16-18:21
+    Visibility: public -/
+axiom bit_fold.BitFold.Insts.CoreFmtDebug.fmt
+  :
+  bit_fold.BitFold → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::bit_fold::{stable_primitives::bit_fold::BitFold}::new]:
+    Source: 'crates/stable_prover/primitives/src/bit_fold.rs', lines 32:4-48:5
+    Visibility: public -/
+axiom bit_fold.BitFold.new
+  : Slice field.gf2_64x2.F128 → RustM bit_fold.BitFold
+
+/-- [stable_primitives::bit_fold::{stable_primitives::bit_fold::BitFold}::fold_row]:
+    Source: 'crates/stable_prover/primitives/src/bit_fold.rs', lines 52:4-59:5
+    Visibility: public -/
+axiom bit_fold.BitFold.fold_row
+  : bit_fold.BitFold → Slice Std.U8 → RustM field.gf2_64x2.F128
+
+/-- [stable_primitives::bit_fold::{stable_primitives::bit_fold::BitFold}::fold_columns]:
+    Source: 'crates/stable_prover/primitives/src/bit_fold.rs', lines 63:4-72:5
+    Visibility: public -/
+axiom bit_fold.BitFold.fold_columns
+  {CHUNKS : Std.Usize} :
+  bit_fold.BitFold → Array (Array Std.U8 64#usize) CHUNKS → Array
+    field.gf2_64x2.F128 64#usize → RustM (Array field.gf2_64x2.F128 64#usize)
+
+/-- [stable_primitives::field::gf2_64::{impl core::fmt::Debug for stable_primitives::field::gf2_64::F64}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/gf2_64.rs', lines 15:22-15:27
+    Visibility: public -/
+axiom field.gf2_64.F64.Insts.CoreFmtDebug.fmt
+  :
+  field.gf2_64.F64 → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::gf2_64x2::{impl core::fmt::Debug for stable_primitives::field::gf2_64x2::F128}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/gf2_64x2.rs', lines 25:22-25:27
+    Visibility: public -/
+axiom field.gf2_64x2.F128.Insts.CoreFmtDebug.fmt
+  :
+  field.gf2_64x2.F128 → core.fmt.Formatter → RustM ((core.result.Result
+    Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::gf2_64x2::{impl core::fmt::Debug for stable_primitives::field::gf2_64x2::F128Unreduced}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/gf2_64x2.rs', lines 197:22-197:27
+    Visibility: public -/
+axiom field.gf2_64x2.F128Unreduced.Insts.CoreFmtDebug.fmt
+  :
+  field.gf2_64x2.F128Unreduced → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::lanes::portable::{impl core::fmt::Debug for stable_primitives::field::lanes::portable::F64x8}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes/portable.rs', lines 28:22-28:27
+    Visibility: public -/
+axiom field.lanes.portable.F64x8.Insts.CoreFmtDebug.fmt
+  :
+  field.lanes.portable.F64x8 → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::lanes::portable::{impl core::fmt::Debug for stable_primitives::field::lanes::portable::F128x8}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes/portable.rs', lines 32:22-32:27
+    Visibility: public -/
+axiom field.lanes.portable.F128x8.Insts.CoreFmtDebug.fmt
+  :
+  field.lanes.portable.F128x8 → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::lanes::portable::{impl core::fmt::Debug for stable_primitives::field::lanes::portable::Acc8}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes/portable.rs', lines 36:22-36:27
+    Visibility: public -/
+axiom field.lanes.portable.Acc8.Insts.CoreFmtDebug.fmt
+  :
+  field.lanes.portable.Acc8 → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::lanes::portable::{impl core::fmt::Debug for stable_primitives::field::lanes::portable::Wide8}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes/portable.rs', lines 40:22-40:27
+    Visibility: public -/
+axiom field.lanes.portable.Wide8.Insts.CoreFmtDebug.fmt
+  :
+  field.lanes.portable.Wide8 → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::lanes::portable::{stable_primitives::field::lanes::portable::Acc8}::sum]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes/portable.rs', lines 124:4-126:5
+    Visibility: public -/
+axiom field.lanes.portable.Acc8.sum
+  : field.lanes.portable.Acc8 → RustM field.gf2_64x2.F128
+
+/-- [stable_primitives::field::lanes::portable::{impl core::fmt::Debug for stable_primitives::field::lanes::portable::ByteMap}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes/portable.rs', lines 156:22-156:27
+    Visibility: public -/
+axiom field.lanes.portable.ByteMap.Insts.CoreFmtDebug.fmt
+  :
+  field.lanes.portable.ByteMap → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::lanes::portable::transpose_bits]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes/portable.rs', lines 206:0-232:1
+    Visibility: public -/
+axiom field.lanes.portable.transpose_bits
+  : Array Std.U64 8#usize → RustM (Array Std.U64 8#usize)
+
+/-- [stable_primitives::field::lanes::portable::transpose_bytes]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes/portable.rs', lines 236:0-245:1
+    Visibility: public -/
+axiom field.lanes.portable.transpose_bytes
+  : Array (Array Std.U64 8#usize) 16#usize → RustM (Array Std.U128 64#usize)
+
+/-- [stable_primitives::field::lanes::{impl core::fmt::Debug for stable_primitives::field::lanes::Linear16}::fmt]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes.rs', lines 75:16-75:21
+    Visibility: public -/
+axiom field.lanes.Linear16.Insts.CoreFmtDebug.fmt
+  :
+  field.lanes.Linear16 → core.fmt.Formatter → RustM ((core.result.Result
+    Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_primitives::field::lanes::{stable_primitives::field::lanes::portable::F128x8}::store]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes.rs', lines 133:4-136:5
+    Visibility: public -/
+axiom field.lanes.F128x8.store
+  :
+  field.lanes.portable.F128x8 → Slice field.gf2_64x2.F128 → RustM (Slice
+    field.gf2_64x2.F128)
+
+/-- [stable_primitives::field::lanes::{stable_primitives::field::lanes::portable::Wide8}::sum]:
+    Source: 'crates/stable_prover/primitives/src/field/lanes.rs', lines 148:4-150:5
+    Visibility: public -/
+axiom field.lanes.Wide8.sum : field.lanes.portable.Wide8 → RustM Std.U128
+
+/-- [stable_primitives::field::div_by_g]:
+    Source: 'crates/stable_prover/primitives/src/field/mod.rs', lines 30:0-36:1
+    Visibility: public -/
+axiom field.div_by_g : field.gf2_64.F64 → RustM field.gf2_64.F64
+
+/-- [stable_primitives::field::powers]:
+    Source: 'crates/stable_prover/primitives/src/field/mod.rs', lines 39:0-47:1
+    Visibility: public -/
+axiom field.powers
+  :
+  field.gf2_64x2.F128 → Std.Usize → RustM (alloc.vec.Vec
+    field.gf2_64x2.F128)
+
+/-- [stable_primitives::field::g_powers]:
+    Source: 'crates/stable_prover/primitives/src/field/mod.rs', lines 50:0-53:1
+    Visibility: public -/
+axiom field.g_powers : Std.Usize → RustM (alloc.vec.Vec field.gf2_64.F64)
+
+/-- [stable_primitives::field::g_pow]:
+    Source: 'crates/stable_prover/primitives/src/field/mod.rs', lines 58:0-60:1
+    Visibility: public -/
+axiom field.g_pow : Std.Usize → RustM field.gf2_64.F64
+
+/-- [stable_primitives::field::dot]:
+    Source: 'crates/stable_prover/primitives/src/field/mod.rs', lines 63:0-73:1
+    Visibility: public -/
+axiom field.dot
+  :
+  Slice field.gf2_64x2.F128 → Slice field.gf2_64x2.F128 → RustM
+    field.gf2_64x2.F128
+
+/-- [stable_primitives::field::index_mle]:
+    Source: 'crates/stable_prover/primitives/src/field/mod.rs', lines 77:0-85:1
+    Visibility: public -/
+axiom field.index_mle : Slice field.gf2_64x2.F128 → RustM field.gf2_64x2.F128
+
+/-- [stable_primitives::log2_strict_usize]:
+    Source: 'crates/stable_prover/primitives/src/lib.rs', lines 15:0-18:1
+    Visibility: public -/
+axiom log2_strict_usize : Std.Usize → RustM Std.Usize
+
+/-- [stable_primitives::log2_ceil_usize]:
+    Source: 'crates/stable_prover/primitives/src/lib.rs', lines 21:0-23:1
+    Visibility: public -/
+axiom log2_ceil_usize : Std.Usize → RustM Std.Usize
+
+/-- [stable_primitives::cast_slice]:
+    Source: 'crates/stable_prover/primitives/src/lib.rs', lines 47:0-56:1
+    Visibility: public -/
+axiom cast_slice
+  {A : Type _} {B : Type _} (PlainInst : Plain A) (PlainInst1 : Plain B) :
+  Slice A → RustM (Slice B)
+
+/-- [stable_primitives::cast_slice_mut]:
+    Source: 'crates/stable_prover/primitives/src/lib.rs', lines 59:0-67:1
+    Visibility: public -/
+axiom cast_slice_mut
+  {A : Type _} {B : Type _} (PlainInst : Plain A) (PlainInst1 : Plain B) :
+  Slice A → RustM ((Slice B) × (Slice B → Slice A))
+
+/-- [stable_primitives::multilinear::fold]:
+    Source: 'crates/stable_prover/primitives/src/multilinear.rs', lines 15:0-20:1
+    Visibility: public -/
+axiom multilinear.fold
+  :
+  Slice field.gf2_64x2.F128 → Std.Usize → field.gf2_64x2.F128 → RustM
+    (alloc.vec.Vec field.gf2_64x2.F128)
+
+/-- [stable_primitives::multilinear::eq_eval]:
+    Source: 'crates/stable_prover/primitives/src/multilinear.rs', lines 24:0-27:1
+    Visibility: public -/
+axiom multilinear.eq_eval
+  :
+  Slice field.gf2_64x2.F128 → Slice field.gf2_64x2.F128 → RustM
+    field.gf2_64x2.F128
+
+/-- [stable_primitives::multilinear::eq_table]:
+    Source: 'crates/stable_prover/primitives/src/multilinear.rs', lines 44:0-50:1
+    Visibility: public -/
+axiom multilinear.eq_table
+  : Slice field.gf2_64x2.F128 → RustM (alloc.vec.Vec field.gf2_64x2.F128)
+
+/-- [stable_primitives::multilinear::eq_table_serial]:
+    Source: 'crates/stable_prover/primitives/src/multilinear.rs', lines 55:0-66:1
+    Visibility: public -/
+axiom multilinear.eq_table_serial
+  : Slice field.gf2_64x2.F128 → RustM (alloc.vec.Vec field.gf2_64x2.F128)
+
+/-- [stable_primitives::multilinear::shrink_eq_high]:
+    Source: 'crates/stable_prover/primitives/src/multilinear.rs', lines 70:0-77:1
+    Visibility: public -/
+axiom multilinear.shrink_eq_high
+  :
+  alloc.vec.Vec field.gf2_64x2.F128 → RustM (alloc.vec.Vec
+    field.gf2_64x2.F128)
+
+/-- [stable_primitives::multilinear::mle_eval]:
+    Source: 'crates/stable_prover/primitives/src/multilinear.rs', lines 99:0-109:1
+    Visibility: public -/
+axiom multilinear.mle_eval
+  :
+  Slice field.gf2_64.F64 → Slice field.gf2_64x2.F128 → RustM
+    field.gf2_64x2.F128
+
+/-- [stable_primitives::multilinear::mle_eval_par]:
+    Source: 'crates/stable_prover/primitives/src/multilinear.rs', lines 113:0-124:1
+    Visibility: public -/
+axiom multilinear.mle_eval_par
+  :
+  Slice field.gf2_64.F64 → Slice field.gf2_64x2.F128 → RustM
+    field.gf2_64x2.F128
+
+end stable_primitives

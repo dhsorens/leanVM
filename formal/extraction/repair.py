@@ -143,10 +143,21 @@ def without_generics(text):
 
 def pattern(name, crate):
     """The Charon name pattern of the Rust item a doc comment names; closures go to their function."""
-    closure = re.search(r" for (.*?)::\{closure", name)
-    if closure:
-        name = closure.group(1)
-    name = re.split(r"::\{closure", name)[0]
+    for segment in split_path(name):
+        if segment.startswith("{impl core::ops::function::Fn") and "{closure" in segment:
+            depth = 0
+            for i, c in enumerate(segment):
+                if c in "{<(":
+                    depth += 1
+                elif c in "}>)" and segment[i - 1] != "-":
+                    depth -= 1
+                elif depth == 1 and segment.startswith(" for ", i):
+                    name = segment[i + 5 : -1]
+                    break
+            break
+    cut = [i for i, seg in enumerate(split_path(name)) if seg.startswith("{closure")]
+    if cut:
+        name = "::".join(split_path(name)[: cut[0]])
     own = re.compile(rf"(?<![\w:]){re.escape(crate)}::")
     segments = []
     for segment in split_path(name):
@@ -201,7 +212,7 @@ def item_at(crate, patched, file, line):
     return "::".join(path + [name])
 
 
-DOC = re.compile(r"/-- \[([^\n]*?)\](?::[^\n]*)?\n(?:\s+Source: '([^']*)', lines (\d+):)?")
+DOC = re.compile(r"/-- (?:Trait implementation: )?\[([^\n]*?)\](?::[^\n]*)?\n(?:\s+Source: '([^']*)', lines (\d+):)?")
 
 
 def definitions(path):
@@ -304,10 +315,18 @@ def extract(crate, date, rounds):
                 elif line.startswith("[Error] "):
                     last = "Aeneas: " + line[8:].strip()[:70].rstrip(".").lower()
         opaque.update(reasons)
+        iterator_crash = False
         if error_log.exists():
-            located = re.findall(r"\[Error\] (?!Ignoring)([^\n]*)\nSource: '([^']*)', lines (\d+):", ANSI.sub("", error_log.read_text()))
+            located = []
+            for block in re.split(r"(?m)^(?=\[Error\] )", ANSI.sub("", error_log.read_text())):
+                head = re.match(r"\[Error\] (?!Ignoring)([^\n]*)", block)
+                inside = re.search(rf"Source: '({re.escape(str(crate.relative_to(ROOT)))}/[^']*)', lines (\d+):", block)
+                if head and inside:
+                    located.append((head.group(1), inside.group(1), inside.group(2)))
+                elif head and "iter/traits/iterator.rs" in block:
+                    iterator_crash = True
             for message, file, line in located:
-                if file.startswith(str(crate.relative_to(ROOT)) + "/"):
+                if True:
                     found = item_at(crate, patched, file, int(line))
                     if found:
                         opaque.setdefault(found, "Aeneas: " + message.strip()[:70].rstrip(".").lower())
@@ -341,6 +360,15 @@ def extract(crate, date, rounds):
                     for p, why in sorted(added[key].items()):
                         print(f"   + {key}: {p}  ({why})")
                 return True
+        if iterator_crash:
+            # Their signatures crash Aeneas while it translates the `Iterator` trait (LIMITATIONS.md);
+            # without them, what uses them is rejected by Lean, and goes opaque in the next rounds.
+            why = "its signature crashes Aeneas on the `Iterator` trait"
+            exclude.update({f"core::iter::traits::iterator::Iterator::{m}": why for m in ("filter", "copied", "cloned", "find", "unzip")})
+            exclude["core::slice::iter::_::find"] = why
+            # `Sum` and `Product` take `I: Iterator`, which brings the whole trait in.
+            exclude["{impl core::iter::traits::accum::Sum<_> for _}"] = why
+            exclude["{impl core::iter::traits::accum::Product<_> for _}"] = why
         new = add_entries(toml, "opaque", {p: w for p, w in opaque.items() if p not in exclude}, date)
         new_excluded = add_entries(toml, "exclude", exclude, date)
         added["opaque"].update(new)

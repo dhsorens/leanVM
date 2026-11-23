@@ -1,0 +1,125 @@
+-- [isa]: external functions.
+-- Seeded by hax from Extraction/FunsExternal_Template.lean: fill the holes.
+-- hax never modifies this file; after re-extraction, compare it against the
+-- regenerated template to see what changed.
+module
+public import Aeneas
+public import CoreModels
+public import CoreModelsExt
+public import Isa.Extraction.Types
+@[expose] public section
+open CoreModels Aeneas
+open Aeneas.Std hiding namespace core alloc
+open RustM ControlFlow Error
+open Std.Do
+set_option linter.dupNamespace false
+set_option linter.hashCommand false
+set_option linter.unusedVariables false
+set_option linter.style.whitespace false
+set_option linter.style.setOption false
+set_option linter.style.longLine false
+set_option linter.internalConstructors false
+
+/- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
+set_option maxHeartbeats 1000000
+
+/- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
+set_option maxRecDepth 2048
+
+namespace isa
+
+/-- [isa::{impl core::clone::Clone for isa::CompiledProgram}::clone]:
+    Source: 'crates/isa/src/lib.rs', lines 27:9-27:14
+    Visibility: public -/
+axiom CompiledProgram.Insts.CoreCloneClone.clone
+  : CompiledProgram → RustM CompiledProgram
+
+/-- [isa::{impl core::fmt::Debug for isa::CompiledProgram}::fmt]:
+    Source: 'crates/isa/src/lib.rs', lines 27:16-27:21
+    Visibility: public -/
+axiom CompiledProgram.Insts.CoreFmtDebug.fmt
+  :
+  CompiledProgram → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [isa::{isa::CompiledProgram}::code_len]:
+    Source: 'crates/isa/src/lib.rs', lines 43:4-48:5
+    Visibility: public -/
+axiom CompiledProgram.code_len : CompiledProgram → RustM Std.Usize
+
+/-- [isa::{isa::CompiledProgram}::site_at]:
+    Source: 'crates/isa/src/lib.rs', lines 52:4-57:5
+    Visibility: public -/
+axiom CompiledProgram.site_at
+  : CompiledProgram → Std.U32 → RustM alloc.string.String
+
+/-- [isa::{isa::CompiledProgram}::fn_at]:
+    Source: 'crates/isa/src/lib.rs', lines 60:4-65:5 -/
+axiom CompiledProgram.fn_at : CompiledProgram → Std.U32 → RustM Str
+
+/-- [isa::{impl core::fmt::Debug for isa::Op}::fmt]:
+    Source: 'crates/isa/src/lib.rs', lines 68:22-68:27
+    Visibility: public -/
+axiom Op.Insts.CoreFmtDebug.fmt
+  :
+  Op → core.fmt.Formatter → RustM ((core.result.Result Unit core.fmt.Error)
+    × core.fmt.Formatter)
+
+/-- [isa::{impl core::fmt::Debug for isa::OutCells}::fmt]:
+    Source: 'crates/isa/src/lib.rs', lines 124:22-124:27
+    Visibility: public -/
+axiom OutCells.Insts.CoreFmtDebug.fmt
+  :
+  OutCells → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [isa::{impl core::fmt::Debug for isa::DerefMode}::fmt]:
+    Source: 'crates/isa/src/lib.rs', lines 150:22-150:27
+    Visibility: public -/
+axiom DerefMode.Insts.CoreFmtDebug.fmt
+  :
+  DerefMode → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [isa::{impl core::fmt::Debug for isa::BitsDest}::fmt]:
+    Source: 'crates/isa/src/lib.rs', lines 172:22-172:27
+    Visibility: public -/
+axiom BitsDest.Insts.CoreFmtDebug.fmt
+  :
+  BitsDest → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [isa::{impl core::fmt::Debug for isa::RHint}::fmt]:
+    Source: 'crates/isa/src/lib.rs', lines 181:16-181:21
+    Visibility: public -/
+axiom RHint.Insts.CoreFmtDebug.fmt
+  :
+  RHint → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [isa::program::{impl core::fmt::Debug for isa::program::Program}::fmt]:
+    Source: 'crates/isa/src/program.rs', lines 17:9-17:14
+    Visibility: public -/
+axiom program.Program.Insts.CoreFmtDebug.fmt
+  :
+  program.Program → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [isa::program::encode]:
+    Source: 'crates/isa/src/program.rs', lines 69:0-103:1 -/
+axiom program.encode : Op → RustM (Array Std.U64 13#usize)
+
+/-- [isa::program::g_pow]:
+    Source: 'crates/isa/src/program.rs', lines 107:0-123:1
+    Visibility: public -/
+axiom program.g_pow : Std.U32 → RustM Std.U64
+
+/-- [isa::prover::{impl core::fmt::Debug for isa::prover::Stats}::fmt]:
+    Source: 'crates/isa/src/prover.rs', lines 44:16-44:21
+    Visibility: public -/
+axiom prover.Stats.Insts.CoreFmtDebug.fmt
+  :
+  prover.Stats → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+end isa

@@ -8,8 +8,6 @@
 [scenario.parallel]
 backend = "lean"
 include = [
-  "crate::recommended_chunk_size",
-  "crate::topology::Topology",
   "crate::init",
   "crate::SendPtr",
   "crate::chunks_mut",

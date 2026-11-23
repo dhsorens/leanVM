@@ -86,4 +86,12 @@ def core.ops.range.Range.Insts.CoreCmpPartialEqRange.eq {Idx : Type}
 def core.borrow.Borrow.Blanket (T : Type) : core.borrow.Borrow T T where
   borrow := fun x => ok x
 
+/-! ## `Copy` -/
+
+/-- `[T; N]: Copy` for `T: Copy`, which the hax Lean library has for `Clone` only. -/
+@[reducible]
+def core.Array.Insts.CoreMarkerCopy {T : Type _} (N : Std.Usize)
+    (copyInst : core.marker.Copy T) : core.marker.Copy (Array T N) where
+  cloneCloneInst := core.Array.Insts.CoreCloneClone N copyInst.cloneCloneInst
+
 end CoreModels

@@ -55,6 +55,32 @@ opaque = [
   # Formatting through strings and floats.
   "crate::pretty_integer",
   "crate::pretty_f64",
+
+  # Rejected since the sync with upstream of 2026-11-23: each to be patched, modelled, or reduced to a
+  # reportable case.
+  "crate::field::lanes::portable::transpose_bits",  # Aeneas: internal error: please file an issue
+  "crate::multilinear::eq_eval",  # Aeneas: could not find: trait_impl_id: 52
+  "crate::multilinear::eq_table_serial",  # Aeneas: internal error, please file an issue
+  "crate::multilinear::fold",  # Aeneas: internal error, please file an issue
+  "crate::multilinear::mle_eval",  # Aeneas: could not find: trait_impl_id: 50
+  "crate::multilinear::shrink_eq_high",  # Aeneas: unimplemented
+  "crate::bit_fold::_::fold_columns",  # Lean: unknown constant `core.slice.iter.itermut.insts.coreitertraitsiterator
+  "crate::bit_fold::_::fold_row",  # Lean: unknown identifier `alloc.sharedavec.insts.coreitertraitscollectintoit
+  "crate::bit_fold::_::new",  # Lean: unknown identifier `core.num.usize.isolate_lowest_one`
+  "crate::cast_slice",  # Lean: unknown identifier `core.slice.slice.as_ptr`
+  "crate::cast_slice_mut",  # Lean: unknown identifier `core.mem.size_of_val`
+  "crate::field::dot",  # Lean: unknown identifier `core.slice.slice.as_chunks`
+  "crate::field::lanes::_::store",  # Lean: unknown identifier `core.mutaarray.insts.coreconverttryfrommutaslicetr
+  "crate::field::lanes::_::sum",  # Lean: unknown constant `core.array.iter.intoiter.insts.coreitertraitsiterato
+  "crate::field::lanes::portable::_::sum",  # Lean: unknown constant `core.array.iter.intoiter.insts.coreitertraitsiterato
+  "crate::field::lanes::portable::transpose_bytes",  # Lean: unknown constant `core.slice.iter.itermut.insts.coreitertraitsiterator
+  "crate::log2_ceil_usize",  # Lean: unknown identifier `core.array.insts.coremarkercopy`
+  "crate::log2_strict_usize",  # Lean: unknown identifier `core.array.insts.coremarkercopy`
+  "crate::field::index_mle",  # Lean: unknown identifier `core.array.insts.coremarkercopy`
+  "crate::field::g_pow",  # Lean: unknown identifier `core.array.insts.coremarkercopy`
+  "crate::field::powers",  # Lean: unknown identifier `core.array.insts.coremarkercopy`
+  "crate::field::div_by_g",  # Lean: unknown identifier `core.array.insts.coremarkercopy`
+  "crate::field::lanes::{impl core::ops::arith::MulAssign for crate::field::lanes::portable::F128x8}::mul_assign",  # Lean: unknown identifier `core.array.insts.coremarkercopy`
 ]
 exclude = [
   # SIMD modules and kernels under a bare `cfg(target_arch)`, present on one host only.
@@ -75,4 +101,16 @@ exclude = [
   "{impl serde_core::ser::Serialize for crate::field::gf2_64::F64}",
   "{impl serde_core::de::Deserialize for crate::field::gf2_64x3::F192}",
   "{impl serde_core::ser::Serialize for crate::field::gf2_64x3::F192}",
+  "core::iter::traits::iterator::Iterator::cloned",  # its signature crashes Aeneas on the `Iterator` trait
+  "core::iter::traits::iterator::Iterator::copied",  # its signature crashes Aeneas on the `Iterator` trait
+  "core::iter::traits::iterator::Iterator::filter",  # its signature crashes Aeneas on the `Iterator` trait
+  "core::iter::traits::iterator::Iterator::find",  # its signature crashes Aeneas on the `Iterator` trait
+  "core::iter::traits::iterator::Iterator::unzip",  # its signature crashes Aeneas on the `Iterator` trait
+  "core::slice::iter::_::find",  # its signature crashes Aeneas on the `Iterator` trait
+  # `Sum` and `Product` take `I: Iterator`: with them Aeneas translates the whole `Iterator` trait
+  # and crashes on it (an internal error at iter/traits/iterator.rs:42).
+  "{impl core::iter::traits::accum::Sum<_> for _}",
+  "{impl core::iter::traits::accum::Product<_> for _}",
+  # The prover's transcript arithmetic: `find_first` takes a `&dyn Fn`.
+  "crate::transcript",
 ]

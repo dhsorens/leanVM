@@ -15,6 +15,26 @@
   {
    "type": "path",
    "scope": "",
+   "name": "Aggregation",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/aggregation/proofs/aggregation/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "BenchHarness",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/bench_harness/proofs/bench-harness/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "Claims",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
@@ -55,10 +75,30 @@
   {
    "type": "path",
    "scope": "",
+   "name": "LeanDa",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/lean_da/proofs/lean-da/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "LeanSphincs",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
    "dir": "../../crates/lean_sphincs/proofs/lean-sphincs/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "LeanVm",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/lean_vm/proofs/lean-vm/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -75,10 +115,70 @@
   {
    "type": "path",
    "scope": "",
+   "name": "KeccakGkr",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/stable_prover/keccak_gkr/proofs/keccak-gkr/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "LeanVmCore",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/stable_prover/lean_vm_core/proofs/lean-vm-core/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Parallel",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/stable_prover/parallel/proofs/parallel/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Pcs",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/stable_prover/pcs/proofs/pcs/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Primitives",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/stable_prover/primitives/proofs/primitives/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "Verifier",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
    "dir": "../../crates/verifier/proofs/verifier/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "ZkdslCompiler",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../crates/zkdsl_compiler/proofs/zkdsl-compiler/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
