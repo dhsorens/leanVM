@@ -7,7 +7,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 echo "| extraction | definitions | opaque Rust items | sorry | patches |"
 echo "| --- | ---: | ---: | ---: | ---: |"
-for lean in crates/*/proofs/*/lean; do
+for lean in crates/*/proofs/*/lean crates/*/*/proofs/*/lean; do
   pkg=$(awk -F'"' '/^name = /{ print $2; exit }' "$lean/lakefile.toml")
   ext="$lean/$pkg/Extraction"
   asm="$lean/$pkg/Assumptions"

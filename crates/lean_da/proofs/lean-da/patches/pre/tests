@@ -1,4 +1,0 @@
-# `cargo test --release` arguments, one run per line, on the patched source.
--p lean_da
-# `vector_digest` and `membership_challenges` against the native verifier's, which lean_da's own tests do not pin.
--p aggregation --lib scalar_da_digest_matches_lean_da

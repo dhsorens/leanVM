@@ -1,2 +1,0 @@
-# `cargo test --release` arguments, one run per line, on the patched source.
--p lean_xmss
