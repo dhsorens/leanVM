@@ -1,8 +1,8 @@
 diff --git a/crates/verifier/src/hash.rs b/crates/verifier/src/hash.rs
-index ab93e0c8..6709344c 100644
+index ede515873..4733cfadc 100644
 --- a/crates/verifier/src/hash.rs
 +++ b/crates/verifier/src/hash.rs
-@@ -50,27 +50,32 @@ pub const KECCAK_PI: [usize; STATE_LANES] = {
+@@ -49,27 +49,32 @@ pub const KECCAK_PI: [usize; STATE_LANES] = {
  pub fn keccak_f(a: &mut [u64; STATE_LANES]) {
      for rc in KECCAK_RC {
          // Row by row, so every index is a constant: an index computed per lane vectorizes to gathers.
@@ -45,7 +45,7 @@ index ab93e0c8..6709344c 100644
      }
  }
  
-@@ -78,11 +83,12 @@ fn xor_block(state: &mut [u64; STATE_LANES], block: &[u8; RATE]) {
+@@ -77,11 +82,12 @@ fn xor_block(state: &mut [u64; STATE_LANES], block: &[u8; RATE]) {
  /// `0x01 ‖ 0^* ‖ 0x80`.
  pub fn keccak_hash(data: &[u8]) -> Digest {
      let mut state = [0u64; STATE_LANES];
@@ -61,7 +61,7 @@ index ab93e0c8..6709344c 100644
      let mut block = [0u8; RATE];
      block[..tail.len()].copy_from_slice(tail);
      block[tail.len()] ^= 0x01;
-@@ -90,8 +96,8 @@ pub fn keccak_hash(data: &[u8]) -> Digest {
+@@ -89,8 +95,8 @@ pub fn keccak_hash(data: &[u8]) -> Digest {
      xor_block(&mut state, &block);
      keccak_f(&mut state);
      let mut value = [0u8; 32];
@@ -72,7 +72,7 @@ index ab93e0c8..6709344c 100644
      }
      Digest(value)
  }
-@@ -103,7 +109,7 @@ pub struct Digest(pub [u8; 32]);
+@@ -102,7 +108,7 @@ pub struct Digest(pub [u8; 32]);
  impl Digest {
      /// Its four 64-bit words, the form a seed takes in the sponge's lanes.
      pub fn words(&self) -> [u64; 4] {
@@ -81,9 +81,9 @@ index ab93e0c8..6709344c 100644
      }
  
      /// Its two 128-bit halves, the one form a digest travels in.
-@@ -115,13 +121,9 @@ impl Digest {
-     pub fn from_halves(low: E, high: E) -> Result<Self, VerifierError> {
-         require(low.c2 == 0 && high.c2 == 0, VerifierError::DigestHalf)?;
+@@ -113,13 +119,9 @@ impl Digest {
+ 
+     pub fn from_halves(low: E, high: E) -> Self {
          let mut value = [0u8; 32];
 -        for (bytes, word) in value
 -            .as_chunks_mut()
@@ -96,5 +96,5 @@ index ab93e0c8..6709344c 100644
 +        for i in 0..4 {
 +            value[8 * i..8 * i + 8].copy_from_slice(&words[i].to_le_bytes());
          }
-         Ok(Self(value))
+         Self(value)
      }

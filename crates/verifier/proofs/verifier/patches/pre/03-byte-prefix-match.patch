@@ -1,8 +1,8 @@
 diff --git a/crates/verifier/src/layout.rs b/crates/verifier/src/layout.rs
-index 96655635..75ee6eca 100644
+index 60b46652e..2d89baefd 100644
 --- a/crates/verifier/src/layout.rs
 +++ b/crates/verifier/src/layout.rs
-@@ -201,7 +201,7 @@ impl Table {
+@@ -217,7 +217,7 @@ impl Table {
      fn count_columns(&self) -> Vec<usize> {
          let mut columns = Vec::new();
          for i in 0..self.width() {

@@ -1,5 +1,5 @@
 diff --git a/crates/verifier/src/multilinear.rs b/crates/verifier/src/multilinear.rs
-index e55ba4a8..ba2ffc4e 100644
+index 6e09c2222..35c847ea1 100644
 --- a/crates/verifier/src/multilinear.rs
 +++ b/crates/verifier/src/multilinear.rs
 @@ -79,8 +79,8 @@ pub fn eq_eval(left: &[E], right: &[E]) -> E {

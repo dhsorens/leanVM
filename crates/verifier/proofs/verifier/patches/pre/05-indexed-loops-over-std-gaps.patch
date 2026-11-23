@@ -1,8 +1,8 @@
 diff --git a/crates/verifier/src/bus.rs b/crates/verifier/src/bus.rs
-index af5c6982..1044b4b1 100644
+index e31b40fe4..3be68db4d 100644
 --- a/crates/verifier/src/bus.rs
 +++ b/crates/verifier/src/bus.rs
-@@ -66,8 +66,8 @@ fn bus_layout(framework_log_rows: &[usize], blocks: &[BusBlock]) -> BusLayout {
+@@ -90,8 +90,8 @@ fn bus_layout(framework_log_rows: &[usize], blocks: &[BusBlock]) -> BusLayout {
      let (offsets, depth) = stack_offsets(&sizes);
      let mut framework: Vec<Placement> = sizes
          .iter()
@@ -13,50 +13,16 @@ index af5c6982..1044b4b1 100644
          .collect();
      let tables = framework.split_off(framework_log_rows.len());
      BusLayout {
-diff --git a/crates/verifier/src/da.rs b/crates/verifier/src/da.rs
-index c1ebb64a..5baa0ee3 100644
---- a/crates/verifier/src/da.rs
-+++ b/crates/verifier/src/da.rs
-@@ -32,10 +32,10 @@ fn subspace_evaluations() -> Vec<Vec<K>> {
-             .collect();
-         rows.push(row);
-     }
--    for row in &mut rows {
--        let inverse = row[0].inv();
--        for value in row {
--            *value = *value * inverse;
-+    for i in 0..rows.len() {
-+        let inverse = rows[i][0].inv();
-+        for j in 0..rows[i].len() {
-+            rows[i][j] = rows[i][j] * inverse;
-         }
-     }
-     rows
-@@ -99,8 +99,10 @@ pub fn vector_digest(vector: &[E]) -> [u8; 32] {
- 
- /// The hash of the concatenated `(root, vector digest)` pairs, or of the empty string: what the statement of an aggregate carries for its DA roots.
- pub fn list_digest(roots: &[[u8; 32]]) -> [u8; 32] {
--    let pairs = roots
--        .iter()
--        .flat_map(|root| [*root, vector_digest(&membership_vector(root))]);
--    keccak_hash(&pairs.flatten().collect::<Vec<u8>>()).0
-+    let mut pairs = Vec::new();
-+    for root in roots {
-+        pairs.extend_from_slice(root);
-+        pairs.extend_from_slice(&vector_digest(&membership_vector(root)));
-+    }
-+    keccak_hash(&pairs).0
- }
 diff --git a/crates/verifier/src/field.rs b/crates/verifier/src/field.rs
-index 2377efc0..d618ad46 100644
+index be27bdb19..d995cb703 100644
 --- a/crates/verifier/src/field.rs
 +++ b/crates/verifier/src/field.rs
-@@ -236,12 +236,13 @@ impl Scaled {
-         let times_x = |value: u64| value << 1 ^ (0u64.wrapping_sub(value >> 63) & 0x1B);
-         let mut tables = vec![ZERO; (3 * WINDOWS_PER_LIMB) << WINDOW];
+@@ -217,12 +217,13 @@ impl Scaled {
+         // r * x^k * y^t, k ascending: each step multiplies every limb by x.
+         let mut tables = vec![ZERO; (2 * WINDOWS_PER_LIMB) << WINDOW];
          let mut monomial = r;
 -        for limb_tables in tables.as_chunks_mut::<{ WINDOWS_PER_LIMB << WINDOW }>().0 {
-+        for limb in 0..3 {
++        for limb in 0..2 {
              let mut power = monomial;
 -            for table in limb_tables.as_chunks_mut::<{ 1 << WINDOW }>().0 {
 +            for window in 0..WINDOWS_PER_LIMB {
@@ -66,13 +32,13 @@ index 2377efc0..d618ad46 100644
 -                        table[1 << bit | low] = table[low] + power;
 +                        tables[table + (1 << bit | low)] = tables[table + low] + power;
                      }
-                     power = E::new(times_x(power.c0), times_x(power.c1), times_x(power.c2));
+                     power = E::new(times_x(power.c0), times_x(power.c1));
                  }
 diff --git a/crates/verifier/src/hash.rs b/crates/verifier/src/hash.rs
-index 6709344c..19504a50 100644
+index 4733cfadc..2cd7daaf3 100644
 --- a/crates/verifier/src/hash.rs
 +++ b/crates/verifier/src/hash.rs
-@@ -73,7 +73,7 @@ pub fn keccak_f(a: &mut [u64; STATE_LANES]) {
+@@ -72,7 +72,7 @@ pub fn keccak_f(a: &mut [u64; STATE_LANES]) {
      }
  }
  
@@ -81,7 +47,7 @@ index 6709344c..19504a50 100644
      for i in 0..RATE / 8 {
          state[i] ^= u64::from_le_bytes(block[8 * i..8 * i + 8].try_into().unwrap());
      }
-@@ -85,7 +85,7 @@ pub fn keccak_hash(data: &[u8]) -> Digest {
+@@ -84,7 +84,7 @@ pub fn keccak_hash(data: &[u8]) -> Digest {
      let mut state = [0u64; STATE_LANES];
      let n_blocks = data.len() / RATE;
      for k in 0..n_blocks {
@@ -91,31 +57,31 @@ index 6709344c..19504a50 100644
      }
      let tail = &data[n_blocks * RATE..];
 diff --git a/crates/verifier/src/layout.rs b/crates/verifier/src/layout.rs
-index 75ee6eca..5cfb065b 100644
+index 2d89baefd..634371b76 100644
 --- a/crates/verifier/src/layout.rs
 +++ b/crates/verifier/src/layout.rs
-@@ -153,12 +153,18 @@ impl Flushes {
-     }
+@@ -162,12 +162,18 @@ impl Flushes {
  
-     fn counted(&mut self, prefix: [Form; 2], count: usize, suffix: Vec<Form>) {
--        let side = |counter: Form| [prefix.to_vec(), vec![counter], suffix.clone()].concat();
+     /// A pull at `count` and a push at `counter`, the same otherwise.
+     fn counted(&mut self, prefix: &[Form; 2], counter: Form, count: usize, suffix: &[Form]) {
+-        let side = |counter: Form| [&prefix[..], &[counter], suffix].concat();
 +        let side = |counter: Form| {
 +            let mut side = prefix.to_vec();
 +            side.push(counter);
-+            side.extend_from_slice(&suffix);
++            side.extend_from_slice(suffix);
 +            side
 +        };
-         self.pair(side(col(count, 1)), side(col(count, 0)));
+         self.pair(side(counter), side(col(count, 0)));
      }
  
      fn bytecode(&mut self, pc: usize, count: usize, opcode: usize, operands: Vec<Form>) {
 -        let suffix = [vec![constant(gpow(opcode as u64))], operands].concat();
 +        let mut suffix = vec![constant(gpow(opcode as u64))];
 +        suffix.extend_from_slice(&operands);
-         self.counted([constant(SEP_BYTECODE), col(pc, 0)], count, suffix);
+         self.counted(&[constant(SEP_BYTECODE), col(pc, 0)], col(count, 1), count, &suffix);
      }
  
-@@ -318,15 +324,15 @@ fn layout_limb(even: Option<usize>, odd: Option<usize>, flag: usize, missing: Op
+@@ -336,15 +342,15 @@ fn layout_limb(even: Option<usize>, odd: Option<usize>, flag: usize, missing: Op
      if a == b {
          return a.map_or(constant(ZERO), |a| col(a, 0));
      }
@@ -140,25 +106,8 @@ index 75ee6eca..5cfb065b 100644
  }
  
  fn flushes_keccak() -> Flushes {
-diff --git a/crates/verifier/src/merkle.rs b/crates/verifier/src/merkle.rs
-index 28b044c6..e84e571f 100644
---- a/crates/verifier/src/merkle.rs
-+++ b/crates/verifier/src/merkle.rs
-@@ -42,7 +42,11 @@ pub fn hash_pair(left: &[u8], right: &[u8]) -> Digest {
- }
- 
- fn hash_leaf(image: &[K]) -> Digest {
--    keccak_hash(&image.iter().flat_map(|word| word.to_bytes()).collect::<Vec<u8>>())
-+    let mut bytes = Vec::new();
-+    for word in image {
-+        bytes.extend_from_slice(&word.to_bytes());
-+    }
-+    keccak_hash(&bytes)
- }
- 
- /// One query's own opening, the form the recursion guest and the Python verifier read.
 diff --git a/crates/verifier/src/multilinear.rs b/crates/verifier/src/multilinear.rs
-index e55ba4a8..ec8b24d2 100644
+index 9d408a523..6e09c2222 100644
 --- a/crates/verifier/src/multilinear.rs
 +++ b/crates/verifier/src/multilinear.rs
 @@ -108,7 +108,11 @@ pub fn index_mle(point: &[E]) -> E {
@@ -185,9 +134,9 @@ index e55ba4a8..ec8b24d2 100644
      }
  
      /// eq weight of the coordinates above the window.
-@@ -132,8 +138,15 @@ impl Placement {
- }
+@@ -133,8 +139,15 @@ impl Placement {
  
+ /// Blocks of `2^size` laid end to end, largest first, ties by index: their offsets, and the total's `log2`, rounded up.
  pub fn stack_offsets(sizes: &[usize]) -> (Vec<u64>, usize) {
 -    let mut order: Vec<usize> = (0..sizes.len()).collect();
 -    order.sort_by_key(|&index| (std::cmp::Reverse(sizes[index]), index));
@@ -204,10 +153,10 @@ index e55ba4a8..ec8b24d2 100644
      let mut total = 0;
      for index in order {
 diff --git a/crates/verifier/src/ring_switch.rs b/crates/verifier/src/ring_switch.rs
-index 552dd1dc..4fc30c99 100644
+index 9ba09d9ef..a002bd678 100644
 --- a/crates/verifier/src/ring_switch.rs
 +++ b/crates/verifier/src/ring_switch.rs
-@@ -24,9 +24,9 @@ fn ring_weight(r: &[E], r_prime: &[E], coefficients: &[E]) -> E {
+@@ -58,9 +58,9 @@ fn ring_weight(r: &[E], r_prime: &[E], coefficients: &[E]) -> E {
      let mut frobenius = r.to_vec();
      for &c in coefficients {
          let mut product = c;
@@ -221,88 +170,25 @@ index 552dd1dc..4fc30c99 100644
          total += product;
      }
 diff --git a/crates/verifier/src/transcript.rs b/crates/verifier/src/transcript.rs
-index 8478c463..8bdc4c7e 100644
+index 872512b18..b8d8f65b7 100644
 --- a/crates/verifier/src/transcript.rs
 +++ b/crates/verifier/src/transcript.rs
-@@ -18,11 +18,8 @@ impl Proof {
-     pub fn load(stream: &[u8], merkle_openings: &[u8]) -> Result<Self, VerifierError> {
-         require(stream.len().is_multiple_of(24), VerifierError::StreamNotWholeElements)?;
-         Ok(Self {
--            stream: stream
--                .as_chunks::<24>()
--                .0
--                .iter()
--                .map(|data| E::from_bytes(data))
-+            stream: (0..stream.len() / 24)
-+                .map(|k| E::from_bytes(&stream[24 * k..24 * k + 24]))
-                 .collect::<Result<_, _>>()?,
-             merkle_openings: MerkleOpenings::Raw(merkle_openings.to_vec()),
-         })
-@@ -55,7 +52,7 @@ impl Sponge {
+@@ -42,7 +42,7 @@ impl Sponge {
                  keccak_f(&mut state);
                  state
              },
 -            pending: [(ZERO, 0); RATE_SCALARS],
 +            pending: [(ZERO, 0), (ZERO, 0), (ZERO, 0), (ZERO, 0)],
              n_pending: 0,
+             ground: None,
          }
-     }
-@@ -164,7 +161,7 @@ impl<'a> Transcript<'a> {
-             let valid = if bits == 0 {
-                 nonce == ZERO
-             } else {
--                challenge.c0 & mask == 0
-+                E::new(challenge.c0 & mask, 0, 0) == ZERO
-             };
-             require(valid, VerifierError::GrindingNonce)?;
-         }
-@@ -243,15 +240,15 @@ impl<'a> Transcript<'a> {
-             // `q(0) + q(1) == claim`. The transcript contains c0, c2, c3 ...
-             let constant = self.next_scalar()?;
-             let tail = self.next_scalars(count - 2)?;
--            return Ok([vec![constant, claim + tail.iter().fold(ZERO, |acc, &x| acc + x)], tail].concat());
-+            let mut poly = vec![constant, claim + tail.iter().fold(ZERO, |acc, &x| acc + x)];
-+            poly.extend_from_slice(&tail);
-+            return Ok(poly);
-         };
-         // `(1 + r) q(0) + r q(1) == claim`. The transcript contains c1, c2, c3 ... (r := eq_factor)
-         let tail = self.next_scalars(count - 1)?;
--        Ok([
--            vec![claim + eq_factor * tail.iter().fold(ZERO, |acc, &x| acc + x)],
--            tail,
--        ]
--        .concat())
-+        let mut poly = vec![claim + eq_factor * tail.iter().fold(ZERO, |acc, &x| acc + x)];
-+        poly.extend_from_slice(&tail);
-+        Ok(poly)
-     }
- 
-     /// Nothing of the proof is left unread. Returns every query's path, in the order they were opened.
 diff --git a/crates/verifier/src/whir.rs b/crates/verifier/src/whir.rs
-index 8f17b937..a6e4f19e 100644
+index 3b476110b..48cbbde0c 100644
 --- a/crates/verifier/src/whir.rs
 +++ b/crates/verifier/src/whir.rs
-@@ -59,12 +59,11 @@ fn derive_config(log_n: usize, log_inv_rate: usize) -> Result<WhirConfig, Verifi
- 
- /// Regroup a level's leaf words into the E values they encode, three per lane.
- fn ext_row(words: &[K]) -> Vec<E> {
--    words
--        .as_chunks()
--        .0
--        .iter()
--        .map(|&[c0, c1, c2]| E::new(c0.0, c1.0, c2.0))
--        .collect()
-+    let mut row = Vec::new();
-+    for k in 0..words.len() / 3 {
-+        row.push(E::new(words[3 * k].0, words[3 * k + 1].0, words[3 * k + 2].0));
-+    }
-+    row
- }
- 
- fn sample_queries(transcript: &mut Transcript, block_length: u64, count: usize) -> Result<Vec<u64>, VerifierError> {
-@@ -87,11 +86,11 @@ fn sample_queries(transcript: &mut Transcript, block_length: u64, count: usize)
+@@ -101,11 +101,11 @@ fn sample_queries(transcript: &mut Transcript, block_length: u64, count: usize)
  /// The subspace polynomials' normalizers. The subspaces are spanned by powers of x, so every one lies in K.
- fn subspace_roots(log_n: usize) -> Vec<K> {
+ pub fn subspace_roots(log_n: usize) -> Vec<K> {
      let mut roots = vec![K(1)];
 -    let mut layer: Vec<K> = (1..=log_n).map(|i| K(1 << i)).collect();
 +    let mut layer: Vec<K> = (1..log_n + 1).map(|i| K(1 << i)).collect();

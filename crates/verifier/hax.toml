@@ -13,7 +13,6 @@ opaque = [
   "crate::bus::table_sumcheck",
   "crate::bus::verify_gkr_grand_products",  # a break to an outer loop
   "crate::keccak::verify_keccak",
-  "crate::merkle::_::expand",
   "crate::transcript::_::merkle",
 
   # Aeneas cannot join loop states that hold shared borrows of borrowed data.
@@ -43,8 +42,6 @@ opaque = [
   "crate::walk",  # lib.rs:328
   "crate::verify_keccak_batch",  # lib.rs:224
   "crate::da::encode",
-  "crate::da::dual_codeword",
-  "crate::da::vector_digest",
   "crate::keccak::verify_layer",  # keccak.rs:143
   "crate::layout::build_layout",  # layout.rs:536
   "crate::layout::keccak_columns",  # layout.rs:440
@@ -52,13 +49,23 @@ opaque = [
   # Builds a `Box<dyn Fn>` weight (bus.rs:90): Aeneas has no higher-ranked vtables.
   "crate::bus::_::on_stack",
 
-  # Translated by Aeneas, but its closures do not typecheck against the hax Lean library.
-  "crate::da::membership_challenges",
+  # New or rewritten upstream since the last extraction, and rejected by Aeneas: each still to be
+  # patched or reduced to a reportable case.
+  "crate::bytecode::is_valid_encoding_of_a_leanisa_program",  # `find` in a closure: internal error
+  "crate::da::membership_challenge",  # a closure returning an `Option`: internal error
+  "crate::ring_switch::ring_coefficients",  # `iter_mut().for_each`: internal error
+  "crate::whir::novel_basis",  # a `break` out of a loop that extends its own vector: internal error
+  "crate::whir::induced_weight",  # nested zips over a vector built in the loop: internal error
+  "crate::whir::whir_queries",  # an index into a constant table of tables, as `derive_config`
+  "crate::wire::read_phase",  # a return inside nested loops
+  "crate::wire::write_phase",  # "no bottoms in the value"
+  "crate::wire::_::from_bytes",  # a borrow loop Aeneas cannot end
 ]
 exclude = [
   # `dyn Fn` claims and weights: Aeneas has no dynamic trait types, and an opaque item still
   # needs its signature translated.
   "crate::verify_stacked_opening",
+  "crate::read_ood",  # returns a `Box<dyn Fn>` claim
   "crate::whir::verify_whir",
   "crate::whir::GluedClaim",
   # Derived `Clone` of a container of tuples: Aeneas's builtin `Clone` does not match the hax
