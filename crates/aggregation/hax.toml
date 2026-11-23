@@ -1,9 +1,9 @@
 # The Lean extraction of this crate (formal/extraction/README.md), regenerated with
-# `formal/extraction/hax.sh extract` into proofs/rec-aggregation/lean.
+# `formal/extraction/hax.sh extract` into proofs/aggregation/lean.
 #
 # `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
 # Each is grouped by what stops it, so the list is also the work left.
-[scenario.rec-aggregation]
+[scenario.aggregation]
 backend = "lean"
 opaque = [
   # Proving: tracing spans (their callsite statics form type and function groups Aeneas

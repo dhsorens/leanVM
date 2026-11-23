@@ -1,0 +1,6 @@
+# `cargo test --release` arguments, one run per line, on the patched source.
+-p fiat_shamir_prover
+# Pruned openings and the transcript's challenges, checked by the verifier against real proofs.
+-p stable_lean_vm_core --test verifiers
+# `compress`, checked against the VM's `KECCAK` through the digests proofs publish.
+-p zkdsl_compiler --test suite vm_proofs

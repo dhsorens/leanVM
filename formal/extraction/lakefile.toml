@@ -6,7 +6,7 @@ defaultTargets = ["Extraction"]
 
 [[lean_lib]]
 name = "Extraction"
-roots = ["Extraction.RecAggregation", "Extraction.Bench", "Extraction.FiatShamir", "Extraction.LeanDa", "Extraction.Leanvm", "Extraction.Signatures", "Extraction.KeccakGkr", "Extraction.LeanvmCore", "Extraction.Parallel", "Extraction.Pcs", "Extraction.Primitives", "Extraction.Verifier", "Extraction.LeanCompiler"]
+roots = ["Extraction.Claims", "Extraction.FiatShamirProver", "Extraction.Isa", "Extraction.Keccak256", "Extraction.LeanSphincs", "Extraction.LeanXmss", "Extraction.Verifier"]
 
 [[require]]
 name = "CoreModelsExt"
@@ -18,53 +18,29 @@ git = "https://github.com/Verified-zkEVM/ArkLib"
 rev = "674952b872874d443d9756be8ac27daf4050b91f"
 
 [[require]]
-name = "RecAggregation"
-path = "../../crates/aggregation/proofs/rec-aggregation/lean"
+name = "Claims"
+path = "../../crates/claims/proofs/claims/lean"
 
 [[require]]
-name = "Bench"
-path = "../../crates/bench_harness/proofs/bench/lean"
+name = "FiatShamirProver"
+path = "../../crates/fiat_shamir_prover/proofs/fiat-shamir-prover/lean"
 
 [[require]]
-name = "FiatShamir"
-path = "../../crates/fiat_shamir_prover/proofs/fiat-shamir/lean"
+name = "Isa"
+path = "../../crates/isa/proofs/isa/lean"
 
 [[require]]
-name = "LeanDa"
-path = "../../crates/lean_da/proofs/lean-da/lean"
+name = "Keccak256"
+path = "../../crates/keccak256/proofs/keccak256/lean"
 
 [[require]]
-name = "Leanvm"
-path = "../../crates/lean_vm/proofs/leanvm/lean"
+name = "LeanSphincs"
+path = "../../crates/lean_sphincs/proofs/lean-sphincs/lean"
 
 [[require]]
-name = "Signatures"
-path = "../../crates/lean_xmss/proofs/signatures/lean"
-
-[[require]]
-name = "KeccakGkr"
-path = "../../crates/stable_prover/keccak_gkr/proofs/keccak-gkr/lean"
-
-[[require]]
-name = "LeanvmCore"
-path = "../../crates/stable_prover/lean_vm_core/proofs/leanvm-core/lean"
-
-[[require]]
-name = "Parallel"
-path = "../../crates/stable_prover/parallel/proofs/parallel/lean"
-
-[[require]]
-name = "Pcs"
-path = "../../crates/stable_prover/pcs/proofs/pcs/lean"
-
-[[require]]
-name = "Primitives"
-path = "../../crates/stable_prover/primitives/proofs/primitives/lean"
+name = "LeanXmss"
+path = "../../crates/lean_xmss/proofs/lean-xmss/lean"
 
 [[require]]
 name = "Verifier"
 path = "../../crates/verifier/proofs/verifier/lean"
-
-[[require]]
-name = "LeanCompiler"
-path = "../../crates/zkdsl_compiler/proofs/lean-compiler/lean"

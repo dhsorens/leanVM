@@ -1,10 +1,10 @@
 # The Lean extraction of this crate (formal/extraction/README.md), regenerated with
-# `formal/extraction/hax.sh extract` into proofs/lean-compiler/lean.
+# `formal/extraction/hax.sh extract` into proofs/zkdsl-compiler/lean.
 #
 # `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
 # Each is grouped by what stops it, so the list is also the work left. What is extracted is
 # the AST, the IR and the plain data around them; the parser and the lowering are opaque.
-[scenario.lean-compiler]
+[scenario.zkdsl-compiler]
 backend = "lean"
 opaque = [
   # The lowering state `FnLower<'a>` holds `&'a mut` borrows and shared borrows of borrowed

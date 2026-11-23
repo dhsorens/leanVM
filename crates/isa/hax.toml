@@ -1,0 +1,6 @@
+# The Lean extraction of this crate (formal/extraction/README.md), regenerated with
+# `formal/extraction/hax.sh extract` into proofs/isa/lean.
+[scenario.isa]
+backend = "lean"
+opaque = [
+]

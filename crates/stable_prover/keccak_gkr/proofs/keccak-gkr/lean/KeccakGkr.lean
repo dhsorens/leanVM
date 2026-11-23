@@ -1,2 +1,0 @@
-import KeccakGkr.Extraction
-import KeccakGkr.Verification.ProofObligations

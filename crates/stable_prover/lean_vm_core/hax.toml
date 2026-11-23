@@ -1,11 +1,11 @@
 # The Lean extraction of this crate (formal/extraction/README.md), regenerated with
-# `formal/extraction/hax.sh extract` into proofs/leanvm-core/lean.
+# `formal/extraction/hax.sh extract` into proofs/lean-vm-core/lean.
 #
 # What is extracted with bodies: the instruction set (`cpu::isa`), the `Program` and its hints,
 # the tables' identities and shapes (`tables`, `colval`), and `GPow`'s lookups. The prover's
 # machinery is not: `opaque` items are extracted as signatures only, axioms in
 # Assumptions/FunsExternal.lean, grouped by what stops them, so the list is also the work left.
-[scenario.leanvm-core]
+[scenario.lean-vm-core]
 backend = "lean"
 # The constants of opaque modules that the crates using this one read, translated with their
 # values: charon reaches them only as roots, rustc having inlined every use, and the most
