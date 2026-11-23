@@ -249,6 +249,9 @@ def add_entries(toml, key, entries, date):
     """Append `entries` (pattern -> reason) to the scenario's `key` list, under the dated heading."""
     text = toml.read_text()
     if key == "exclude":  # an opaque item whose signature does not translate moves here
+        block = re.search(r"(?ms)^exclude = \[\n(.*?)^\]\n", text)
+        already = set(re.findall(r'^\s*"([^"]+)",', block.group(1), re.M)) if block else set()
+        entries = {p: why for p, why in entries.items() if p not in already}
         moved = "".join(l for l in text.splitlines(True) if not any(re.match(rf'\s*"{re.escape(p)}",', l) for p in entries))
         if moved != text:
             text = moved
@@ -315,7 +318,9 @@ def extract(crate, date, rounds):
             errors = ANSI.sub("", error_log.read_text())
             last = "rejected by Aeneas"
             for line in errors.splitlines():
-                ignored = re.match(r"\[Error\] Ignoring the body of '(.*)' because", line)
+                ignored = re.match(r"\[Error\] Ignoring the body of '(.*)' because", line) or re.match(
+                    r"\[Warn ?\] Could not translate the body of function '(.*?)'? because", line
+                )
                 if ignored:
                     reasons[pattern(ignored.group(1), name)] = last
                 elif line.startswith("[Error] "):
