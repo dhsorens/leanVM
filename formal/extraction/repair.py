@@ -247,6 +247,11 @@ def with_sorry(path):
 def add_entries(toml, key, entries, date):
     """Append `entries` (pattern -> reason) to the scenario's `key` list, under the dated heading."""
     text = toml.read_text()
+    if key == "exclude":  # an opaque item whose signature does not translate moves here
+        moved = "".join(l for l in text.splitlines(True) if not any(re.match(rf'\s*"{re.escape(p)}",', l) for p in entries))
+        if moved != text:
+            text = moved
+            toml.write_text(text)
     present = set(re.findall(r'^\s*"([^"]+)",', text, re.M))
     entries = {p: why for p, why in entries.items() if p not in present}
     if not entries:

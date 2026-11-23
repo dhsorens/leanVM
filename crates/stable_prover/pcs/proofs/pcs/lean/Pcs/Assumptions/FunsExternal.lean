@@ -1,0 +1,463 @@
+-- [stable_pcs]: external functions.
+-- Seeded by hax from Extraction/FunsExternal_Template.lean: fill the holes.
+-- hax never modifies this file; after re-extraction, compare it against the
+-- regenerated template to see what changed.
+module
+public import Aeneas
+public import CoreModels
+public import CoreModelsExt
+public import Pcs.Extraction.Types
+@[expose] public section
+open CoreModels Aeneas
+open Aeneas.Std hiding namespace core alloc
+open RustM ControlFlow Error
+open Std.Do
+set_option linter.dupNamespace false
+set_option linter.hashCommand false
+set_option linter.unusedVariables false
+set_option linter.style.whitespace false
+set_option linter.style.setOption false
+set_option linter.style.longLine false
+set_option linter.internalConstructors false
+
+/- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
+set_option maxHeartbeats 1000000
+
+/- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
+set_option maxRecDepth 2048
+
+namespace stable_pcs
+
+/-- [stable_pcs::_ASSERT_4308D381]
+    Source: 'crates/stable_prover/pcs/src/lib.rs', lines 17:0-17:73
+    Visibility: public -/
+axiom _ASSERT_4308D381 : RustM Unit
+
+/-- [stable_pcs::collect_chunks]:
+    Source: 'crates/stable_prover/pcs/src/lib.rs', lines 22:0-26:1 -/
+axiom collect_chunks
+  {T : Type _} {T2 : Type _} {N : Std.Usize}
+  (coreopsfunctionFnT2TupleUsizeArrayInst : core.ops.function.Fn T2 Std.Usize
+  (Array T N)) :
+  Std.Usize → T2 → RustM (alloc.vec.Vec T)
+
+/-- [stable_pcs::merkle::{stable_pcs::merkle::MerkleTree}::root]:
+    Source: 'crates/stable_prover/pcs/src/merkle.rs', lines 67:4-69:5 -/
+axiom merkle.MerkleTree.root
+  : merkle.MerkleTree → RustM (Array Std.U8 32#usize)
+
+/-- [stable_pcs::merkle::{stable_pcs::merkle::MerkleTree}::open]:
+    Source: 'crates/stable_prover/pcs/src/merkle.rs', lines 72:4-81:5 -/
+axiom merkle.MerkleTree.open
+  {T1 : Type _} (coreopsfunctionFnT1TupleUsizeSharedASliceF64Inst :
+  core.ops.function.Fn T1 Std.Usize (Slice stable_primitives.field.gf2_64.F64))
+  :
+  merkle.MerkleTree → Slice Std.Usize → Std.Usize → T1 → RustM
+    (alloc.vec.Vec verifier.merkle.MerklePath)
+
+/-- [stable_pcs::ntt::forward]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 35:0-38:1 -/
+axiom ntt.forward
+  {T : Type _} (coremarkerCopyInst : core.marker.Copy T) (coreopsarithAddInst :
+  core.ops.arith.Add T T T) (coreopsarithMulInst : core.ops.arith.Mul T T T) :
+  T → T → T → RustM (T × T)
+
+/-- [stable_pcs::ntt::inverse]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 42:0-45:1 -/
+axiom ntt.inverse
+  {T : Type _} (coremarkerCopyInst : core.marker.Copy T) (coreopsarithAddInst :
+  core.ops.arith.Add T T T) (coreopsarithMulInst : core.ops.arith.Mul T T T) :
+  T → T → T → RustM (T × T)
+
+/-- [stable_pcs::ntt::zip_rows]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 49:0-65:1 -/
+axiom ntt.zip_rows
+  {T0 : Type _} {T1 : Type _}
+  (coreopsfunctionFnT0TupleF64x8F64x8F64x8PairF64x8F64x8Inst :
+  core.ops.function.Fn T0 (stable_primitives.field.lanes.portable.F64x8 ×
+  stable_primitives.field.lanes.portable.F64x8 ×
+  stable_primitives.field.lanes.portable.F64x8)
+  (stable_primitives.field.lanes.portable.F64x8 ×
+  stable_primitives.field.lanes.portable.F64x8))
+  (coreopsfunctionFnT1TupleF64F64F64PairF64F64Inst : core.ops.function.Fn T1
+  (stable_primitives.field.gf2_64.F64 × stable_primitives.field.gf2_64.F64 ×
+  stable_primitives.field.gf2_64.F64) (stable_primitives.field.gf2_64.F64 ×
+  stable_primitives.field.gf2_64.F64)) :
+  Slice stable_primitives.field.gf2_64.F64 → Slice
+    stable_primitives.field.gf2_64.F64 → stable_primitives.field.gf2_64.F64
+    → T0 → T1 → RustM ((Slice stable_primitives.field.gf2_64.F64) ×
+    (Slice stable_primitives.field.gf2_64.F64))
+
+/-- [stable_pcs::ntt::butterfly]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 68:0-70:1 -/
+axiom ntt.butterfly
+  :
+  Slice stable_primitives.field.gf2_64.F64 → Slice
+    stable_primitives.field.gf2_64.F64 → stable_primitives.field.gf2_64.F64
+    → RustM ((Slice stable_primitives.field.gf2_64.F64) × (Slice
+    stable_primitives.field.gf2_64.F64))
+
+/-- [stable_pcs::ntt::written]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 84:0-90:1 -/
+axiom ntt.written
+  {T0 : Type _} (coreopsfunctionFnT0PairUsizeMutSliceF64TupleInst :
+  core.ops.function.Fn T0 (Std.Usize × (Slice
+  stable_primitives.field.gf2_64.F64)) Unit) :
+  Std.Usize → T0 → RustM (alloc.vec.Vec stable_primitives.field.gf2_64.F64)
+
+/-- [stable_pcs::ntt::{impl core::fmt::Debug for stable_pcs::ntt::AdditiveNttF64}::fmt]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 94:16-94:21
+    Visibility: public -/
+axiom ntt.AdditiveNttF64.Insts.CoreFmtDebug.fmt
+  :
+  ntt.AdditiveNttF64 → core.fmt.Formatter → RustM ((core.result.Result Unit
+    core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::standard]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 104:4-116:5
+    Visibility: public -/
+axiom ntt.AdditiveNttF64.standard : Std.Usize → RustM ntt.AdditiveNttF64
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::twiddle]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 120:4-129:5
+    Visibility: public -/
+axiom ntt.AdditiveNttF64.twiddle
+  :
+  ntt.AdditiveNttF64 → Std.Usize → Std.Usize → RustM
+    stable_primitives.field.gf2_64.F64
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::transform]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 133:4-161:5 -/
+axiom ntt.AdditiveNttF64.transform
+  {O : Type _} {T1 : Type _}
+  (coreopsfunctionFnT1PairShared0SliceF64Mut1SliceTupleInst :
+  core.ops.function.Fn T1 ((Slice stable_primitives.field.gf2_64.F64) × (Slice
+  O)) Unit) :
+  ntt.AdditiveNttF64 → Slice stable_primitives.field.gf2_64.F64 → Std.Usize
+    → Std.Usize → Slice O → T1 → RustM ((Slice
+    stable_primitives.field.gf2_64.F64) × (Slice O))
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::top_layers]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 167:4-185:5 -/
+axiom ntt.AdditiveNttF64.top_layers
+  :
+  ntt.AdditiveNttF64 → Slice stable_primitives.field.gf2_64.F64 → Std.Usize
+    → Std.Usize → Std.Usize → RustM (Slice
+    stable_primitives.field.gf2_64.F64)
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::layers]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 189:4-208:5 -/
+axiom ntt.AdditiveNttF64.layers
+  :
+  ntt.AdditiveNttF64 → Slice (Slice stable_primitives.field.gf2_64.F64) →
+    Std.Usize → Std.Usize → RustM ((Slice (Slice
+    stable_primitives.field.gf2_64.F64)) × (Slice (Slice
+    stable_primitives.field.gf2_64.F64) → Slice (Slice
+    stable_primitives.field.gf2_64.F64)))
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::transform_block]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 212:4-236:5 -/
+axiom ntt.AdditiveNttF64.transform_block
+  {O : Type _} {T1 : Type _}
+  (coreopsfunctionFnT1PairShared0SliceF64Mut1SliceTupleInst :
+  core.ops.function.Fn T1 ((Slice stable_primitives.field.gf2_64.F64) × (Slice
+  O)) Unit) :
+  ntt.AdditiveNttF64 → Slice stable_primitives.field.gf2_64.F64 → Slice O
+    → Std.Usize → Std.Usize → Std.Usize → T1 → RustM ((Slice
+    stable_primitives.field.gf2_64.F64) × (Slice O))
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::encode_interleaved_in_place]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 251:4-261:5
+    Visibility: public -/
+axiom ntt.AdditiveNttF64.encode_interleaved_in_place
+  :
+  ntt.AdditiveNttF64 → Slice stable_primitives.field.gf2_64.F64 → Std.Usize
+    → Std.Usize → RustM (Slice stable_primitives.field.gf2_64.F64)
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::encode_rows]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 265:4-276:5 -/
+axiom ntt.AdditiveNttF64.encode_rows
+  {O : Type _} {T1 : Type _}
+  (coreopsfunctionFnT1PairShared0SliceF64Mut1SliceTupleInst :
+  core.ops.function.Fn T1 ((Slice stable_primitives.field.gf2_64.F64) × (Slice
+  O)) Unit) :
+  ntt.AdditiveNttF64 → Slice stable_primitives.field.gf2_64.F64 → Std.Usize
+    → Std.Usize → Slice O → T1 → RustM ((alloc.vec.Vec
+    stable_primitives.field.gf2_64.F64) × (Slice O))
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::encode_lane_major]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 280:4-306:5 -/
+axiom ntt.AdditiveNttF64.encode_lane_major
+  {O : Type _} {T1 : Type _}
+  (coreopsfunctionFnT1PairShared0SliceF64Mut1SliceTupleInst :
+  core.ops.function.Fn T1 ((Slice stable_primitives.field.gf2_64.F64) × (Slice
+  O)) Unit) :
+  ntt.AdditiveNttF64 → Slice stable_primitives.field.gf2_64.F64 → Std.Usize
+    → Std.Usize → Slice O → T1 → RustM ((alloc.vec.Vec
+    stable_primitives.field.gf2_64.F64) × (Slice O))
+
+/-- [stable_pcs::ntt::{stable_pcs::ntt::AdditiveNttF64}::inverse_transform]:
+    Source: 'crates/stable_prover/pcs/src/ntt.rs', lines 309:4-319:5
+    Visibility: public -/
+axiom ntt.AdditiveNttF64.inverse_transform
+  :
+  ntt.AdditiveNttF64 → Slice stable_primitives.field.gf2_64.F64 → Std.Usize
+    → RustM (Slice stable_primitives.field.gf2_64.F64)
+
+/-- [stable_pcs::ring_switch::transpose_s_hat]:
+    Source: 'crates/stable_prover/pcs/src/ring_switch.rs', lines 75:0-86:1 -/
+axiom ring_switch.transpose_s_hat
+  :
+  Array stable_primitives.field.gf2_64x2.F128 64#usize → RustM (Array
+    stable_primitives.field.gf2_64.F64 128#usize)
+
+/-- [stable_pcs::ring_switch::{stable_pcs::ring_switch::RingWeight}::apply]:
+    Source: 'crates/stable_prover/pcs/src/ring_switch.rs', lines 97:4-105:5 -/
+axiom ring_switch.RingWeight.apply
+  :
+  ring_switch.RingWeight → stable_primitives.field.gf2_64x2.F128 → RustM
+    stable_primitives.field.gf2_64x2.F128
+
+/-- [stable_pcs::ring_switch::{stable_pcs::ring_switch::RingFold}::add_chunk]:
+    Source: 'crates/stable_prover/pcs/src/ring_switch.rs', lines 127:4-141:5 -/
+axiom ring_switch.RingFold.add_chunk
+  :
+  ring_switch.RingFold → Std.Usize → Slice
+    stable_primitives.field.gf2_64x2.F128 → RustM (Slice
+    stable_primitives.field.gf2_64x2.F128)
+
+/-- [stable_pcs::stack_open::basis::dot_block]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 40:0-46:1 -/
+axiom stack_open.basis.dot_block
+  :
+  Array stable_primitives.field.lanes.portable.F128x8 8#usize → Array
+    stable_primitives.field.gf2_64.F64 64#usize → RustM
+    stable_primitives.field.gf2_64x2.F128
+
+/-- [stable_pcs::stack_open::basis::table]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 52:0-58:1 -/
+axiom stack_open.basis.table
+  :
+  Slice (Array stable_primitives.field.gf2_64x2.F128 2#usize) → RustM
+    (alloc.vec.Vec stable_primitives.field.gf2_64x2.F128)
+
+/-- [stable_pcs::stack_open::basis::{stable_pcs::stack_open::basis::Terms}::project]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 134:4-162:5 -/
+axiom stack_open.basis.Terms.project
+  {T1 : Type _} {S : Std.Usize}
+  (coreopsfunctionFnT1TupleUsizeUsizeMut0ArrayArrayF6464STupleInst :
+  core.ops.function.Fn T1 (Std.Usize × Std.Usize × (Array (Array
+  stable_primitives.field.gf2_64.F64 64#usize) S)) Unit) :
+  stack_open.basis.Terms → Std.Usize → T1 → RustM (alloc.vec.Vec
+    stable_primitives.field.gf2_64x2.F128)
+
+/-- [stable_pcs::stack_open::basis::{stable_pcs::stack_open::basis::Terms}::lift]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 167:4-203:5 -/
+axiom stack_open.basis.Terms.lift
+  :
+  stack_open.basis.Terms → Slice stable_primitives.field.gf2_64x2.F128 →
+    RustM (alloc.vec.Vec stable_primitives.field.gf2_64x2.F128)
+
+/-- [stable_pcs::stack_open::basis::{stable_pcs::stack_open::basis::Projection<'a>}::new]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 223:4-235:5 -/
+axiom stack_open.basis.Projection.new
+  :
+  stack_open.basis.Terms → core.ops.range.Range Std.Usize → RustM
+    stack_open.basis.Projection
+
+/-- [stable_pcs::stack_open::basis::{stable_pcs::stack_open::basis::Projection<'a>}::feed]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 237:4-256:5 -/
+axiom stack_open.basis.Projection.feed
+  :
+  stack_open.basis.Projection → Std.Usize → Array
+    stable_primitives.field.gf2_64.F64 64#usize → RustM
+    stack_open.basis.Projection
+
+/-- [stable_pcs::stack_open::basis::{stable_pcs::stack_open::basis::Projection<'a>}::end_run]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 259:4-270:5 -/
+axiom stack_open.basis.Projection.end_run
+  : stack_open.basis.Projection → RustM stack_open.basis.Projection
+
+/-- [stable_pcs::stack_open::basis::{stable_pcs::stack_open::basis::Projection<'a>}::finish]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 273:4-299:5 -/
+axiom stack_open.basis.Projection.finish
+  :
+  stack_open.basis.Projection → RustM (alloc.vec.Vec
+    stable_primitives.field.gf2_64x2.F128)
+
+/-- [stable_pcs::stack_open::basis::initial_basis]:
+    Source: 'crates/stable_prover/pcs/src/stack_open/basis.rs', lines 307:0-383:1 -/
+axiom stack_open.basis.initial_basis
+  :
+  Std.Usize → Std.Usize → Slice stack_open.StackClaim → Slice
+    stable_primitives.field.gf2_64x2.F128 → Std.Usize → Slice
+    ring_switch.RingWeight → RustM (stack_open.basis.Terms × (alloc.vec.Vec
+    stable_primitives.field.gf2_64x2.F128))
+
+/-- [stable_pcs::stack_open::{impl core::fmt::Debug for stable_pcs::stack_open::StackClaim}::fmt]:
+    Source: 'crates/stable_prover/pcs/src/stack_open.rs', lines 33:16-33:21
+    Visibility: public -/
+axiom stack_open.StackClaim.Insts.CoreFmtDebug.fmt
+  :
+  stack_open.StackClaim → core.fmt.Formatter → RustM ((core.result.Result
+    Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_pcs::stack_open::{impl core::fmt::Debug for stable_pcs::stack_open::RingSwitchOpen}::fmt]:
+    Source: 'crates/stable_prover/pcs/src/stack_open.rs', lines 43:16-43:21
+    Visibility: public -/
+axiom stack_open.RingSwitchOpen.Insts.CoreFmtDebug.fmt
+  :
+  stack_open.RingSwitchOpen → core.fmt.Formatter → RustM
+    ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_pcs::stack_open::{stable_pcs::stack_open::RingSwitchOpen}::qkeccak_vars]:
+    Source: 'crates/stable_prover/pcs/src/stack_open.rs', lines 51:4-53:5 -/
+axiom stack_open.RingSwitchOpen.qkeccak_vars
+  : stack_open.RingSwitchOpen → RustM Std.Usize
+
+/-- [stable_pcs::stack_open::commit]:
+    Source: 'crates/stable_prover/pcs/src/stack_open.rs', lines 71:0-83:1
+    Visibility: public -/
+axiom stack_open.commit
+  :
+  fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool →
+    Slice stable_primitives.field.gf2_64.F64 → Std.Usize → Std.Usize →
+    RustM (stack_open.Committed × (fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool))
+
+/-- [stable_pcs::stack_open::open]:
+    Source: 'crates/stable_prover/pcs/src/stack_open.rs', lines 90:0-138:1
+    Visibility: public -/
+axiom stack_open.open
+  :
+  fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool →
+    stack_open.Committed → alloc.vec.Vec stable_primitives.field.gf2_64.F64
+    → Slice stack_open.StackClaim → stack_open.RingSwitchOpen → RustM
+    (fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool)
+
+/-- [stable_pcs::sumcheck::product_sumcheck]:
+    Source: 'crates/stable_prover/pcs/src/sumcheck.rs', lines 10:0-33:1
+    Visibility: public -/
+axiom sumcheck.product_sumcheck
+  :
+  fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool →
+    alloc.vec.Vec stable_primitives.field.gf2_64x2.F128 → alloc.vec.Vec
+    stable_primitives.field.gf2_64x2.F128 → Std.Usize →
+    stable_primitives.field.gf2_64x2.F128 → RustM (((alloc.vec.Vec
+    stable_primitives.field.gf2_64x2.F128) × (alloc.vec.Vec
+    stable_primitives.field.gf2_64x2.F128) × (alloc.vec.Vec
+    stable_primitives.field.gf2_64x2.F128)) ×
+    (fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool))
+
+/-- [stable_pcs::whir::commit]:
+    Source: 'crates/stable_prover/pcs/src/whir.rs', lines 105:0-132:1 -/
+axiom whir.commit
+  :
+  Slice stable_primitives.field.gf2_64.F64 → Std.Usize → Std.Usize →
+    RustM whir.ProverData
+
+/-- [stable_pcs::whir::commit_ext]:
+    Source: 'crates/stable_prover/pcs/src/whir.rs', lines 135:0-158:1 -/
+axiom whir.commit_ext
+  :
+  Slice stable_primitives.field.gf2_64x2.F128 → Std.Usize → Std.Usize →
+    Std.Usize → RustM whir.ProverData
+
+/-- [stable_pcs::whir::{impl core::fmt::Debug for stable_pcs::whir::FoldChallenges}::fmt]:
+    Source: 'crates/stable_prover/pcs/src/whir.rs', lines 161:22-161:27
+    Visibility: public -/
+axiom whir.FoldChallenges.Insts.CoreFmtDebug.fmt
+  :
+  whir.FoldChallenges → core.fmt.Formatter → RustM ((core.result.Result
+    Unit core.fmt.Error) × core.fmt.Formatter)
+
+/-- [stable_pcs::whir::fold_rounds]:
+    Source: 'crates/stable_prover/pcs/src/whir.rs', lines 181:0-191:1 -/
+axiom whir.fold_rounds
+  {T0 : Type _} (FoldRoundsInst : whir.FoldRounds T0) :
+  fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool →
+    T0 → Std.Usize → Std.Usize → RustM
+    ((fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool) ×
+    T0)
+
+/-- [stable_pcs::xmul::constants]:
+    Source: 'crates/stable_prover/pcs/src/xmul.rs', lines 35:0-45:1 -/
+axiom xmul.constants
+  : RustM (Array stable_primitives.field.gf2_64.F64 64#usize)
+
+/-- [stable_pcs::whir::{impl stable_pcs::whir::FoldRounds for stable_pcs::whir::Dense}::table]:
+    Source: 'crates/stable_prover/pcs/src/whir.rs', lines 214:4-233:5 -/
+axiom whir.Dense.Insts.Stable_pcsWhirFoldRounds.table
+  :
+  whir.Dense → RustM ((Array stable_primitives.field.gf2_64x2.F128 4#usize)
+    × whir.Dense)
+
+/-- [stable_pcs::whir::sample_queries]:
+    Source: 'crates/stable_prover/pcs/src/whir.rs', lines 250:0-260:1 -/
+axiom whir.sample_queries
+  :
+  fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool →
+    Std.Usize → Std.Usize → RustM ((alloc.vec.Vec Std.Usize) ×
+    (fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool))
+
+/-- [stable_pcs::whir::open]:
+    Source: 'crates/stable_prover/pcs/src/whir.rs', lines 264:0-322:1 -/
+axiom whir.open
+  :
+  fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool →
+    verifier.whir.WhirConfig → whir_lanes.LaneRounds → whir.ProverData →
+    RustM (fiat_shamir_prover.transcript.ProverState
+    stable_primitives.field.gf2_64x2.F128 stable_primitives.transcript.Pool)
+
+/-- [stable_pcs::whir_induce::induce_basis]:
+    Source: 'crates/stable_prover/pcs/src/whir_induce.rs', lines 17:0-42:1 -/
+axiom whir_induce.induce_basis
+  :
+  Std.Usize → Slice Std.Usize → Slice stable_primitives.field.gf2_64x2.F128
+    → RustM (alloc.vec.Vec stable_primitives.field.gf2_64x2.F128)
+
+/-- [stable_pcs::whir_induce::tensor]:
+    Source: 'crates/stable_prover/pcs/src/whir_induce.rs', lines 45:0-53:1 -/
+axiom whir_induce.tensor
+  :
+  Slice stable_primitives.field.gf2_64.F64 → RustM (alloc.vec.Vec
+    stable_primitives.field.gf2_64.F64)
+
+/-- [stable_pcs::whir_lanes::row]:
+    Source: 'crates/stable_prover/pcs/src/whir_lanes.rs', lines 28:0-30:1 -/
+axiom whir_lanes.row
+  {T : Type _} : Slice T → Std.Usize → Std.Usize → RustM (Slice T)
+
+/-- [stable_pcs::whir_lanes::{stable_pcs::whir_lanes::Lanes}::count]:
+    Source: 'crates/stable_prover/pcs/src/whir_lanes.rs', lines 50:4-55:5 -/
+axiom whir_lanes.Lanes.count : whir_lanes.Lanes → RustM Std.Usize
+
+/-- [stable_pcs::whir_lanes::{stable_pcs::whir_lanes::Lanes}::fold]:
+    Source: 'crates/stable_prover/pcs/src/whir_lanes.rs', lines 64:4-89:5 -/
+axiom whir_lanes.Lanes.fold
+  : whir_lanes.Lanes → whir.FoldChallenges → RustM whir_lanes.Lanes
+
+/-- [stable_pcs::whir_lanes::{impl stable_pcs::whir::FoldRounds for stable_pcs::whir_lanes::LaneRounds}::fold]:
+    Source: 'crates/stable_prover/pcs/src/whir_lanes.rs', lines 191:4-204:5 -/
+axiom whir_lanes.LaneRounds.Insts.Stable_pcsWhirFoldRounds.fold
+  :
+  whir_lanes.LaneRounds → whir.FoldChallenges → RustM whir_lanes.LaneRounds
+
+/-- [stable_pcs::whir_lanes::{impl stable_pcs::whir::FoldRounds for stable_pcs::whir_lanes::LaneRounds}::table]:
+    Source: 'crates/stable_prover/pcs/src/whir_lanes.rs', lines 136:4-189:5 -/
+axiom whir_lanes.LaneRounds.Insts.Stable_pcsWhirFoldRounds.table
+  :
+  whir_lanes.LaneRounds → RustM ((Array stable_primitives.field.gf2_64x2.F128
+    4#usize) × whir_lanes.LaneRounds)
+
+end stable_pcs

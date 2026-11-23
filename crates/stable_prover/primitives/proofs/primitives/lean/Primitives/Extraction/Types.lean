@@ -196,4 +196,10 @@ def multilinear.poly_eval.closure := field.gf2_64x2.F128
 @[reducible]
 def multilinear.dot.closure := Unit
 
+/-- [stable_primitives::transcript::Pool]
+    Source: 'crates/stable_prover/primitives/src/transcript.rs', lines 16:0-16:16
+    Visibility: public -/
+@[reducible]
+def transcript.Pool := Unit
+
 end stable_primitives

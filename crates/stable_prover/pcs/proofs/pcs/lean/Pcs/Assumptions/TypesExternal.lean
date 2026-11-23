@@ -1,0 +1,38 @@
+-- [stable_pcs]: external types.
+-- Seeded by hax from Extraction/TypesExternal_Template.lean: fill the holes.
+-- hax never modifies this file; after re-extraction, compare it against the
+-- regenerated template to see what changed.
+module
+public import Aeneas
+public import CoreModels
+public import CoreModelsExt
+public import FiatShamirProver.Extraction
+public import Parallel.Extraction
+public import Primitives.Extraction
+public import Verifier.Extraction
+@[expose] public section
+open CoreModels Aeneas
+open Aeneas.Std hiding namespace core alloc
+open RustM ControlFlow Error
+open Std.Do
+set_option linter.dupNamespace false
+set_option linter.hashCommand false
+set_option linter.unusedVariables false
+set_option linter.style.whitespace false
+set_option linter.style.setOption false
+set_option linter.style.longLine false
+set_option linter.internalConstructors false
+
+/- You can set the `maxHeartbeats` value with the `-max-heartbeats` CLI option -/
+set_option maxHeartbeats 1000000
+
+/- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
+set_option maxRecDepth 2048
+
+namespace stable_pcs
+
+/-- [stable_pcs::merkle::MerkleTree]
+    Source: 'crates/stable_prover/pcs/src/merkle.rs', lines 47:0-49:1 -/
+axiom merkle.MerkleTree : Type
+
+end stable_pcs

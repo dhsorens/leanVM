@@ -3200,4 +3200,28 @@ def multilinear.dot
       z fu ()
   field.gf2_64x2.F128Unreduced.reduce fu1
 
+/-- [stable_primitives::transcript::{impl fiat_shamir_prover::Scalar for stable_primitives::field::gf2_64x2::F128}::from_limbs]:
+    Source: 'crates/stable_prover/primitives/src/transcript.rs', lines 10:4-12:5
+    Visibility: public -/
+def field.gf2_64x2.F128.Insts.Fiat_shamir_proverScalar.from_limbs
+  (limbs : Array Std.U64 2#usize) : RustM field.gf2_64x2.F128 := do
+  field.gf2_64x2.F128.from_limbs limbs
+
+/-- [stable_primitives::transcript::{impl fiat_shamir_prover::Scalar for stable_primitives::field::gf2_64x2::F128}::to_limbs]:
+    Source: 'crates/stable_prover/primitives/src/transcript.rs', lines 6:4-8:5
+    Visibility: public -/
+def field.gf2_64x2.F128.Insts.Fiat_shamir_proverScalar.to_limbs
+  (self : field.gf2_64x2.F128) : RustM (Array Std.U64 2#usize) := do
+  field.gf2_64x2.F128.to_limbs self
+
+/-- Trait implementation: [stable_primitives::transcript::{impl fiat_shamir_prover::Scalar for stable_primitives::field::gf2_64x2::F128}]
+    Source: 'crates/stable_prover/primitives/src/transcript.rs', lines 5:0-13:1 -/
+@[reducible]
+def field.gf2_64x2.F128.Insts.Fiat_shamir_proverScalar :
+  fiat_shamir_prover.Scalar field.gf2_64x2.F128 := {
+  coremarkerCopyInst := field.gf2_64x2.F128.Insts.CoreMarkerCopy
+  to_limbs := field.gf2_64x2.F128.Insts.Fiat_shamir_proverScalar.to_limbs
+  from_limbs := field.gf2_64x2.F128.Insts.Fiat_shamir_proverScalar.from_limbs
+}
+
 end stable_primitives

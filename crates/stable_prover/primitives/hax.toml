@@ -111,6 +111,6 @@ exclude = [
   # and crashes on it (an internal error at iter/traits/iterator.rs:42).
   "{impl core::iter::traits::accum::Sum<_> for _}",
   "{impl core::iter::traits::accum::Product<_> for _}",
-  # The prover's transcript arithmetic: `find_first` takes a `&dyn Fn`.
-  "crate::transcript",
+  # The grind's search on the pool: `find_first` takes a `&dyn Fn`.
+  "{impl fiat_shamir_prover::Search for crate::transcript::Pool}",
 ]

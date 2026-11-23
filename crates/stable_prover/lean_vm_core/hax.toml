@@ -13,11 +13,6 @@ backend = "lean"
 include = [
   "crate",
   "crate::keccak::STATE_CELLS",
-  "crate::keccak::RATE_CELLS",
-  "crate::leaf::N_TUPLE_BITS",
-  "crate::leaf::N_BYTECODE_SELECTORS",
-  "crate::pcs::MIN_MU",
-  "crate::pcs::MAX_MU",
 ]
 charon-args = [
   "--include", "crate::keccak::STATE_CELLS",
@@ -123,6 +118,20 @@ opaque = [
   # A compile-time assertion (named by patch 01): Aeneas fails on its value ("There should be
   # no bottoms in the value").
   "crate::cpu::_LITTLE_ENDIAN",
+
+  # Rejected since the sync with upstream of 2026-11-23: each to be patched, modelled, or reduced to a
+  # reportable case.
+  "crate::cpu::hints::bounded_dlog",  # Aeneas: not implemented yet
+  "crate::cpu::pi_point",  # Aeneas: unexpected error
+  "crate::cpu::slot_claim",  # Aeneas: unexpected error
+  "crate::eq::eq_sums",  # Aeneas: internal error, please file an issue
+  "crate::prover::_::combine_rows",  # Aeneas: internal error: please file an issue
+  "crate::prover::_::dot_rows",  # Aeneas: internal error: please file an issue
+  "crate::prover::_::prove",  # Aeneas: internal error: please file an issue
+  "crate::prover::{impl isa::prover::Prover for crate::prover::StableProver}::combine_rows",  # Aeneas: internal error: please file an issue
+  "crate::prover::{impl isa::prover::Prover for crate::prover::StableProver}::dot_rows",  # Aeneas: internal error: please file an issue
+  "crate::prover::{impl isa::prover::Prover for crate::prover::StableProver}::prove",  # Aeneas: internal error: please file an issue
+  "crate::tables::_::constraint",  # Aeneas: unexpected error
 ]
 exclude = [
   # `&dyn Table`: Aeneas has no dynamic trait types, and an opaque item still needs its
