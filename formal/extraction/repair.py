@@ -171,8 +171,9 @@ def pattern(name, crate):
         segments.append(segment)
     if segments[0] == crate:
         segments[0] = "crate"
-    if segments and segments[0].startswith("{impl "):
-        return "::".join(segments)
+    for i, segment in enumerate(segments):
+        if segment.startswith("{impl "):  # a trait impl is named without the module it is written in
+            return "::".join(segments[i:])
     return "::".join(segments)
 
 
@@ -357,7 +358,9 @@ def extract(crate, date, rounds):
                 if not rust:
                     continue
                 why = "Lean: " + re.sub(r"`CoreModels\.", "`", message)[:70].rstrip(":").lower()
-                (exclude if "/Assumptions/" in file else opaque).setdefault(pattern(rust, name), why)
+                found = pattern(rust, name)
+                # An opaque item's signature, or a whole trait impl: nothing of it can stay.
+                (exclude if "/Assumptions/" in file or found.endswith("}") else opaque).setdefault(found, why)
             if build.returncode == 0:
                 warnings = len(re.findall(r"(?m)^warning: " + lean_name, build_log))
                 print(f"   clean after {round_} round(s): {len(added['opaque'])} opaque and {len(added['exclude'])} excluded added, {warnings} warnings in the package")

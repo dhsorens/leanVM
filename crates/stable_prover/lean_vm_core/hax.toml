@@ -23,6 +23,10 @@ charon-args = [
   "--include", "crate::pcs::MAX_MU",
 ]
 opaque = [
+  # With this module's bodies Aeneas stops outright ("Can't get the list of fields of this adt"),
+  # naming no item: opaque whole until the cause is narrowed to one.
+  "crate::tables",
+
   # Whole modules of prover machinery: `parallel` dispatch, `unsafe` uninitialized buffers and
   # streaming stores, `tracing` spans. `gkr` also holds a bare `cfg(target_arch = "x86_64")`
   # closure (gkr.rs:389), which an opaque body keeps out of the host-independent output.
@@ -132,6 +136,15 @@ opaque = [
   "crate::prover::{impl isa::prover::Prover for crate::prover::StableProver}::dot_rows",  # Aeneas: internal error: please file an issue
   "crate::prover::{impl isa::prover::Prover for crate::prover::StableProver}::prove",  # Aeneas: internal error: please file an issue
   "crate::tables::_::constraint",  # Aeneas: unexpected error
+  "crate::cpu::hints::GPow",  # Lean: unknown identifier `core.hash.buildhasherdefault`
+  "crate::cpu::hints::_::grow_to",  # Aeneas: unexpected error
+  "crate::cpu::hints::_::lookup",  # Aeneas: unexpected error
+  "crate::cpu::hints::_::pow",  # Aeneas: unexpected error
+  "crate::cpu::hints::_::resolve",  # Aeneas: unexpected error
+  "crate::cpu::announce_public",  # Lean: unknown constant `stable_primitives.transcript.pool.insts.fiat_shamir_
+  "crate::cpu::hints::_::log_below",  # Lean: type mismatch
+  "crate::filled",  # Lean: unknown identifier `stable_parallel.filled`
+  "crate::prover::{impl isa::prover::Prover for crate::prover::StableProver}::set_num_threads",  # Lean: unknown identifier `stable_parallel.set_num_threads`
 ]
 exclude = [
   # `&dyn Table`: Aeneas has no dynamic trait types, and an opaque item still needs its
@@ -145,4 +158,5 @@ exclude = [
   "core::slice::iter::_::find",
   "core::iter::traits::iterator::Iterator::unzip",
   "core::iter::traits::iterator::Iterator::cloned",
+  "{impl core::hash::Hasher for crate::cpu::hints::QuickHasher}",  # Lean: `write_u32` is not a field of structure `core.hash.hasher`
 ]
