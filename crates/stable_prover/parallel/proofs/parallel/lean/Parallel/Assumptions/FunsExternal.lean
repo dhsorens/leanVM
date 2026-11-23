@@ -27,6 +27,8 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 2048
 namespace parallel
 
+namespace stable_parallel
+
 /-- [parallel::topology::topology]:
     Source: 'crates/parallel/src/topology.rs', lines 31:0-47:1
     Visibility: public -/
@@ -82,4 +84,4 @@ axiom map_reduce
   (coreopsfunctionFnRPairTInst : core.ops.function.Fn R (T × T) T) :
   Std.Usize → ID → M → R → RustM T
 
-end parallel
+end stable_parallel

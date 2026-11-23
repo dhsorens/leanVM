@@ -34,3 +34,7 @@ path = "../../../../leanvm_core/proofs/leanvm-core/lean"
 [[require]]
 name = "Primitives"
 path = "../../../../primitives/proofs/primitives/lean"
+
+[[require]]
+name = "Verifier"
+path = "../../../../verifier/proofs/verifier/lean"

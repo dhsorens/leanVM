@@ -35,3 +35,7 @@ set_option maxRecDepth 2048
 namespace keccak_gkr
 
 end keccak_gkr
+
+namespace stable_keccak_gkr
+
+end stable_keccak_gkr

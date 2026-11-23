@@ -1,6 +1,6 @@
 {
  "version": "1.3.0",
- "packagesDir": "../../../../../formal/extraction/.lake/packages",
+ "packagesDir": "../../../../../../formal/extraction/.lake/packages",
  "packages": [
   {
    "type": "path",
@@ -8,7 +8,17 @@
    "name": "CoreModelsExt",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../../formal/extraction/CoreModelsExt",
+   "dir": "../../../../../../formal/extraction/CoreModelsExt",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "FiatShamir",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../../fiat_shamir_prover/proofs/fiat-shamir/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -19,6 +29,16 @@
    "manifestFile": "lake-manifest.json",
    "inherited": false,
    "dir": "../../../../parallel/proofs/parallel/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Verifier",
+   "manifestFile": "lake-manifest.json",
+   "inherited": true,
+   "dir": "../../../../../verifier/proofs/verifier/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },

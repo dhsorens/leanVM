@@ -6,8 +6,6 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import Parallel.Extraction
-public import Primitives.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -30,3 +28,7 @@ set_option maxRecDepth 2048
 namespace signatures
 
 end signatures
+
+namespace lean_xmss
+
+end lean_xmss

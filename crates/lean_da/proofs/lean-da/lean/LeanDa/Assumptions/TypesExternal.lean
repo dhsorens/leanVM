@@ -6,10 +6,9 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import FiatShamir.Extraction
-public import Parallel.Extraction
 public import Pcs.Extraction
 public import Primitives.Extraction
+public import Verifier.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc

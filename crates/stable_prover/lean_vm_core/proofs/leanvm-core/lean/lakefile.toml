@@ -32,6 +32,14 @@ name = "FiatShamir"
 path = "../../../../fiat_shamir/proofs/fiat-shamir/lean"
 
 [[require]]
+name = "Verifier"
+path = "../../../../verifier/proofs/verifier/lean"
+
+[[require]]
+name = "FiatShamir"
+path = "../../../../../fiat_shamir_prover/proofs/fiat-shamir/lean"
+
+[[require]]
 name = "KeccakGkr"
 path = "../../../../keccak_gkr/proofs/keccak-gkr/lean"
 
@@ -49,4 +57,4 @@ path = "../../../../primitives/proofs/primitives/lean"
 
 [[require]]
 name = "Verifier"
-path = "../../../../verifier/proofs/verifier/lean"
+path = "../../../../../verifier/proofs/verifier/lean"

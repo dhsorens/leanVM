@@ -27,6 +27,8 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 2048
 namespace primitives
 
+namespace stable_primitives
+
 /-- [primitives::bits::bit_transpose_64bytes]:
     Source: 'crates/primitives/src/bits.rs', lines 16:0-32:1
     Visibility: public -/
@@ -222,4 +224,4 @@ axiom stream.copy_raw
 axiom stream.Stream.Insts.CoreOpsDropDrop.drop
   : stream.Stream → RustM stream.Stream
 
-end primitives
+end stable_primitives

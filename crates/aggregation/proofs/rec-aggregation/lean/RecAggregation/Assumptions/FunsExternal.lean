@@ -27,6 +27,8 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 2048
 namespace rec_aggregation
 
+namespace aggregation
+
 /-- [rec_aggregation::aggregation::f192_literal]:
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 168:0-170:1 -/
 axiom aggregation.f192_literal
@@ -357,4 +359,4 @@ axiom aggregation.placeholder_map
     Source: 'crates/rec_aggregation/src/aggregation.rs', lines 2712:0-2739:1 -/
 axiom aggregation.compile_guest : Std.Usize → RustM leanvm_core.cpu.Program
 
-end rec_aggregation
+end aggregation

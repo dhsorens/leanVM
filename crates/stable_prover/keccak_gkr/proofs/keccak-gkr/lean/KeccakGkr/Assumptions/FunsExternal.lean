@@ -27,6 +27,8 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 2048
 namespace keccak_gkr
 
+namespace stable_keccak_gkr
+
 /-- [keccak_gkr::basis::clear_column]:
     Source: 'crates/keccak_gkr/src/basis.rs', lines 21:0-29:1 -/
 axiom basis.clear_column
@@ -291,4 +293,4 @@ axiom witness.Witness.from_extents
   witness.Shape → alloc.vec.Vec witness.Extent → Std.Usize →
     core.option.Option witness.Extent → RustM witness.Witness
 
-end keccak_gkr
+end stable_keccak_gkr

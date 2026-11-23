@@ -27,6 +27,8 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 2048
 namespace leanvm_core
 
+namespace stable_lean_vm_core
+
 /-- [leanvm_core::cpu::execute::{impl core::clone::Clone for leanvm_core::cpu::execute::ExecError}::clone]:
     Source: 'crates/leanvm_core/src/cpu/execute.rs', lines 112:9-112:14
     Visibility: public -/
@@ -513,4 +515,4 @@ axiom tables.KeccakTable.Insts.Leanvm_coreTablesTable.fill
 axiom tables.KeccakTable.Insts.Leanvm_coreTablesTable.flushes
   : tables.KeccakTable → tables.FlushBuilder → RustM tables.FlushBuilder
 
-end leanvm_core
+end stable_lean_vm_core

@@ -27,8 +27,10 @@ set_option maxHeartbeats 1000000
 set_option maxRecDepth 2048
 namespace bench
 
+namespace bench_harness
+
 /-- [bench::mean_and_ci]:
     Source: 'crates/bench/src/lib.rs', lines 84:0-94:1 -/
 axiom mean_and_ci : Slice F64 → RustM (F64 × F64)
 
-end bench
+end bench_harness

@@ -28,6 +28,8 @@ set_option maxRecDepth 2048
 
 namespace signatures
 
+namespace lean_xmss
+
 /-- [signatures::lean_sphincs::forest::{impl core::fmt::Debug for signatures::lean_sphincs::forest::Mark}::fmt]:
     Source: 'crates/signatures/src/lean_sphincs/forest.rs', lines 84:22-84:27
     Visibility: public -/
@@ -189,4 +191,4 @@ axiom tweak.Tweak.Insts.CoreFmtDebug.fmt
   tweak.Tweak → core.fmt.Formatter → RustM ((core.result.Result Unit
     core.fmt.Error) × core.fmt.Formatter)
 
-end signatures
+end lean_xmss

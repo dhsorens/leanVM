@@ -6,10 +6,11 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import LeanDa.Extraction
-public import LeanvmCore.Extraction
 public import RecAggregation.Extraction
+public import LeanDa.Extraction
 public import Signatures.Extraction
+public import LeanvmCore.Extraction
+public import Verifier.Extraction
 public import Leanvm.Extraction.Types
 @[expose] public section
 open CoreModels Aeneas
@@ -34,3 +35,7 @@ set_option maxRecDepth 2048
 namespace leanvm
 
 end leanvm
+
+namespace lean_vm
+
+end lean_vm

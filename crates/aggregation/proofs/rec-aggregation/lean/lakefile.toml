@@ -36,10 +36,6 @@ name = "LeanCompiler"
 path = "../../../../lean_compiler/proofs/lean-compiler/lean"
 
 [[require]]
-name = "LeanDa"
-path = "../../../../lean_da/proofs/lean-da/lean"
-
-[[require]]
 name = "LeanvmCore"
 path = "../../../../leanvm_core/proofs/leanvm-core/lean"
 
@@ -60,5 +56,33 @@ name = "Signatures"
 path = "../../../../signatures/proofs/signatures/lean"
 
 [[require]]
+name = "FiatShamir"
+path = "../../../../fiat_shamir_prover/proofs/fiat-shamir/lean"
+
+[[require]]
+name = "LeanDa"
+path = "../../../../lean_da/proofs/lean-da/lean"
+
+[[require]]
+name = "Signatures"
+path = "../../../../lean_xmss/proofs/signatures/lean"
+
+[[require]]
+name = "LeanvmCore"
+path = "../../../../stable_prover/lean_vm_core/proofs/leanvm-core/lean"
+
+[[require]]
+name = "Pcs"
+path = "../../../../stable_prover/pcs/proofs/pcs/lean"
+
+[[require]]
+name = "Primitives"
+path = "../../../../stable_prover/primitives/proofs/primitives/lean"
+
+[[require]]
 name = "Verifier"
 path = "../../../../verifier/proofs/verifier/lean"
+
+[[require]]
+name = "LeanCompiler"
+path = "../../../../zkdsl_compiler/proofs/lean-compiler/lean"

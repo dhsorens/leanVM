@@ -33,6 +33,8 @@ set_option maxRecDepth 2048
 
 namespace leanvm_core
 
+namespace stable_lean_vm_core
+
 /-- [leanvm_core::constraints::Claims]
     Source: 'crates/leanvm_core/src/constraints.rs', lines 43:0-46:1
     Visibility: public -/
@@ -95,4 +97,4 @@ axiom leaf.Coord : Type
     Visibility: public -/
 axiom tables.FillCtx : Type
 
-end leanvm_core
+end stable_lean_vm_core

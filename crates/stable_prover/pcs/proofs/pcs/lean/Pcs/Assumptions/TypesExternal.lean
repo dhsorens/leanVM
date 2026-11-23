@@ -9,6 +9,7 @@ public import CoreModelsExt
 public import FiatShamir.Extraction
 public import Parallel.Extraction
 public import Primitives.Extraction
+public import Verifier.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -30,6 +31,8 @@ set_option maxRecDepth 2048
 
 namespace pcs
 
+namespace stable_pcs
+
 /-- [pcs::whir::lane_fold::{closure}]
     Source: 'crates/pcs/src/whir.rs', lines 666:4-681:5 -/
 axiom whir.lane_fold.closure (T : Type _) : Type
@@ -38,4 +41,4 @@ axiom whir.lane_fold.closure (T : Type _) : Type
     Source: 'crates/pcs/src/whir.rs', lines 691:4-699:5 -/
 axiom whir.lifted_lane_fold.closure : Type
 
-end pcs
+end stable_pcs

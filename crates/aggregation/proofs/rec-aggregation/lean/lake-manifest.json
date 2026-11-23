@@ -18,7 +18,7 @@
    "name": "Bench",
    "manifestFile": "lake-manifest.json",
    "inherited": true,
-   "dir": "../../../../bench/proofs/bench/lean",
+   "dir": "../../../../bench_harness/proofs/bench/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -27,28 +27,8 @@
    "scope": "",
    "name": "FiatShamir",
    "manifestFile": "lake-manifest.json",
-   "inherited": true,
-   "dir": "../../../../fiat_shamir/proofs/fiat-shamir/lean",
-   "copy": false,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "type": "path",
-   "scope": "",
-   "name": "KeccakGkr",
-   "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../keccak_gkr/proofs/keccak-gkr/lean",
-   "copy": false,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "type": "path",
-   "scope": "",
-   "name": "LeanCompiler",
-   "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../../../../lean_compiler/proofs/lean-compiler/lean",
+   "dir": "../../../../fiat_shamir_prover/proofs/fiat-shamir/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -65,10 +45,30 @@
   {
    "type": "path",
    "scope": "",
+   "name": "Signatures",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../lean_xmss/proofs/signatures/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "KeccakGkr",
+   "manifestFile": "lake-manifest.json",
+   "inherited": true,
+   "dir": "../../../../stable_prover/keccak_gkr/proofs/keccak-gkr/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
    "name": "LeanvmCore",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../leanvm_core/proofs/leanvm-core/lean",
+   "dir": "../../../../stable_prover/lean_vm_core/proofs/leanvm-core/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -77,8 +77,8 @@
    "scope": "",
    "name": "Parallel",
    "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../../../../parallel/proofs/parallel/lean",
+   "inherited": true,
+   "dir": "../../../../stable_prover/parallel/proofs/parallel/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -88,7 +88,7 @@
    "name": "Pcs",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../pcs/proofs/pcs/lean",
+   "dir": "../../../../stable_prover/pcs/proofs/pcs/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -98,17 +98,7 @@
    "name": "Primitives",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../primitives/proofs/primitives/lean",
-   "copy": false,
-   "configFile": "lakefile.toml"
-  },
-  {
-   "type": "path",
-   "scope": "",
-   "name": "Signatures",
-   "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../../../../signatures/proofs/signatures/lean",
+   "dir": "../../../../stable_prover/primitives/proofs/primitives/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -119,6 +109,16 @@
    "manifestFile": "lake-manifest.json",
    "inherited": false,
    "dir": "../../../../verifier/proofs/verifier/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "LeanCompiler",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../zkdsl_compiler/proofs/lean-compiler/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },

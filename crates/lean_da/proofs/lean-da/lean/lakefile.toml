@@ -42,3 +42,15 @@ path = "../../../../pcs/proofs/pcs/lean"
 [[require]]
 name = "Primitives"
 path = "../../../../primitives/proofs/primitives/lean"
+
+[[require]]
+name = "Pcs"
+path = "../../../../stable_prover/pcs/proofs/pcs/lean"
+
+[[require]]
+name = "Primitives"
+path = "../../../../stable_prover/primitives/proofs/primitives/lean"
+
+[[require]]
+name = "Verifier"
+path = "../../../../verifier/proofs/verifier/lean"

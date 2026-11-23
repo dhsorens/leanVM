@@ -28,5 +28,9 @@ git = "https://github.com/Verified-zkEVM/ArkLib"
 rev = "674952b872874d443d9756be8ac27daf4050b91f"
 
 [[require]]
+name = "FiatShamir"
+path = "../../../../../fiat_shamir_prover/proofs/fiat-shamir/lean"
+
+[[require]]
 name = "Parallel"
 path = "../../../../parallel/proofs/parallel/lean"

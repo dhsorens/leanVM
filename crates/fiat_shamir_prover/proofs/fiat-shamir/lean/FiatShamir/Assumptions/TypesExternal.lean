@@ -6,8 +6,7 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
-public import Parallel.Extraction
-public import Primitives.Extraction
+public import Verifier.Extraction
 @[expose] public section
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -31,3 +30,7 @@ set_option maxRecDepth 2048
 namespace fiat_shamir
 
 end fiat_shamir
+
+namespace fiat_shamir_prover
+
+end fiat_shamir_prover

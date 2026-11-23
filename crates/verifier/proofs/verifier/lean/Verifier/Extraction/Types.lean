@@ -26,59 +26,44 @@ set_option maxRecDepth 2048
 namespace verifier
 
 /-- [verifier::field::E]
-    Source: 'crates/verifier/src/field.rs', lines 107:0-111:1
+    Source: 'crates/verifier/src/field.rs', lines 106:0-109:1
     Visibility: public -/
 structure field.E where
   c0 : Std.U64
   c1 : Std.U64
-  c2 : Std.U64
 
 /-- [verifier::transcript::Sponge]
-    Source: 'crates/verifier/src/transcript.rs', lines 38:0-42:1
+    Source: 'crates/verifier/src/transcript.rs', lines 26:0-32:1
     Visibility: public -/
 structure transcript.Sponge where
   state : Array Std.U64 25#usize
   pending : Array (field.E × Std.U64) 4#usize
   n_pending : Std.Usize
+  ground : core.option.Option field.E
 
 /-- [verifier::field::K]
-    Source: 'crates/verifier/src/field.rs', lines 57:0-57:22
+    Source: 'crates/verifier/src/field.rs', lines 56:0-56:22
     Visibility: public -/
 @[reducible]
 def field.K := Std.U64
 
-/-- [verifier::merkle::PrunedMerklePaths]
-    Source: 'crates/verifier/src/merkle.rs', lines 32:0-35:1
-    Visibility: public -/
-structure merkle.PrunedMerklePaths where
-  leaf_data : alloc.vec.Vec (alloc.vec.Vec field.K)
-  sibling_hashes : alloc.vec.Vec (Array Std.U8 32#usize)
-
-/-- [verifier::merkle::MerkleOpenings]
-    Source: 'crates/verifier/src/merkle.rs', lines 9:0-14:1
-    Visibility: public -/
-@[discriminant isize]
-inductive merkle.MerkleOpenings where
-| Raw : alloc.vec.Vec Std.U8 → merkle.MerkleOpenings
-| Pruned : alloc.vec.Vec merkle.PrunedMerklePaths → merkle.MerkleOpenings
-
-/-- [verifier::transcript::Proof]
-    Source: 'crates/verifier/src/transcript.rs', lines 11:0-14:1
-    Visibility: public -/
-structure transcript.Proof where
-  stream : alloc.vec.Vec field.E
-  merkle_openings : merkle.MerkleOpenings
-
 /-- [verifier::merkle::MerklePath]
-    Source: 'crates/verifier/src/merkle.rs', lines 54:0-60:1
+    Source: 'crates/verifier/src/merkle.rs', lines 19:0-25:1
     Visibility: public -/
 structure merkle.MerklePath where
   leaf_index : Std.U64
   leaf : alloc.vec.Vec field.K
   siblings : alloc.vec.Vec (Array Std.U8 32#usize)
 
+/-- [verifier::transcript::Proof]
+    Source: 'crates/verifier/src/transcript.rs', lines 12:0-15:1
+    Visibility: public -/
+structure transcript.Proof where
+  stream : alloc.vec.Vec field.E
+  merkle_openings : alloc.vec.Vec (alloc.vec.Vec merkle.MerklePath)
+
 /-- [verifier::transcript::Transcript]
-    Source: 'crates/verifier/src/transcript.rs', lines 94:0-101:1
+    Source: 'crates/verifier/src/transcript.rs', lines 106:0-112:1
     Visibility: public -/
 structure transcript.Transcript where
   proof : transcript.Proof
@@ -86,32 +71,32 @@ structure transcript.Transcript where
   stream_offset : Std.Usize
   opening_offset : Std.Usize
   checked : Bool
-  paths : alloc.vec.Vec merkle.MerklePath
 
 /-- [verifier::VerifierError]
-    Source: 'crates/verifier/src/lib.rs', lines 46:0-76:1
+    Source: 'crates/verifier/src/lib.rs', lines 59:0-92:1
     Visibility: public -/
 @[discriminant isize]
 inductive VerifierError where
-| FieldElementLength : VerifierError
-| DigestHalf : VerifierError
 | MultilinearSize : VerifierError
 | NotPowerOfTwo : VerifierError
-| StreamNotWholeElements : VerifierError
 | StreamExhausted : VerifierError
 | GrindingNonce : VerifierError
 | MerkleOpeningMissing : VerifierError
 | MerkleOpeningShape : VerifierError
+| MerkleOpeningPosition : VerifierError
 | MerkleRootMismatch : VerifierError
 | StreamNotConsumed : VerifierError
 | MerkleNotConsumed : VerifierError
 | GkrLayer : Std.Usize → VerifierError
 | BusCountZero : VerifierError
+| BytecodeShare : VerifierError
+| BytecodeValue : VerifierError
 | TableSumcheckTerminal : VerifierError
 | AnnouncedTableSizes : VerifierError
 | WhirShape : VerifierError
 | QueryCountLadder : VerifierError
 | InducedBasisDimensions : VerifierError
+| WhirFinalQuery : VerifierError
 | WhirTerminal : VerifierError
 | WhirNoTerminalLevel : VerifierError
 | KeccakProduct : VerifierError
@@ -121,6 +106,8 @@ inductive VerifierError where
 | AnnouncedHighLimb : VerifierError
 | PcsInverseRate : VerifierError
 | CommittedSize : VerifierError
+| StackedClaims : VerifierError
+| BytecodeShape : VerifierError
 
 /-- [verifier::multilinear::Placement]
     Source: 'crates/verifier/src/multilinear.rs', lines 121:0-124:1
@@ -130,7 +117,7 @@ structure multilinear.Placement where
   index : Std.U64
 
 /-- [verifier::bus::BusLayout]
-    Source: 'crates/verifier/src/bus.rs', lines 55:0-59:1 -/
+    Source: 'crates/verifier/src/bus.rs', lines 79:0-83:1 -/
 structure bus.BusLayout where
   depth : Std.Usize
   framework : alloc.vec.Vec multilinear.Placement
@@ -153,12 +140,12 @@ structure layout.BusBlock where
   owner : Std.Usize
 
 /-- [verifier::bus::bus_layout::{closure}]
-    Source: 'crates/verifier/src/bus.rs', lines 70:13-70:66 -/
+    Source: 'crates/verifier/src/bus.rs', lines 94:13-94:66 -/
 @[reducible]
 def bus.bus_layout.closure := Unit
 
 /-- [verifier::bus::ColumnClaim]
-    Source: 'crates/verifier/src/bus.rs', lines 80:0-84:1
+    Source: 'crates/verifier/src/bus.rs', lines 104:0-108:1
     Visibility: public -/
 structure bus.ColumnClaim where
   column : Std.Usize
@@ -166,14 +153,14 @@ structure bus.ColumnClaim where
   value : field.E
 
 /-- [verifier::layout::Flushes]
-    Source: 'crates/verifier/src/layout.rs', lines 133:0-136:1
+    Source: 'crates/verifier/src/layout.rs', lines 141:0-144:1
     Visibility: public -/
 structure layout.Flushes where
   push : alloc.vec.Vec (alloc.vec.Vec layout.Form)
   pull : alloc.vec.Vec (alloc.vec.Vec layout.Form)
 
 /-- [verifier::layout::Table]
-    Source: 'crates/verifier/src/layout.rs', lines 183:0-188:1
+    Source: 'crates/verifier/src/layout.rs', lines 199:0-204:1
     Visibility: public -/
 structure layout.Table where
   opcode : Std.Usize
@@ -182,38 +169,28 @@ structure layout.Table where
   flushes : layout.Flushes
 
 /-- [verifier::keccak::KeccakShape]
-    Source: 'crates/verifier/src/keccak.rs', lines 50:0-53:1
+    Source: 'crates/verifier/src/keccak.rs', lines 55:0-58:1
     Visibility: public -/
 structure keccak.KeccakShape where
   log_steps : Std.Usize
   depth : Std.Usize
 
 /-- [verifier::hash::Digest]
-    Source: 'crates/verifier/src/hash.rs', lines 107:0-107:32
+    Source: 'crates/verifier/src/hash.rs', lines 106:0-106:32
     Visibility: public -/
 @[reducible]
 def hash.Digest := Array Std.U8 32#usize
 
-/-- [verifier::bytecode::Block]
-    Source: 'crates/verifier/src/bytecode.rs', lines 27:0-31:1 -/
-structure bytecode.Block where
-  index : Std.Usize
-  words_end : Std.Usize
-  bytes_end : Std.Usize
-
 /-- [verifier::bytecode::Bytecode]
-    Source: 'crates/verifier/src/bytecode.rs', lines 14:0-23:1
+    Source: 'crates/verifier/src/bytecode.rs', lines 14:0-21:1
     Visibility: public -/
 structure bytecode.Bytecode where
   len : Std.Usize
   fiat_shamir_iv : hash.Digest
-  blocks : alloc.vec.Vec bytecode.Block
-  words : alloc.vec.Vec (Std.U64 × Std.Usize)
-  positions : alloc.vec.Vec Std.U16
-  bytes : alloc.vec.Vec Std.U16
+  blocks : alloc.vec.Vec (alloc.vec.Vec (field.K × (alloc.vec.Vec Std.U16)))
 
 /-- [verifier::layout::Layout]
-    Source: 'crates/verifier/src/layout.rs', lines 87:0-101:1
+    Source: 'crates/verifier/src/layout.rs', lines 96:0-109:1
     Visibility: public -/
 structure layout.Layout where
   log_memory : Std.Usize
@@ -225,12 +202,11 @@ structure layout.Layout where
   count : alloc.vec.Vec layout.BusBlock
   placements : alloc.vec.Vec (core.option.Option multilinear.Placement)
   stack_log : Std.Usize
-  placed : Std.U64
   table_log_heights : alloc.vec.Vec Std.Usize
   keccak : keccak.KeccakShape
 
 /-- [verifier::bus::BusResult]
-    Source: 'crates/verifier/src/bus.rs', lines 97:0-103:1
+    Source: 'crates/verifier/src/bus.rs', lines 121:0-127:1
     Visibility: public -/
 structure bus.BusResult where
   claims : alloc.vec.Vec bus.ColumnClaim
@@ -239,49 +215,34 @@ structure bus.BusResult where
   forms : alloc.vec.Vec (alloc.vec.Vec layout.Form)
   totals : alloc.vec.Vec field.E
 
+/-- [verifier::da::digest::{closure}]
+    Source: 'crates/verifier/src/da.rs', lines 39:25-42:5 -/
+@[reducible]
+def da.digest.closure := Unit
+
 /-- [verifier::field::{verifier::field::K}::inv::{closure}]
-    Source: 'crates/verifier/src/field.rs', lines 71:17-76:9 -/
+    Source: 'crates/verifier/src/field.rs', lines 70:17-75:9 -/
 @[reducible]
 def field.K.inv.closure := Unit
 
-/-- [verifier::da::subspace_evaluations::{closure}]
-    Source: 'crates/verifier/src/da.rs', lines 31:17-31:55 -/
-@[reducible]
-def da.subspace_evaluations.closure := alloc.vec.Vec field.K
-
-/-- [verifier::da::subspace_evaluations::{closure#1}]
-    Source: 'crates/verifier/src/da.rs', lines 26:39-26:52 -/
-@[reducible]
-def da.subspace_evaluations.closure_1 := Unit
-
-/-- [verifier::field::{verifier::field::E}::from_bytes::{closure}]
-    Source: 'crates/verifier/src/field.rs', lines 124:19-124:87 -/
-@[reducible]
-def field.E.from_bytes.closure := Slice Std.U8
-
 /-- [verifier::field::{verifier::field::E}::sum::{closure}]
-    Source: 'crates/verifier/src/field.rs', lines 129:38-129:62 -/
+    Source: 'crates/verifier/src/field.rs', lines 126:38-126:62 -/
 @[reducible]
 def field.E.sum.closure (T0 : Type _) (Clause0_IntoIter : Type _) := Unit
 
 /-- [verifier::field::Scaled]
-    Source: 'crates/verifier/src/field.rs', lines 231:0-231:26
+    Source: 'crates/verifier/src/field.rs', lines 213:0-213:26
     Visibility: public -/
 @[reducible]
 def field.Scaled := alloc.vec.Vec field.E
 
-/-- [verifier::field::{verifier::field::Scaled}::new::{closure}]
-    Source: 'crates/verifier/src/field.rs', lines 236:22-236:87 -/
-@[reducible]
-def field.Scaled.new.closure := Unit
-
 /-- [verifier::hash::{verifier::hash::Digest}::words::{closure}]
-    Source: 'crates/verifier/src/hash.rs', lines 112:28-112:96 -/
+    Source: 'crates/verifier/src/hash.rs', lines 111:28-111:96 -/
 @[reducible]
 def hash.Digest.words.closure := hash.Digest
 
 /-- [verifier::keccak::Claim]
-    Source: 'crates/verifier/src/keccak.rs', lines 70:0-75:1 -/
+    Source: 'crates/verifier/src/keccak.rs', lines 75:0-80:1 -/
 structure keccak.Claim where
   value : field.E
   mu : alloc.vec.Vec field.E
@@ -289,19 +250,39 @@ structure keccak.Claim where
   weights : alloc.vec.Vec field.E
 
 /-- [verifier::keccak::linear_transpose::{closure}]
-    Source: 'crates/verifier/src/keccak.rs', lines 96:13-99:9 -/
-def keccak.linear_transpose.closure :=
-  alloc.vec.Vec field.E × alloc.vec.Vec field.E
+    Source: 'crates/verifier/src/keccak.rs', lines 103:13-106:9 -/
+def keccak.linear_transpose.closure (T : Type _) :=
+  Array T 1600#usize × Array T 320#usize
 
 /-- [verifier::keccak::instance_weights::{closure}::{closure}]
-    Source: 'crates/verifier/src/keccak.rs', lines 111:45-111:95 -/
+    Source: 'crates/verifier/src/keccak.rs', lines 118:45-118:95 -/
 def keccak.instance_weights.closure.closure :=
   Std.U32 × Array field.E 24#usize
 
 /-- [verifier::keccak::instance_weights::{closure}]
-    Source: 'crates/verifier/src/keccak.rs', lines 111:13-111:97 -/
+    Source: 'crates/verifier/src/keccak.rs', lines 118:13-118:97 -/
 @[reducible]
 def keccak.instance_weights.closure := Array field.E 24#usize
+
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure#1}]
+    Source: 'crates/verifier/src/transcript.rs', lines 232:65-232:82 -/
+@[reducible]
+def transcript.Transcript.sumcheck_round_poly.closure_1 := Unit
+
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure}]
+    Source: 'crates/verifier/src/transcript.rs', lines 227:63-227:80 -/
+@[reducible]
+def transcript.Transcript.sumcheck_round_poly.closure := Unit
+
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{closure}]
+    Source: 'crates/verifier/src/transcript.rs', lines 173:63-173:76 -/
+@[reducible]
+def transcript.Transcript.grind_check.closure := Unit
+
+/-- [verifier::transcript::{verifier::transcript::Sponge}::sample::{closure}]
+    Source: 'crates/verifier/src/transcript.rs', lines 76:42-79:9 -/
+@[reducible]
+def transcript.Sponge.sample.closure := transcript.Sponge
 
 /-- [verifier::multilinear::Scaler]
     Source: 'crates/verifier/src/multilinear.rs', lines 23:0-26:1 -/
@@ -310,28 +291,8 @@ inductive multilinear.Scaler where
 | Table : field.Scaled → multilinear.Scaler
 | Plain : field.E → multilinear.Scaler
 
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure#1}]
-    Source: 'crates/verifier/src/transcript.rs', lines 249:71-249:88 -/
-@[reducible]
-def transcript.Transcript.sumcheck_round_poly.closure_1 := Unit
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure}]
-    Source: 'crates/verifier/src/transcript.rs', lines 243:73-243:90 -/
-@[reducible]
-def transcript.Transcript.sumcheck_round_poly.closure := Unit
-
-/-- [verifier::keccak::open::{closure}::{closure}]
-    Source: 'crates/verifier/src/keccak.rs', lines 217:44-217:98 -/
-def keccak.open.closure.closure := Slice (Array field.E 64#usize) × field.E
-
-/-- [verifier::keccak::open::{closure}]
-    Source: 'crates/verifier/src/keccak.rs', lines 217:17-217:99 -/
-@[reducible]
-def keccak.open.closure := field.E
-
 /-- [verifier::keccak::KeccakOpenings]
-    Source: 'crates/verifier/src/keccak.rs', lines 225:0-228:1
-    Visibility: public -/
+    Source: 'crates/verifier/src/keccak.rs', lines 233:0-236:1 -/
 structure keccak.KeccakOpenings where
   outputs : core.option.Option ((alloc.vec.Vec field.E) × field.E)
   inputs : ((alloc.vec.Vec field.E) × (alloc.vec.Vec field.E))
@@ -352,42 +313,47 @@ def layout.Form.evaluate.closure.closure := Slice field.E
 def layout.Form.evaluate.closure := Slice field.E
 
 /-- [verifier::layout::{verifier::layout::Flushes}::counted::{closure}]
-    Source: 'crates/verifier/src/layout.rs', lines 156:19-161:9 -/
+    Source: 'crates/verifier/src/layout.rs', lines 165:19-170:9 -/
 def layout.Flushes.counted.closure :=
-  Array layout.Form 2#usize × alloc.vec.Vec layout.Form
+  Array layout.Form 2#usize × Slice layout.Form
 
 /-- [verifier::layout::{verifier::layout::Flushes}::memory_cols::{closure}::{closure}]
-    Source: 'crates/verifier/src/layout.rs', lines 177:89-177:113 -/
+    Source: 'crates/verifier/src/layout.rs', lines 193:89-193:113 -/
 @[reducible]
 def layout.Flushes.memory_cols.closure.closure := Unit
 
 /-- [verifier::layout::{verifier::layout::Flushes}::memory_cols::{closure}]
-    Source: 'crates/verifier/src/layout.rs', lines 177:41-177:114 -/
+    Source: 'crates/verifier/src/layout.rs', lines 193:41-193:114 -/
 @[reducible]
 def layout.Flushes.memory_cols.closure := Slice Std.Usize
 
-/-- [verifier::layout::keccak_cell_lanes::{closure}]
-    Source: 'crates/verifier/src/layout.rs', lines 312:24-317:5 -/
-@[reducible]
-def layout.keccak_cell_lanes.closure := Bool
-
 /-- [verifier::layout::layout_limb::{closure}]
-    Source: 'crates/verifier/src/layout.rs', lines 325:40-325:53 -/
+    Source: 'crates/verifier/src/layout.rs', lines 343:40-343:53 -/
 @[reducible]
 def layout.layout_limb.closure := Unit
 
 /-- [verifier::layout::qkeccak_slot::{closure#1}]
-    Source: 'crates/verifier/src/layout.rs', lines 436:50-436:70 -/
+    Source: 'crates/verifier/src/layout.rs', lines 454:50-454:70 -/
 @[reducible]
 def layout.qkeccak_slot.closure_1 := Std.Usize
 
 /-- [verifier::layout::qkeccak_slot::{closure}]
-    Source: 'crates/verifier/src/layout.rs', lines 433:49-433:76 -/
+    Source: 'crates/verifier/src/layout.rs', lines 451:49-451:76 -/
 @[reducible]
 def layout.qkeccak_slot.closure := Std.Usize
 
+/-- [verifier::layout::stacked_blocks::{closure}]
+    Source: 'crates/verifier/src/layout.rs', lines 544:16-544:85 -/
+@[reducible]
+def layout.stacked_blocks.closure := core.ops.range.Range Std.Usize
+
+/-- [verifier::layout::stack::{closure}]
+    Source: 'crates/verifier/src/layout.rs', lines 551:53-551:77 -/
+@[reducible]
+def layout.stack.closure := Slice Std.Usize
+
 /-- [verifier::Summary]
-    Source: 'crates/verifier/src/lib.rs', lines 155:0-166:1
+    Source: 'crates/verifier/src/lib.rs', lines 180:0-189:1
     Visibility: public -/
 structure Summary where
   log_memory : Std.Usize
@@ -395,7 +361,11 @@ structure Summary where
   log_inv_rate : Std.Usize
   bytecode_point : alloc.vec.Vec field.E
   keccak_scalars : core.ops.range.Range Std.Usize
-  merkle_paths : alloc.vec.Vec merkle.MerklePath
+
+/-- [verifier::merkle::hash_leaf::{closure}]
+    Source: 'crates/verifier/src/merkle.rs', lines 14:39-14:61 -/
+@[reducible]
+def merkle.hash_leaf.closure := Unit
 
 /-- [verifier::multilinear::multilinear_eval::{closure}]
     Source: 'crates/verifier/src/multilinear.rs', lines 51:41-51:62 -/
@@ -403,7 +373,7 @@ structure Summary where
 def multilinear.multilinear_eval.closure (T : Type _) := Unit
 
 /-- [verifier::multilinear::padding_weight::{closure}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 91:14-91:49 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 91:14-91:46 -/
 @[reducible]
 def multilinear.padding_weight.closure := Std.U64
 
@@ -413,50 +383,74 @@ def multilinear.padding_weight.closure := Std.U64
 def multilinear.padding_weight.closure_1 := multilinear.padding_weight.closure
 
 /-- [verifier::multilinear::selector_point::{closure}]
-    Source: 'crates/verifier/src/multilinear.rs', lines 161:20-161:59 -/
+    Source: 'crates/verifier/src/multilinear.rs', lines 162:20-162:56 -/
 @[reducible]
 def multilinear.selector_point.closure := Std.U64
 
-/-- [verifier::ring_switch::ring_switch::{closure#2}]
-    Source: 'crates/verifier/src/ring_switch.rs', lines 58:13-58:77 -/
-def ring_switch.ring_switch.closure_2 :=
-  alloc.vec.Vec field.E × alloc.vec.Vec field.E
-
-/-- [verifier::ring_switch::ring_switch::{closure#1}]
-    Source: 'crates/verifier/src/ring_switch.rs', lines 56:38-56:75 -/
+/-- [verifier::ring_switch::frobenius_8::{closure}]
+    Source: 'crates/verifier/src/ring_switch.rs', lines 15:40-15:57 -/
 @[reducible]
-def ring_switch.ring_switch.closure_1 := alloc.vec.Vec field.E
+def ring_switch.frobenius_8.closure := Unit
+
+/-- [verifier::ring_switch::ring_target::{closure}]
+    Source: 'crates/verifier/src/ring_switch.rs', lines 32:38-32:65 -/
+@[reducible]
+def ring_switch.ring_target.closure := Slice field.E
 
 /-- [verifier::ring_switch::ring_switch::{closure}]
-    Source: 'crates/verifier/src/ring_switch.rs', lines 54:22-54:70 -/
-@[reducible]
-def ring_switch.ring_switch.closure := alloc.vec.Vec field.E
-
-/-- [verifier::transcript::{verifier::transcript::Proof}::load::{closure}]
-    Source: 'crates/verifier/src/transcript.rs', lines 22:21-22:68 -/
-@[reducible]
-def transcript.Proof.load.closure := Slice Std.U8
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{closure}]
-    Source: 'crates/verifier/src/transcript.rs', lines 160:63-160:76 -/
-@[reducible]
-def transcript.Transcript.grind_check.closure := Unit
+    Source: 'crates/verifier/src/ring_switch.rs', lines 86:16-86:80 -/
+def ring_switch.ring_switch.closure :=
+  alloc.vec.Vec field.E × alloc.vec.Vec field.E
 
 /-- [verifier::whir::WhirConfig]
-    Source: 'crates/verifier/src/whir.rs', lines 25:0-29:1 -/
+    Source: 'crates/verifier/src/whir.rs', lines 42:0-46:1
+    Visibility: public -/
 structure whir.WhirConfig where
   log_inv_rates : alloc.vec.Vec Std.Usize
   folds : alloc.vec.Vec Std.Usize
   queries : Slice Std.Usize
 
+/-- [verifier::whir::ext_row::{closure}]
+    Source: 'crates/verifier/src/whir.rs', lines 84:35-84:65 -/
+@[reducible]
+def whir.ext_row.closure := Unit
+
 /-- [verifier::whir::subspace_roots::{closure}]
-    Source: 'crates/verifier/src/whir.rs', lines 100:47-100:60 -/
+    Source: 'crates/verifier/src/whir.rs', lines 104:47-104:60 -/
 @[reducible]
 def whir.subspace_roots.closure := Unit
 
-/-- [verifier::whir::induced_weight::{closure}]
-    Source: 'crates/verifier/src/whir.rs', lines 119:44-119:63 -/
+/-- [verifier::whir::Subspace]
+    Source: 'crates/verifier/src/whir.rs', lines 116:0-119:1
+    Visibility: public -/
+structure whir.Subspace where
+  roots : alloc.vec.Vec field.K
+  inverses : alloc.vec.Vec field.K
+
+/-- [verifier::whir::{verifier::whir::Subspace}::new::{closure}]
+    Source: 'crates/verifier/src/whir.rs', lines 124:40-124:59 -/
 @[reducible]
-def whir.induced_weight.closure := Unit
+def whir.Subspace.new.closure := Unit
+
+/-- [verifier::whir::novel_eval::{closure}]
+    Source: 'crates/verifier/src/whir.rs', lines 161:46-161:61 -/
+@[reducible]
+def whir.novel_eval.closure := Unit
+
+/-- [verifier::whir::FoldRound]
+    Source: 'crates/verifier/src/whir.rs', lines 166:0-169:1 -/
+structure whir.FoldRound where
+  alpha : field.E
+  beta : field.E
+
+/-- [verifier::wire::Reader]
+    Source: 'crates/verifier/src/wire.rs', lines 162:0-162:28 -/
+@[reducible]
+def wire.Reader := Slice Std.U8
+
+/-- [verifier::wire::{verifier::wire::Reader<'a>}::words::{closure}]
+    Source: 'crates/verifier/src/wire.rs', lines 186:21-186:56 -/
+@[reducible]
+def wire.Reader.words.closure := Unit
 
 end verifier

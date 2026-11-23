@@ -6,6 +6,7 @@ module
 public import Aeneas
 public import CoreModels
 public import CoreModelsExt
+public import FiatShamir.Extraction
 public import Parallel.Extraction
 @[expose] public section
 open CoreModels Aeneas
@@ -30,3 +31,7 @@ set_option maxRecDepth 2048
 namespace primitives
 
 end primitives
+
+namespace stable_primitives
+
+end stable_primitives

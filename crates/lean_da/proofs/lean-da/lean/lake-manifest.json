@@ -17,8 +17,8 @@
    "scope": "",
    "name": "FiatShamir",
    "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../../../../fiat_shamir/proofs/fiat-shamir/lean",
+   "inherited": true,
+   "dir": "../../../../fiat_shamir_prover/proofs/fiat-shamir/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -27,8 +27,8 @@
    "scope": "",
    "name": "Parallel",
    "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../../../../parallel/proofs/parallel/lean",
+   "inherited": true,
+   "dir": "../../../../stable_prover/parallel/proofs/parallel/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -38,7 +38,7 @@
    "name": "Pcs",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../pcs/proofs/pcs/lean",
+   "dir": "../../../../stable_prover/pcs/proofs/pcs/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },
@@ -48,7 +48,17 @@
    "name": "Primitives",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../primitives/proofs/primitives/lean",
+   "dir": "../../../../stable_prover/primitives/proofs/primitives/lean",
+   "copy": false,
+   "configFile": "lakefile.toml"
+  },
+  {
+   "type": "path",
+   "scope": "",
+   "name": "Verifier",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../../../verifier/proofs/verifier/lean",
    "copy": false,
    "configFile": "lakefile.toml"
   },

@@ -28,3 +28,7 @@ set_option maxRecDepth 2048
 namespace parallel
 
 end parallel
+
+namespace stable_parallel
+
+end stable_parallel
