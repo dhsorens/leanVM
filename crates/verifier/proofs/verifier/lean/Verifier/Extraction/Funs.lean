@@ -423,589 +423,6 @@ def da.MEMBERSHIP_GRINDING_BITS : RustM Std.U32 := do
   let i1 ← i - 1#u128
   transcript.grinding_bits i1
 
-/-- [verifier::hash::RATE]
-    Source: 'crates/verifier/src/hash.rs', lines 7:0-7:24 -/
-@[global_simps, irreducible] def hash.RATE : Std.Usize := 136#usize
-
-/-- [verifier::hash::xor_block]: loop body 0:
-    Source: 'crates/verifier/src/hash.rs', lines 76:4-78:5 -/
-@[rust_loop_body]
-def hash.xor_block_loop.body
-  (block : Slice Std.U8) (iter : core.ops.range.Range Std.Usize)
-  (state : Array Std.U64 25#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
-    25#usize)) (Array Std.U64 25#usize))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done state)
-  | core.option.Option.Some i =>
-    let i1 ← 8#usize * i
-    let i2 ← i1 + 8#usize
-    let s ←
-      core.Slice.Insts.CoreOpsIndexIndex.index
-        (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-        Std.U8) block { start := i1, «end» := i2 }
-    let r ←
-      core.Array.Insts.CoreConvertTryFromShared0SliceTryFromSliceError.try_from
-        8#usize core.U8.Insts.CoreMarkerCopy s
-    let a ←
-      core.result.Result.unwrap core.array.TryFromSliceError.Insts.CoreFmtDebug
-        r
-    let i3 ← core.num.U64.from_le_bytes a
-    let i4 ← Array.index_usize state i
-    let i5 ← lift (i4 ^^^ i3)
-    let a1 ← Array.update state i i5
-    ok (cont (iter1, a1))
-
-/-- [verifier::hash::xor_block]: loop 0:
-    Source: 'crates/verifier/src/hash.rs', lines 76:4-78:5 -/
-@[rust_loop]
-def hash.xor_block_loop
-  (iter : core.ops.range.Range Std.Usize) (state : Array Std.U64 25#usize)
-  (block : Slice Std.U8) :
-  RustM (Array Std.U64 25#usize)
-  := do
-  loop
-    (fun (iter1, state1) => hash.xor_block_loop.body block iter1 state1)
-    (iter, state)
-
-/-- [verifier::hash::xor_block]:
-    Source: 'crates/verifier/src/hash.rs', lines 75:0-79:1 -/
-def hash.xor_block
-  (state : Array Std.U64 25#usize) (block : Slice Std.U8) :
-  RustM (Array Std.U64 25#usize)
-  := do
-  let i ← hash.RATE / 8#usize
-  hash.xor_block_loop { start := 0#usize, «end» := i } state block
-
-/-- [verifier::hash::STATE_LANES]
-    Source: 'crates/verifier/src/hash.rs', lines 5:0-5:34
-    Visibility: public -/
-@[global_simps, irreducible] def hash.STATE_LANES : Std.Usize := 25#usize
-
-/-- [verifier::hash::KECCAK_PI]: loop body 0:
-    Source: 'crates/verifier/src/hash.rs', lines 43:4-46:5
-    Visibility: public -/
-@[rust_loop_body]
-def hash.KECCAK_PI_loop.body
-  (pi : Array Std.Usize 25#usize) (i : Std.Usize) :
-  RustM (ControlFlow ((Array Std.Usize 25#usize) × Std.Usize) (Array Std.Usize
-    25#usize))
-  := do
-  if i < hash.STATE_LANES
-  then
-    let i1 ← i / 5#usize
-    let i2 ← i % 5#usize
-    let i3 ← 2#usize * i2
-    let i4 ← 3#usize * i1
-    let i5 ← i3 + i4
-    let i6 ← i5 % 5#usize
-    let i7 ← 5#usize * i6
-    let i8 ← i1 + i7
-    let a ← Array.update pi i i8
-    let i9 ← i + 1#usize
-    ok (cont (a, i9))
-  else ok (done pi)
-
-/-- [verifier::hash::KECCAK_PI]: loop 0:
-    Source: 'crates/verifier/src/hash.rs', lines 43:4-46:5
-    Visibility: public -/
-@[rust_loop]
-def hash.KECCAK_PI_loop
-  (pi : Array Std.Usize 25#usize) (i : Std.Usize) :
-  RustM (Array Std.Usize 25#usize)
-  := do
-  loop
-    (fun (pi1, i1) => hash.KECCAK_PI_loop.body pi1 i1)
-    (pi, i)
-
-/-- [verifier::hash::KECCAK_PI]
-    Source: 'crates/verifier/src/hash.rs', lines 40:0-48:2
-    Visibility: public -/
-@[global_simps, irreducible]
-def hash.KECCAK_PI : RustM (Array Std.Usize 25#usize) := do
-  let pi ← core.array.repeat 25#usize core.Usize.Insts.CoreCloneClone 0#usize
-  hash.KECCAK_PI_loop pi 0#usize
-
-/-- [verifier::hash::KECCAK_RHO]
-    Source: 'crates/verifier/src/hash.rs', lines 36:0-38:2
-    Visibility: public -/
-@[global_simps, irreducible]
-def hash.KECCAK_RHO : Array Std.U32 25#usize :=
-  Array.make 25#usize [
-    0#u32, 1#u32, 62#u32, 28#u32, 27#u32, 36#u32, 44#u32, 6#u32, 55#u32,
-    20#u32, 3#u32, 10#u32, 43#u32, 25#u32, 39#u32, 41#u32, 45#u32, 15#u32,
-    21#u32, 8#u32, 18#u32, 2#u32, 61#u32, 56#u32, 14#u32
-    ]
-
-/-- [verifier::hash::KECCAK_RC]
-    Source: 'crates/verifier/src/hash.rs', lines 10:0-35:2
-    Visibility: public -/
-@[global_simps, irreducible]
-def hash.KECCAK_RC : Array Std.U64 24#usize :=
-  Array.make 24#usize [
-    1#u64, 32898#u64, 9223372036854808714#u64, 9223372039002292224#u64,
-    32907#u64, 2147483649#u64, 9223372039002292353#u64,
-    9223372036854808585#u64, 138#u64, 136#u64, 2147516425#u64, 2147483658#u64,
-    2147516555#u64, 9223372036854775947#u64, 9223372036854808713#u64,
-    9223372036854808579#u64, 9223372036854808578#u64, 9223372036854775936#u64,
-    32778#u64, 9223372039002259466#u64, 9223372039002292353#u64,
-    9223372036854808704#u64, 2147483649#u64, 9223372039002292232#u64
-    ]
-
-/-- [verifier::hash::keccak_f]: loop body 1:
-    Source: 'crates/verifier/src/hash.rs', lines 53:8-55:9
-    Visibility: public -/
-@[rust_loop_body]
-def hash.keccak_f_loop0_loop0.body
-  (a : Array Std.U64 25#usize) (iter : core.ops.range.Range Std.Usize)
-  (c : Array Std.U64 5#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
-    5#usize)) (Array Std.U64 5#usize))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done c)
-  | core.option.Option.Some x =>
-    let i ← Array.index_usize a x
-    let i1 ← x + 5#usize
-    let i2 ← Array.index_usize a i1
-    let i3 ← lift (i ^^^ i2)
-    let i4 ← x + 10#usize
-    let i5 ← Array.index_usize a i4
-    let i6 ← lift (i3 ^^^ i5)
-    let i7 ← x + 15#usize
-    let i8 ← Array.index_usize a i7
-    let i9 ← lift (i6 ^^^ i8)
-    let i10 ← x + 20#usize
-    let i11 ← Array.index_usize a i10
-    let i12 ← lift (i9 ^^^ i11)
-    let a1 ← Array.update c x i12
-    ok (cont (iter1, a1))
-
-/-- [verifier::hash::keccak_f]: loop 1:
-    Source: 'crates/verifier/src/hash.rs', lines 53:8-55:9
-    Visibility: public -/
-@[rust_loop]
-def hash.keccak_f_loop0_loop0
-  (iter : core.ops.range.Range Std.Usize) (a : Array Std.U64 25#usize)
-  (c : Array Std.U64 5#usize) :
-  RustM (Array Std.U64 5#usize)
-  := do
-  loop
-    (fun (iter1, c1) => hash.keccak_f_loop0_loop0.body a iter1 c1)
-    (iter, c)
-
-/-- [verifier::hash::keccak_f]: loop body 2:
-    Source: 'crates/verifier/src/hash.rs', lines 57:8-59:9
-    Visibility: public -/
-@[rust_loop_body]
-def hash.keccak_f_loop0_loop1.body
-  (c : Array Std.U64 5#usize) (iter : core.ops.range.Range Std.Usize)
-  (d : Array Std.U64 5#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
-    5#usize)) (Array Std.U64 5#usize))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done d)
-  | core.option.Option.Some x =>
-    let i ← x + 4#usize
-    let i1 ← i % 5#usize
-    let i2 ← Array.index_usize c i1
-    let i3 ← x + 1#usize
-    let i4 ← i3 % 5#usize
-    let i5 ← Array.index_usize c i4
-    let i6 ← core.num.U64.rotate_left i5 1#u32
-    let i7 ← lift (i2 ^^^ i6)
-    let a ← Array.update d x i7
-    ok (cont (iter1, a))
-
-/-- [verifier::hash::keccak_f]: loop 2:
-    Source: 'crates/verifier/src/hash.rs', lines 57:8-59:9
-    Visibility: public -/
-@[rust_loop]
-def hash.keccak_f_loop0_loop1
-  (iter : core.ops.range.Range Std.Usize) (c : Array Std.U64 5#usize)
-  (d : Array Std.U64 5#usize) :
-  RustM (Array Std.U64 5#usize)
-  := do
-  loop
-    (fun (iter1, d1) => hash.keccak_f_loop0_loop1.body c iter1 d1)
-    (iter, d)
-
-/-- [verifier::hash::keccak_f]: loop body 3:
-    Source: 'crates/verifier/src/hash.rs', lines 60:8-62:9
-    Visibility: public -/
-@[rust_loop_body]
-def hash.keccak_f_loop0_loop2.body
-  (d : Array Std.U64 5#usize) (iter : core.ops.range.Range Std.Usize)
-  (a : Array Std.U64 25#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
-    25#usize)) (Array Std.U64 25#usize))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done a)
-  | core.option.Option.Some i =>
-    let i1 ← i % 5#usize
-    let i2 ← Array.index_usize d i1
-    let i3 ← Array.index_usize a i
-    let i4 ← lift (i3 ^^^ i2)
-    let a1 ← Array.update a i i4
-    ok (cont (iter1, a1))
-
-/-- [verifier::hash::keccak_f]: loop 3:
-    Source: 'crates/verifier/src/hash.rs', lines 60:8-62:9
-    Visibility: public -/
-@[rust_loop]
-def hash.keccak_f_loop0_loop2
-  (iter : core.ops.range.Range Std.Usize) (a : Array Std.U64 25#usize)
-  (d : Array Std.U64 5#usize) :
-  RustM (Array Std.U64 25#usize)
-  := do
-  loop
-    (fun (iter1, a1) => hash.keccak_f_loop0_loop2.body d iter1 a1)
-    (iter, a)
-
-/-- [verifier::hash::keccak_f]: loop body 4:
-    Source: 'crates/verifier/src/hash.rs', lines 64:8-66:9
-    Visibility: public -/
-@[rust_loop_body]
-def hash.keccak_f_loop0_loop3.body
-  (a : Array Std.U64 25#usize) (iter : core.ops.range.Range Std.Usize)
-  (b : Array Std.U64 25#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
-    25#usize)) (Array Std.U64 25#usize))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done b)
-  | core.option.Option.Some i =>
-    let i1 ← Array.index_usize a i
-    let i2 ← Array.index_usize hash.KECCAK_RHO i
-    let i3 ← core.num.U64.rotate_left i1 i2
-    let a1 ← hash.KECCAK_PI
-    let i4 ← Array.index_usize a1 i
-    let a2 ← Array.update b i4 i3
-    ok (cont (iter1, a2))
-
-/-- [verifier::hash::keccak_f]: loop 4:
-    Source: 'crates/verifier/src/hash.rs', lines 64:8-66:9
-    Visibility: public -/
-@[rust_loop]
-def hash.keccak_f_loop0_loop3
-  (iter : core.ops.range.Range Std.Usize) (a : Array Std.U64 25#usize)
-  (b : Array Std.U64 25#usize) :
-  RustM (Array Std.U64 25#usize)
-  := do
-  loop
-    (fun (iter1, b1) => hash.keccak_f_loop0_loop3.body a iter1 b1)
-    (iter, b)
-
-/-- [verifier::hash::keccak_f]: loop body 5:
-    Source: 'crates/verifier/src/hash.rs', lines 67:8-70:9
-    Visibility: public -/
-@[rust_loop_body]
-def hash.keccak_f_loop0_loop4.body
-  (b : Array Std.U64 25#usize) (iter : core.ops.range.Range Std.Usize)
-  (a : Array Std.U64 25#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
-    25#usize)) (Array Std.U64 25#usize))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done a)
-  | core.option.Option.Some i =>
-    let x ← i % 5#usize
-    let row ← i - x
-    let i1 ← Array.index_usize b i
-    let i2 ← x + 1#usize
-    let i3 ← i2 % 5#usize
-    let i4 ← row + i3
-    let i5 ← Array.index_usize b i4
-    let i6 ← lift (~~~ i5)
-    let i7 ← x + 2#usize
-    let i8 ← i7 % 5#usize
-    let i9 ← row + i8
-    let i10 ← Array.index_usize b i9
-    let i11 ← lift (i6 &&& i10)
-    let i12 ← lift (i1 ^^^ i11)
-    let a1 ← Array.update a i i12
-    ok (cont (iter1, a1))
-
-/-- [verifier::hash::keccak_f]: loop 5:
-    Source: 'crates/verifier/src/hash.rs', lines 67:8-70:9
-    Visibility: public -/
-@[rust_loop]
-def hash.keccak_f_loop0_loop4
-  (iter : core.ops.range.Range Std.Usize) (a : Array Std.U64 25#usize)
-  (b : Array Std.U64 25#usize) :
-  RustM (Array Std.U64 25#usize)
-  := do
-  loop
-    (fun (iter1, a1) => hash.keccak_f_loop0_loop4.body b iter1 a1)
-    (iter, a)
-
-/-- [verifier::hash::keccak_f]: loop body 0:
-    Source: 'crates/verifier/src/hash.rs', lines 50:4-72:5
-    Visibility: public -/
-@[rust_loop_body]
-def hash.keccak_f_loop0.body
-  (iter : core.array.iter.IntoIter Std.U64 24#usize)
-  (a : Array Std.U64 25#usize) :
-  RustM (ControlFlow ((core.array.iter.IntoIter Std.U64 24#usize) × (Array
-    Std.U64 25#usize)) (Array Std.U64 25#usize))
-  := do
-  let (o, iter1) ←
-    core.array.iter.IntoIter.Insts.CoreIterTraitsIteratorIterator.next iter
-  match o with
-  | core.option.Option.None => ok (done a)
-  | core.option.Option.Some rc =>
-    let c ← core.array.repeat 5#usize core.U64.Insts.CoreCloneClone 0#u64
-    let c1 ←
-      hash.keccak_f_loop0_loop0 { start := 0#usize, «end» := 5#usize } a c
-    let d ←
-      hash.keccak_f_loop0_loop1 { start := 0#usize, «end» := 5#usize } c1 c
-    let a1 ←
-      hash.keccak_f_loop0_loop2
-        { start := 0#usize, «end» := hash.STATE_LANES } a d
-    let b ← core.array.repeat 25#usize core.U64.Insts.CoreCloneClone 0#u64
-    let b1 ←
-      hash.keccak_f_loop0_loop3
-        { start := 0#usize, «end» := hash.STATE_LANES } a1 b
-    let a2 ←
-      hash.keccak_f_loop0_loop4
-        { start := 0#usize, «end» := hash.STATE_LANES } a1 b1
-    let i ← Array.index_usize a2 0#usize
-    let i1 ← lift (i ^^^ rc)
-    let a3 ← Array.update a2 0#usize i1
-    ok (cont (iter1, a3))
-
-/-- [verifier::hash::keccak_f]: loop 0:
-    Source: 'crates/verifier/src/hash.rs', lines 50:4-72:5
-    Visibility: public -/
-@[rust_loop]
-def hash.keccak_f_loop0
-  (iter : core.array.iter.IntoIter Std.U64 24#usize)
-  (a : Array Std.U64 25#usize) :
-  RustM (Array Std.U64 25#usize)
-  := do
-  loop
-    (fun (iter1, a1) => hash.keccak_f_loop0.body iter1 a1)
-    (iter, a)
-
-/-- [verifier::hash::keccak_f]:
-    Source: 'crates/verifier/src/hash.rs', lines 49:0-73:1
-    Visibility: public -/
-def hash.keccak_f
-  (a : Array Std.U64 25#usize) : RustM (Array Std.U64 25#usize) := do
-  let iter ←
-    core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter.into_iter
-      hash.KECCAK_RC
-  hash.keccak_f_loop0 iter a
-
-/-- [verifier::hash::keccak_hash]: loop body 0:
-    Source: 'crates/verifier/src/hash.rs', lines 86:4-89:5
-    Visibility: public -/
-@[rust_loop_body]
-def hash.keccak_hash_loop0.body
-  (data : Slice Std.U8) (iter : core.ops.range.Range Std.Usize)
-  (state : Array Std.U64 25#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
-    25#usize)) (Array Std.U64 25#usize))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done state)
-  | core.option.Option.Some k =>
-    let i ← k * hash.RATE
-    let i1 ← k + 1#usize
-    let i2 ← i1 * hash.RATE
-    let s ←
-      core.Slice.Insts.CoreOpsIndexIndex.index
-        (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-        Std.U8) data { start := i, «end» := i2 }
-    let state1 ← hash.xor_block state s
-    let state2 ← hash.keccak_f state1
-    ok (cont (iter1, state2))
-
-/-- [verifier::hash::keccak_hash]: loop 0:
-    Source: 'crates/verifier/src/hash.rs', lines 86:4-89:5
-    Visibility: public -/
-@[rust_loop]
-def hash.keccak_hash_loop0
-  (iter : core.ops.range.Range Std.Usize) (data : Slice Std.U8)
-  (state : Array Std.U64 25#usize) :
-  RustM (Array Std.U64 25#usize)
-  := do
-  loop
-    (fun (iter1, state1) => hash.keccak_hash_loop0.body data iter1 state1)
-    (iter, state)
-
-/-- [verifier::hash::keccak_hash]: loop body 1:
-    Source: 'crates/verifier/src/hash.rs', lines 98:4-100:5
-    Visibility: public -/
-@[rust_loop_body]
-def hash.keccak_hash_loop1.body
-  (state : Array Std.U64 25#usize) (iter : core.ops.range.Range Std.Usize)
-  (value : Array Std.U8 32#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U8
-    32#usize)) (Array Std.U8 32#usize))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done value)
-  | core.option.Option.Some i =>
-    let i1 ← 8#usize * i
-    let i2 ← i1 + 8#usize
-    let (s, index_mut_back) ←
-      core.Array.Insts.CoreOpsIndexIndexMut.index_mut
-        (core.Slice.Insts.CoreOpsIndexIndexMut
-        (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-        Std.U8)) value { start := i1, «end» := i2 }
-    let i3 ← Array.index_usize state i
-    let a ← core.num.U64.to_le_bytes i3
-    let s1 ← core.array.Array.as_slice a
-    let s2 ←
-      core.slice.Slice.copy_from_slice core.U8.Insts.CoreMarkerCopy s s1
-    let value1 := index_mut_back s2
-    ok (cont (iter1, value1))
-
-/-- [verifier::hash::keccak_hash]: loop 1:
-    Source: 'crates/verifier/src/hash.rs', lines 98:4-100:5
-    Visibility: public -/
-@[rust_loop]
-def hash.keccak_hash_loop1
-  (iter : core.ops.range.Range Std.Usize) (state : Array Std.U64 25#usize)
-  (value : Array Std.U8 32#usize) :
-  RustM (Array Std.U8 32#usize)
-  := do
-  loop
-    (fun (iter1, value1) => hash.keccak_hash_loop1.body state iter1 value1)
-    (iter, value)
-
-/-- [verifier::hash::keccak_hash]:
-    Source: 'crates/verifier/src/hash.rs', lines 83:0-102:1
-    Visibility: public -/
-def hash.keccak_hash (data : Slice Std.U8) : RustM hash.Digest := do
-  let state ← core.array.repeat 25#usize core.U64.Insts.CoreCloneClone 0#u64
-  let i ← core.slice.Slice.len data
-  let n_blocks ← i / hash.RATE
-  let state1 ←
-    hash.keccak_hash_loop0 { start := 0#usize, «end» := n_blocks } data state
-  let i1 ← n_blocks * hash.RATE
-  let tail ←
-    core.Slice.Insts.CoreOpsIndexIndex.index
-      (core.ops.range.RangeFromUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-      Std.U8) data { start := i1 }
-  let block ← core.array.repeat 136#usize core.U8.Insts.CoreCloneClone 0#u8
-  let i2 ← core.slice.Slice.len tail
-  let (s, index_mut_back) ←
-    core.Array.Insts.CoreOpsIndexIndexMut.index_mut
-      (core.Slice.Insts.CoreOpsIndexIndexMut
-      (core.ops.range.RangeToUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-      Std.U8)) block { «end» := i2 }
-  let s1 ←
-    core.slice.Slice.copy_from_slice core.U8.Insts.CoreMarkerCopy s tail
-  let block1 := index_mut_back s1
-  let i3 ← Array.index_usize block1 i2
-  let i4 ← lift (i3 ^^^ 1#u8)
-  let block2 ← Array.update block1 i2 i4
-  let i5 ← hash.RATE - 1#usize
-  let i6 ← Array.index_usize block2 i5
-  let i7 ← lift (i6 ^^^ 128#u8)
-  let block3 ← Array.update block2 i5 i7
-  let s2 ← core.array.Array.as_slice block3
-  let state2 ← hash.xor_block state1 s2
-  let state3 ← hash.keccak_f state2
-  let value ← core.array.repeat 32#usize core.U8.Insts.CoreCloneClone 0#u8
-  let value1 ←
-    hash.keccak_hash_loop1 { start := 0#usize, «end» := 4#usize } state3
-      value
-  ok value1
-
-/-- [verifier::merkle::hash_pair]:
-    Source: 'crates/verifier/src/merkle.rs', lines 6:0-11:1
-    Visibility: public -/
-def merkle.hash_pair
-  (left : Slice Std.U8) (right : Slice Std.U8) : RustM hash.Digest := do
-  let pair ← core.array.repeat 64#usize core.U8.Insts.CoreCloneClone 0#u8
-  let (s, index_mut_back) ←
-    core.Array.Insts.CoreOpsIndexIndexMut.index_mut
-      (core.Slice.Insts.CoreOpsIndexIndexMut
-      (core.ops.range.RangeToUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-      Std.U8)) pair { «end» := 32#usize }
-  let s1 ←
-    core.slice.Slice.copy_from_slice core.U8.Insts.CoreMarkerCopy s left
-  let pair1 := index_mut_back s1
-  let (s2, index_mut_back1) ←
-    core.Array.Insts.CoreOpsIndexIndexMut.index_mut
-      (core.Slice.Insts.CoreOpsIndexIndexMut
-      (core.ops.range.RangeFromUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-      Std.U8)) pair1 { start := 32#usize }
-  let s3 ←
-    core.slice.Slice.copy_from_slice core.U8.Insts.CoreMarkerCopy s2 right
-  let pair2 := index_mut_back1 s3
-  let s4 ← core.array.Array.as_slice pair2
-  hash.keccak_hash s4
-
-/-- [verifier::da::digest::{impl core::ops::function::FnOnce<([u8; 32usize],), [u8; 32usize]> for verifier::da::digest::{closure}}::call_once]:
-    Source: 'crates/verifier/src/da.rs', lines 39:25-42:5 -/
-def
-  da.digest.closure.Insts.CoreOpsFunctionFnOnceTupleArrayU832ArrayU832.call_once
-  (c : da.digest.closure) (tupled_args : Array Std.U8 32#usize) :
-  RustM (Array Std.U8 32#usize)
-  := do
-  let z ← da.membership_challenge tupled_args
-  let s ← core.array.Array.as_slice tupled_args
-  let a ←
-    core.array.Array.map core.P.Insts.CoreOpsFunctionFnMutTupleU64ArrayU88
-      (Array.make 4#usize [ z.c0, z.c1, 0#u64, 0#u64 ])
-      (core.num.U64.to_le_bytes)
-  let s1 ← core.array.Array.as_slice a
-  let s2 ← core.slice.SliceArray.as_flattened s1
-  merkle.hash_pair s s2
-
-/-- Trait implementation: [verifier::da::digest::{impl core::ops::function::FnOnce<([u8; 32usize],), [u8; 32usize]> for verifier::da::digest::{closure}}]
-    Source: 'crates/verifier/src/da.rs', lines 39:25-42:5 -/
-@[reducible]
-def da.digest.closure.Insts.CoreOpsFunctionFnOnceTupleArrayU832ArrayU832 :
-  core.ops.function.FnOnce da.digest.closure (Array Std.U8 32#usize) (Array
-  Std.U8 32#usize) := {
-  call_once :=
-    da.digest.closure.Insts.CoreOpsFunctionFnOnceTupleArrayU832ArrayU832.call_once
-}
-
-/-- [verifier::da::digest]:
-    Source: 'crates/verifier/src/da.rs', lines 38:0-43:1
-    Visibility: public -/
-def da.digest
-  (root : core.option.Option (Array Std.U8 32#usize)) :
-  RustM (Array Std.U8 32#usize)
-  := do
-  let a ← core.array.repeat 32#usize core.U8.Insts.CoreCloneClone 0#u8
-  core.option.Option.map_or
-    da.digest.closure.Insts.CoreOpsFunctionFnOnceTupleArrayU832ArrayU832 root a
-    ()
-
 /-- [verifier::field::clmul_low::M0]
     Source: 'crates/verifier/src/field.rs', lines 10:4-10:42 -/
 @[global_simps, irreducible]
@@ -2028,10 +1445,529 @@ def field.powers
   let power ← field.ONE
   field.powers_loop { start := 0#usize, «end» := count } base out power
 
+/-- [verifier::hash::STATE_LANES]
+    Source: 'crates/verifier/src/hash.rs', lines 5:0-5:34
+    Visibility: public -/
+@[global_simps, irreducible] def hash.STATE_LANES : Std.Usize := 25#usize
+
+/-- [verifier::hash::RATE]
+    Source: 'crates/verifier/src/hash.rs', lines 7:0-7:24 -/
+@[global_simps, irreducible] def hash.RATE : Std.Usize := 136#usize
+
 /-- [verifier::hash::ROUNDS]
     Source: 'crates/verifier/src/hash.rs', lines 8:0-8:29
     Visibility: public -/
 @[global_simps, irreducible] def hash.ROUNDS : Std.Usize := 24#usize
+
+/-- [verifier::hash::KECCAK_RC]
+    Source: 'crates/verifier/src/hash.rs', lines 10:0-35:2
+    Visibility: public -/
+@[global_simps, irreducible]
+def hash.KECCAK_RC : Array Std.U64 24#usize :=
+  Array.make 24#usize [
+    1#u64, 32898#u64, 9223372036854808714#u64, 9223372039002292224#u64,
+    32907#u64, 2147483649#u64, 9223372039002292353#u64,
+    9223372036854808585#u64, 138#u64, 136#u64, 2147516425#u64, 2147483658#u64,
+    2147516555#u64, 9223372036854775947#u64, 9223372036854808713#u64,
+    9223372036854808579#u64, 9223372036854808578#u64, 9223372036854775936#u64,
+    32778#u64, 9223372039002259466#u64, 9223372039002292353#u64,
+    9223372036854808704#u64, 2147483649#u64, 9223372039002292232#u64
+    ]
+
+/-- [verifier::hash::KECCAK_RHO]
+    Source: 'crates/verifier/src/hash.rs', lines 36:0-38:2
+    Visibility: public -/
+@[global_simps, irreducible]
+def hash.KECCAK_RHO : Array Std.U32 25#usize :=
+  Array.make 25#usize [
+    0#u32, 1#u32, 62#u32, 28#u32, 27#u32, 36#u32, 44#u32, 6#u32, 55#u32,
+    20#u32, 3#u32, 10#u32, 43#u32, 25#u32, 39#u32, 41#u32, 45#u32, 15#u32,
+    21#u32, 8#u32, 18#u32, 2#u32, 61#u32, 56#u32, 14#u32
+    ]
+
+/-- [verifier::hash::KECCAK_PI]: loop body 0:
+    Source: 'crates/verifier/src/hash.rs', lines 43:4-46:5
+    Visibility: public -/
+@[rust_loop_body]
+def hash.KECCAK_PI_loop.body
+  (pi : Array Std.Usize 25#usize) (i : Std.Usize) :
+  RustM (ControlFlow ((Array Std.Usize 25#usize) × Std.Usize) (Array Std.Usize
+    25#usize))
+  := do
+  if i < hash.STATE_LANES
+  then
+    let i1 ← i / 5#usize
+    let i2 ← i % 5#usize
+    let i3 ← 2#usize * i2
+    let i4 ← 3#usize * i1
+    let i5 ← i3 + i4
+    let i6 ← i5 % 5#usize
+    let i7 ← 5#usize * i6
+    let i8 ← i1 + i7
+    let a ← Array.update pi i i8
+    let i9 ← i + 1#usize
+    ok (cont (a, i9))
+  else ok (done pi)
+
+/-- [verifier::hash::KECCAK_PI]: loop 0:
+    Source: 'crates/verifier/src/hash.rs', lines 43:4-46:5
+    Visibility: public -/
+@[rust_loop]
+def hash.KECCAK_PI_loop
+  (pi : Array Std.Usize 25#usize) (i : Std.Usize) :
+  RustM (Array Std.Usize 25#usize)
+  := do
+  loop
+    (fun (pi1, i1) => hash.KECCAK_PI_loop.body pi1 i1)
+    (pi, i)
+
+/-- [verifier::hash::KECCAK_PI]
+    Source: 'crates/verifier/src/hash.rs', lines 40:0-48:2
+    Visibility: public -/
+@[global_simps, irreducible]
+def hash.KECCAK_PI : RustM (Array Std.Usize 25#usize) := do
+  let pi ← core.array.repeat 25#usize core.Usize.Insts.CoreCloneClone 0#usize
+  hash.KECCAK_PI_loop pi 0#usize
+
+/-- [verifier::hash::keccak_f]: loop body 1:
+    Source: 'crates/verifier/src/hash.rs', lines 53:8-55:9
+    Visibility: public -/
+@[rust_loop_body]
+def hash.keccak_f_loop0_loop0.body
+  (a : Array Std.U64 25#usize) (iter : core.ops.range.Range Std.Usize)
+  (c : Array Std.U64 5#usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
+    5#usize)) (Array Std.U64 5#usize))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done c)
+  | core.option.Option.Some x =>
+    let i ← Array.index_usize a x
+    let i1 ← x + 5#usize
+    let i2 ← Array.index_usize a i1
+    let i3 ← lift (i ^^^ i2)
+    let i4 ← x + 10#usize
+    let i5 ← Array.index_usize a i4
+    let i6 ← lift (i3 ^^^ i5)
+    let i7 ← x + 15#usize
+    let i8 ← Array.index_usize a i7
+    let i9 ← lift (i6 ^^^ i8)
+    let i10 ← x + 20#usize
+    let i11 ← Array.index_usize a i10
+    let i12 ← lift (i9 ^^^ i11)
+    let a1 ← Array.update c x i12
+    ok (cont (iter1, a1))
+
+/-- [verifier::hash::keccak_f]: loop 1:
+    Source: 'crates/verifier/src/hash.rs', lines 53:8-55:9
+    Visibility: public -/
+@[rust_loop]
+def hash.keccak_f_loop0_loop0
+  (iter : core.ops.range.Range Std.Usize) (a : Array Std.U64 25#usize)
+  (c : Array Std.U64 5#usize) :
+  RustM (Array Std.U64 5#usize)
+  := do
+  loop
+    (fun (iter1, c1) => hash.keccak_f_loop0_loop0.body a iter1 c1)
+    (iter, c)
+
+/-- [verifier::hash::keccak_f]: loop body 2:
+    Source: 'crates/verifier/src/hash.rs', lines 57:8-59:9
+    Visibility: public -/
+@[rust_loop_body]
+def hash.keccak_f_loop0_loop1.body
+  (c : Array Std.U64 5#usize) (iter : core.ops.range.Range Std.Usize)
+  (d : Array Std.U64 5#usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
+    5#usize)) (Array Std.U64 5#usize))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done d)
+  | core.option.Option.Some x =>
+    let i ← x + 4#usize
+    let i1 ← i % 5#usize
+    let i2 ← Array.index_usize c i1
+    let i3 ← x + 1#usize
+    let i4 ← i3 % 5#usize
+    let i5 ← Array.index_usize c i4
+    let i6 ← core.num.U64.rotate_left i5 1#u32
+    let i7 ← lift (i2 ^^^ i6)
+    let a ← Array.update d x i7
+    ok (cont (iter1, a))
+
+/-- [verifier::hash::keccak_f]: loop 2:
+    Source: 'crates/verifier/src/hash.rs', lines 57:8-59:9
+    Visibility: public -/
+@[rust_loop]
+def hash.keccak_f_loop0_loop1
+  (iter : core.ops.range.Range Std.Usize) (c : Array Std.U64 5#usize)
+  (d : Array Std.U64 5#usize) :
+  RustM (Array Std.U64 5#usize)
+  := do
+  loop
+    (fun (iter1, d1) => hash.keccak_f_loop0_loop1.body c iter1 d1)
+    (iter, d)
+
+/-- [verifier::hash::keccak_f]: loop body 3:
+    Source: 'crates/verifier/src/hash.rs', lines 60:8-62:9
+    Visibility: public -/
+@[rust_loop_body]
+def hash.keccak_f_loop0_loop2.body
+  (d : Array Std.U64 5#usize) (iter : core.ops.range.Range Std.Usize)
+  (a : Array Std.U64 25#usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
+    25#usize)) (Array Std.U64 25#usize))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done a)
+  | core.option.Option.Some i =>
+    let i1 ← i % 5#usize
+    let i2 ← Array.index_usize d i1
+    let i3 ← Array.index_usize a i
+    let i4 ← lift (i3 ^^^ i2)
+    let a1 ← Array.update a i i4
+    ok (cont (iter1, a1))
+
+/-- [verifier::hash::keccak_f]: loop 3:
+    Source: 'crates/verifier/src/hash.rs', lines 60:8-62:9
+    Visibility: public -/
+@[rust_loop]
+def hash.keccak_f_loop0_loop2
+  (iter : core.ops.range.Range Std.Usize) (a : Array Std.U64 25#usize)
+  (d : Array Std.U64 5#usize) :
+  RustM (Array Std.U64 25#usize)
+  := do
+  loop
+    (fun (iter1, a1) => hash.keccak_f_loop0_loop2.body d iter1 a1)
+    (iter, a)
+
+/-- [verifier::hash::keccak_f]: loop body 4:
+    Source: 'crates/verifier/src/hash.rs', lines 64:8-66:9
+    Visibility: public -/
+@[rust_loop_body]
+def hash.keccak_f_loop0_loop3.body
+  (a : Array Std.U64 25#usize) (iter : core.ops.range.Range Std.Usize)
+  (b : Array Std.U64 25#usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
+    25#usize)) (Array Std.U64 25#usize))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done b)
+  | core.option.Option.Some i =>
+    let i1 ← Array.index_usize a i
+    let i2 ← Array.index_usize hash.KECCAK_RHO i
+    let i3 ← core.num.U64.rotate_left i1 i2
+    let a1 ← hash.KECCAK_PI
+    let i4 ← Array.index_usize a1 i
+    let a2 ← Array.update b i4 i3
+    ok (cont (iter1, a2))
+
+/-- [verifier::hash::keccak_f]: loop 4:
+    Source: 'crates/verifier/src/hash.rs', lines 64:8-66:9
+    Visibility: public -/
+@[rust_loop]
+def hash.keccak_f_loop0_loop3
+  (iter : core.ops.range.Range Std.Usize) (a : Array Std.U64 25#usize)
+  (b : Array Std.U64 25#usize) :
+  RustM (Array Std.U64 25#usize)
+  := do
+  loop
+    (fun (iter1, b1) => hash.keccak_f_loop0_loop3.body a iter1 b1)
+    (iter, b)
+
+/-- [verifier::hash::keccak_f]: loop body 5:
+    Source: 'crates/verifier/src/hash.rs', lines 67:8-70:9
+    Visibility: public -/
+@[rust_loop_body]
+def hash.keccak_f_loop0_loop4.body
+  (b : Array Std.U64 25#usize) (iter : core.ops.range.Range Std.Usize)
+  (a : Array Std.U64 25#usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
+    25#usize)) (Array Std.U64 25#usize))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done a)
+  | core.option.Option.Some i =>
+    let x ← i % 5#usize
+    let row ← i - x
+    let i1 ← Array.index_usize b i
+    let i2 ← x + 1#usize
+    let i3 ← i2 % 5#usize
+    let i4 ← row + i3
+    let i5 ← Array.index_usize b i4
+    let i6 ← lift (~~~ i5)
+    let i7 ← x + 2#usize
+    let i8 ← i7 % 5#usize
+    let i9 ← row + i8
+    let i10 ← Array.index_usize b i9
+    let i11 ← lift (i6 &&& i10)
+    let i12 ← lift (i1 ^^^ i11)
+    let a1 ← Array.update a i i12
+    ok (cont (iter1, a1))
+
+/-- [verifier::hash::keccak_f]: loop 5:
+    Source: 'crates/verifier/src/hash.rs', lines 67:8-70:9
+    Visibility: public -/
+@[rust_loop]
+def hash.keccak_f_loop0_loop4
+  (iter : core.ops.range.Range Std.Usize) (a : Array Std.U64 25#usize)
+  (b : Array Std.U64 25#usize) :
+  RustM (Array Std.U64 25#usize)
+  := do
+  loop
+    (fun (iter1, a1) => hash.keccak_f_loop0_loop4.body b iter1 a1)
+    (iter, a)
+
+/-- [verifier::hash::keccak_f]: loop body 0:
+    Source: 'crates/verifier/src/hash.rs', lines 50:4-72:5
+    Visibility: public -/
+@[rust_loop_body]
+def hash.keccak_f_loop0.body
+  (iter : core.array.iter.IntoIter Std.U64 24#usize)
+  (a : Array Std.U64 25#usize) :
+  RustM (ControlFlow ((core.array.iter.IntoIter Std.U64 24#usize) × (Array
+    Std.U64 25#usize)) (Array Std.U64 25#usize))
+  := do
+  let (o, iter1) ←
+    core.array.iter.IntoIter.Insts.CoreIterTraitsIteratorIterator.next iter
+  match o with
+  | core.option.Option.None => ok (done a)
+  | core.option.Option.Some rc =>
+    let c ← core.array.repeat 5#usize core.U64.Insts.CoreCloneClone 0#u64
+    let c1 ←
+      hash.keccak_f_loop0_loop0 { start := 0#usize, «end» := 5#usize } a c
+    let d ←
+      hash.keccak_f_loop0_loop1 { start := 0#usize, «end» := 5#usize } c1 c
+    let a1 ←
+      hash.keccak_f_loop0_loop2
+        { start := 0#usize, «end» := hash.STATE_LANES } a d
+    let b ← core.array.repeat 25#usize core.U64.Insts.CoreCloneClone 0#u64
+    let b1 ←
+      hash.keccak_f_loop0_loop3
+        { start := 0#usize, «end» := hash.STATE_LANES } a1 b
+    let a2 ←
+      hash.keccak_f_loop0_loop4
+        { start := 0#usize, «end» := hash.STATE_LANES } a1 b1
+    let i ← Array.index_usize a2 0#usize
+    let i1 ← lift (i ^^^ rc)
+    let a3 ← Array.update a2 0#usize i1
+    ok (cont (iter1, a3))
+
+/-- [verifier::hash::keccak_f]: loop 0:
+    Source: 'crates/verifier/src/hash.rs', lines 50:4-72:5
+    Visibility: public -/
+@[rust_loop]
+def hash.keccak_f_loop0
+  (iter : core.array.iter.IntoIter Std.U64 24#usize)
+  (a : Array Std.U64 25#usize) :
+  RustM (Array Std.U64 25#usize)
+  := do
+  loop
+    (fun (iter1, a1) => hash.keccak_f_loop0.body iter1 a1)
+    (iter, a)
+
+/-- [verifier::hash::keccak_f]:
+    Source: 'crates/verifier/src/hash.rs', lines 49:0-73:1
+    Visibility: public -/
+def hash.keccak_f
+  (a : Array Std.U64 25#usize) : RustM (Array Std.U64 25#usize) := do
+  let iter ←
+    core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter.into_iter
+      hash.KECCAK_RC
+  hash.keccak_f_loop0 iter a
+
+/-- [verifier::hash::xor_block]: loop body 0:
+    Source: 'crates/verifier/src/hash.rs', lines 76:4-78:5 -/
+@[rust_loop_body]
+def hash.xor_block_loop.body
+  (block : Slice Std.U8) (iter : core.ops.range.Range Std.Usize)
+  (state : Array Std.U64 25#usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
+    25#usize)) (Array Std.U64 25#usize))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done state)
+  | core.option.Option.Some i =>
+    let i1 ← 8#usize * i
+    let i2 ← i1 + 8#usize
+    let s ←
+      core.Slice.Insts.CoreOpsIndexIndex.index
+        (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+        Std.U8) block { start := i1, «end» := i2 }
+    let r ←
+      core.Array.Insts.CoreConvertTryFromShared0SliceTryFromSliceError.try_from
+        8#usize core.U8.Insts.CoreMarkerCopy s
+    let a ←
+      core.result.Result.unwrap core.array.TryFromSliceError.Insts.CoreFmtDebug
+        r
+    let i3 ← core.num.U64.from_le_bytes a
+    let i4 ← Array.index_usize state i
+    let i5 ← lift (i4 ^^^ i3)
+    let a1 ← Array.update state i i5
+    ok (cont (iter1, a1))
+
+/-- [verifier::hash::xor_block]: loop 0:
+    Source: 'crates/verifier/src/hash.rs', lines 76:4-78:5 -/
+@[rust_loop]
+def hash.xor_block_loop
+  (iter : core.ops.range.Range Std.Usize) (state : Array Std.U64 25#usize)
+  (block : Slice Std.U8) :
+  RustM (Array Std.U64 25#usize)
+  := do
+  loop
+    (fun (iter1, state1) => hash.xor_block_loop.body block iter1 state1)
+    (iter, state)
+
+/-- [verifier::hash::xor_block]:
+    Source: 'crates/verifier/src/hash.rs', lines 75:0-79:1 -/
+def hash.xor_block
+  (state : Array Std.U64 25#usize) (block : Slice Std.U8) :
+  RustM (Array Std.U64 25#usize)
+  := do
+  let i ← hash.RATE / 8#usize
+  hash.xor_block_loop { start := 0#usize, «end» := i } state block
+
+/-- [verifier::hash::keccak_hash]: loop body 0:
+    Source: 'crates/verifier/src/hash.rs', lines 86:4-89:5
+    Visibility: public -/
+@[rust_loop_body]
+def hash.keccak_hash_loop0.body
+  (data : Slice Std.U8) (iter : core.ops.range.Range Std.Usize)
+  (state : Array Std.U64 25#usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U64
+    25#usize)) (Array Std.U64 25#usize))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done state)
+  | core.option.Option.Some k =>
+    let i ← k * hash.RATE
+    let i1 ← k + 1#usize
+    let i2 ← i1 * hash.RATE
+    let s ←
+      core.Slice.Insts.CoreOpsIndexIndex.index
+        (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+        Std.U8) data { start := i, «end» := i2 }
+    let state1 ← hash.xor_block state s
+    let state2 ← hash.keccak_f state1
+    ok (cont (iter1, state2))
+
+/-- [verifier::hash::keccak_hash]: loop 0:
+    Source: 'crates/verifier/src/hash.rs', lines 86:4-89:5
+    Visibility: public -/
+@[rust_loop]
+def hash.keccak_hash_loop0
+  (iter : core.ops.range.Range Std.Usize) (data : Slice Std.U8)
+  (state : Array Std.U64 25#usize) :
+  RustM (Array Std.U64 25#usize)
+  := do
+  loop
+    (fun (iter1, state1) => hash.keccak_hash_loop0.body data iter1 state1)
+    (iter, state)
+
+/-- [verifier::hash::keccak_hash]: loop body 1:
+    Source: 'crates/verifier/src/hash.rs', lines 98:4-100:5
+    Visibility: public -/
+@[rust_loop_body]
+def hash.keccak_hash_loop1.body
+  (state : Array Std.U64 25#usize) (iter : core.ops.range.Range Std.Usize)
+  (value : Array Std.U8 32#usize) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array Std.U8
+    32#usize)) (Array Std.U8 32#usize))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done value)
+  | core.option.Option.Some i =>
+    let i1 ← 8#usize * i
+    let i2 ← i1 + 8#usize
+    let (s, index_mut_back) ←
+      core.Array.Insts.CoreOpsIndexIndexMut.index_mut
+        (core.Slice.Insts.CoreOpsIndexIndexMut
+        (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+        Std.U8)) value { start := i1, «end» := i2 }
+    let i3 ← Array.index_usize state i
+    let a ← core.num.U64.to_le_bytes i3
+    let s1 ← core.array.Array.as_slice a
+    let s2 ←
+      core.slice.Slice.copy_from_slice core.U8.Insts.CoreMarkerCopy s s1
+    let value1 := index_mut_back s2
+    ok (cont (iter1, value1))
+
+/-- [verifier::hash::keccak_hash]: loop 1:
+    Source: 'crates/verifier/src/hash.rs', lines 98:4-100:5
+    Visibility: public -/
+@[rust_loop]
+def hash.keccak_hash_loop1
+  (iter : core.ops.range.Range Std.Usize) (state : Array Std.U64 25#usize)
+  (value : Array Std.U8 32#usize) :
+  RustM (Array Std.U8 32#usize)
+  := do
+  loop
+    (fun (iter1, value1) => hash.keccak_hash_loop1.body state iter1 value1)
+    (iter, value)
+
+/-- [verifier::hash::keccak_hash]:
+    Source: 'crates/verifier/src/hash.rs', lines 83:0-102:1
+    Visibility: public -/
+def hash.keccak_hash (data : Slice Std.U8) : RustM hash.Digest := do
+  let state ← core.array.repeat 25#usize core.U64.Insts.CoreCloneClone 0#u64
+  let i ← core.slice.Slice.len data
+  let n_blocks ← i / hash.RATE
+  let state1 ←
+    hash.keccak_hash_loop0 { start := 0#usize, «end» := n_blocks } data state
+  let i1 ← n_blocks * hash.RATE
+  let tail ←
+    core.Slice.Insts.CoreOpsIndexIndex.index
+      (core.ops.range.RangeFromUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+      Std.U8) data { start := i1 }
+  let block ← core.array.repeat 136#usize core.U8.Insts.CoreCloneClone 0#u8
+  let i2 ← core.slice.Slice.len tail
+  let (s, index_mut_back) ←
+    core.Array.Insts.CoreOpsIndexIndexMut.index_mut
+      (core.Slice.Insts.CoreOpsIndexIndexMut
+      (core.ops.range.RangeToUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+      Std.U8)) block { «end» := i2 }
+  let s1 ←
+    core.slice.Slice.copy_from_slice core.U8.Insts.CoreMarkerCopy s tail
+  let block1 := index_mut_back s1
+  let i3 ← Array.index_usize block1 i2
+  let i4 ← lift (i3 ^^^ 1#u8)
+  let block2 ← Array.update block1 i2 i4
+  let i5 ← hash.RATE - 1#usize
+  let i6 ← Array.index_usize block2 i5
+  let i7 ← lift (i6 ^^^ 128#u8)
+  let block3 ← Array.update block2 i5 i7
+  let s2 ← core.array.Array.as_slice block3
+  let state2 ← hash.xor_block state1 s2
+  let state3 ← hash.keccak_f state2
+  let value ← core.array.repeat 32#usize core.U8.Insts.CoreCloneClone 0#u8
+  let value1 ←
+    hash.keccak_hash_loop1 { start := 0#usize, «end» := 4#usize } state3
+      value
+  ok value1
 
 /-- [verifier::hash::{impl core::clone::Clone for verifier::hash::Digest}::clone]:
     Source: 'crates/verifier/src/hash.rs', lines 105:9-105:14
@@ -2763,941 +2699,6 @@ def keccak.instance_weights (s : field.E) : RustM (alloc.vec.Vec field.E) := do
     (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT Std.U32)
     keccak.instance_weights.closure.Insts.CoreOpsFunctionFnMutTupleShared1U32E)
     (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator field.E) m
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{impl core::ops::function::FnMut<(verifier::field::E, &'_1 verifier::field::E), verifier::field::E> for verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure#1}<'a>}::call_mut]:
-    Source: 'crates/verifier/src/transcript.rs', lines 232:65-232:82 -/
-def
-  transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnMutPairEShared0EE.call_mut
-  (c : transcript.Transcript.sumcheck_round_poly.closure_1)
-  (tupled_args : (field.E × field.E)) :
-  RustM (field.E × transcript.Transcript.sumcheck_round_poly.closure_1)
-  := do
-  let (acc, x) := tupled_args
-  let e ← field.E.Insts.CoreOpsArithAddEE.add acc x
-  ok (e, ())
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{impl core::ops::function::FnOnce<(verifier::field::E, &'_1 verifier::field::E), verifier::field::E> for verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure#1}<'a>}::call_once]:
-    Source: 'crates/verifier/src/transcript.rs', lines 232:65-232:82 -/
-def
-  transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnOncePairEShared0EE.call_once
-  (c : transcript.Transcript.sumcheck_round_poly.closure_1)
-  (p : (field.E × field.E)) :
-  RustM field.E
-  := do
-  let (e, _) ←
-    transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnMutPairEShared0EE.call_mut
-      () p
-  ok e
-
-/-- Trait implementation: [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{impl core::ops::function::FnOnce<(verifier::field::E, &'_1 verifier::field::E), verifier::field::E> for verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure#1}<'a>}]
-    Source: 'crates/verifier/src/transcript.rs', lines 232:65-232:82 -/
-@[reducible]
-def
-  transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnOncePairEShared0EE
-  : core.ops.function.FnOnce
-  transcript.Transcript.sumcheck_round_poly.closure_1 (field.E × field.E)
-  field.E := {
-  call_once :=
-    transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnOncePairEShared0EE.call_once
-}
-
-/-- Trait implementation: [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{impl core::ops::function::FnMut<(verifier::field::E, &'_1 verifier::field::E), verifier::field::E> for verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure#1}<'a>}]
-    Source: 'crates/verifier/src/transcript.rs', lines 232:65-232:82 -/
-@[reducible]
-def
-  transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnMutPairEShared0EE
-  : core.ops.function.FnMut transcript.Transcript.sumcheck_round_poly.closure_1
-  (field.E × field.E) field.E := {
-  FnOnceInst :=
-    transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnOncePairEShared0EE
-  call_mut :=
-    transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnMutPairEShared0EE.call_mut
-}
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{impl core::ops::function::FnMut<(verifier::field::E, &'_1 verifier::field::E), verifier::field::E> for verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure}<'a>}::call_mut]:
-    Source: 'crates/verifier/src/transcript.rs', lines 227:63-227:80 -/
-def
-  transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnMutPairEShared0EE.call_mut
-  (c : transcript.Transcript.sumcheck_round_poly.closure)
-  (tupled_args : (field.E × field.E)) :
-  RustM (field.E × transcript.Transcript.sumcheck_round_poly.closure)
-  := do
-  let (acc, x) := tupled_args
-  let e ← field.E.Insts.CoreOpsArithAddEE.add acc x
-  ok (e, ())
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{impl core::ops::function::FnOnce<(verifier::field::E, &'_1 verifier::field::E), verifier::field::E> for verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure}<'a>}::call_once]:
-    Source: 'crates/verifier/src/transcript.rs', lines 227:63-227:80 -/
-def
-  transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnOncePairEShared0EE.call_once
-  (c : transcript.Transcript.sumcheck_round_poly.closure)
-  (p : (field.E × field.E)) :
-  RustM field.E
-  := do
-  let (e, _) ←
-    transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnMutPairEShared0EE.call_mut
-      () p
-  ok e
-
-/-- Trait implementation: [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{impl core::ops::function::FnOnce<(verifier::field::E, &'_1 verifier::field::E), verifier::field::E> for verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure}<'a>}]
-    Source: 'crates/verifier/src/transcript.rs', lines 227:63-227:80 -/
-@[reducible]
-def
-  transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnOncePairEShared0EE
-  : core.ops.function.FnOnce transcript.Transcript.sumcheck_round_poly.closure
-  (field.E × field.E) field.E := {
-  call_once :=
-    transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnOncePairEShared0EE.call_once
-}
-
-/-- Trait implementation: [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{impl core::ops::function::FnMut<(verifier::field::E, &'_1 verifier::field::E), verifier::field::E> for verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure}<'a>}]
-    Source: 'crates/verifier/src/transcript.rs', lines 227:63-227:80 -/
-@[reducible]
-def
-  transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnMutPairEShared0EE
-  : core.ops.function.FnMut transcript.Transcript.sumcheck_round_poly.closure
-  (field.E × field.E) field.E := {
-  FnOnceInst :=
-    transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnOncePairEShared0EE
-  call_mut :=
-    transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnMutPairEShared0EE.call_mut
-}
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{impl core::ops::function::FnOnce<(u64,), u64> for verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{closure}<'a>}::call_once]:
-    Source: 'crates/verifier/src/transcript.rs', lines 173:63-173:76 -/
-def
-  transcript.Transcript.grind_check.closure.Insts.CoreOpsFunctionFnOnceTupleU64U64.call_once
-  (c : transcript.Transcript.grind_check.closure) (tupled_args : Std.U64) :
-  RustM Std.U64
-  := do
-  tupled_args - 1#u64
-
-/-- Trait implementation: [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{impl core::ops::function::FnOnce<(u64,), u64> for verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{closure}<'a>}]
-    Source: 'crates/verifier/src/transcript.rs', lines 173:63-173:76 -/
-@[reducible]
-def
-  transcript.Transcript.grind_check.closure.Insts.CoreOpsFunctionFnOnceTupleU64U64
-  : core.ops.function.FnOnce transcript.Transcript.grind_check.closure Std.U64
-  Std.U64 := {
-  call_once :=
-    transcript.Transcript.grind_check.closure.Insts.CoreOpsFunctionFnOnceTupleU64U64.call_once
-}
-
-/-- [verifier::require]:
-    Source: 'crates/verifier/src/lib.rs', lines 135:0-137:1 -/
-def require
-  (condition : Bool) (error : VerifierError) :
-  RustM (core.result.Result Unit VerifierError)
-  := do
-  if condition
-  then ok (core.result.Result.Ok ())
-  else ok (core.result.Result.Err error)
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::next]:
-    Source: 'crates/verifier/src/transcript.rs', lines 144:4-152:5 -/
-def transcript.Transcript.next
-  (self : transcript.Transcript) :
-  RustM ((core.result.Result field.E VerifierError) × transcript.Transcript)
-  := do
-  let i ← alloc.vec.Vec.len self.proof.stream
-  let r ← require (self.stream_offset < i) VerifierError.StreamExhausted
-  let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
-  match cf with
-  | core.ops.control_flow.ControlFlow.Continue _ =>
-    let value ←
-      alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
-        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E)
-        self.proof.stream self.stream_offset
-    let i1 ← self.stream_offset + 1#usize
-    ok (core.result.Result.Ok value, { self with stream_offset := i1 })
-  | core.ops.control_flow.ControlFlow.Break residual =>
-    let r1 ←
-      core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-        field.E (core.convert.From.Blanket VerifierError) residual
-    ok (r1, self)
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::duplex]: loop body 0:
-    Source: 'crates/verifier/src/transcript.rs', lines 54:8-56:9 -/
-@[rust_loop_body]
-def transcript.Sponge.duplex_loop.body
-  (iter : core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter (field.E
-  × Std.U64))) (input : Array Std.U64 25#usize) :
-  RustM (ControlFlow ((core.iter.adapters.enumerate.Enumerate
-    (core.slice.iter.Iter (field.E × Std.U64))) × (Array Std.U64 25#usize))
-    (Array Std.U64 25#usize))
-  := do
-  let (o, iter1) ←
-    core.iter.adapters.enumerate.Enumerate.Insts.CoreIterTraitsIteratorIteratorPairUsizeClause0_Item.next
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      (field.E × Std.U64)) iter
-  match o with
-  | core.option.Option.None => ok (done input)
-  | core.option.Option.Some p =>
-    let (i, (value, tag)) := p
-    let i1 ← 4#usize * i
-    let i2 ← i1 + 4#usize
-    let (s, index_mut_back) ←
-      core.Array.Insts.CoreOpsIndexIndexMut.index_mut
-        (core.Slice.Insts.CoreOpsIndexIndexMut
-        (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-        Std.U64)) input { start := i1, «end» := i2 }
-    let s1 ←
-      core.array.Array.as_slice
-        (Array.make 4#usize [ value.c0, value.c1, 0#u64, tag ])
-    let s2 ←
-      core.slice.Slice.copy_from_slice core.U64.Insts.CoreMarkerCopy s s1
-    let input1 := index_mut_back s2
-    ok (cont (iter1, input1))
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::duplex]: loop 0:
-    Source: 'crates/verifier/src/transcript.rs', lines 54:8-56:9 -/
-@[rust_loop]
-def transcript.Sponge.duplex_loop
-  (iter : core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter (field.E
-  × Std.U64))) (input : Array Std.U64 25#usize) :
-  RustM (Array Std.U64 25#usize)
-  := do
-  loop
-    (fun (iter1, input1) => transcript.Sponge.duplex_loop.body iter1 input1)
-    (iter, input)
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::duplex]:
-    Source: 'crates/verifier/src/transcript.rs', lines 51:4-60:5 -/
-def transcript.Sponge.duplex
-  (self : transcript.Sponge) : RustM transcript.Sponge := do
-  let (s, index_mut_back) ←
-    core.Array.Insts.CoreOpsIndexIndexMut.index_mut
-      (core.Slice.Insts.CoreOpsIndexIndexMut
-      (core.ops.range.RangeToUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-      Std.U64)) self.state { «end» := 16#usize }
-  let s1 ← core.slice.Slice.fill core.U64.Insts.CoreCloneClone s 0#u64
-  let s2 ←
-    core.Array.Insts.CoreOpsIndexIndex.index
-      (core.Slice.Insts.CoreOpsIndexIndex
-      (core.ops.range.RangeToUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-      (field.E × Std.U64))) self.pending { «end» := self.n_pending }
-  let i ← core.slice.Slice.iter s2
-  let iter ←
-    core.iter.traits.iterator.Iterator.enumerate.default
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      (field.E × Std.U64)) i
-  let input := index_mut_back s1
-  let input1 ← transcript.Sponge.duplex_loop iter input
-  let input2 ← hash.keccak_f input1
-  ok { self with state := input2, n_pending := 0#usize }
-
-/-- [verifier::transcript::RATE_SCALARS]
-    Source: 'crates/verifier/src/transcript.rs', lines 20:0-20:34
-    Visibility: public -/
-@[global_simps, irreducible] def transcript.RATE_SCALARS : Std.Usize := 4#usize
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::absorb]:
-    Source: 'crates/verifier/src/transcript.rs', lines 62:4-69:5 -/
-def transcript.Sponge.absorb
-  (self : transcript.Sponge) (value : field.E) (tag : Std.U64) :
-  RustM transcript.Sponge
-  := do
-  let b ← core.option.Option.is_none self.ground
-  massert b
-  let self1 ←
-    if self.n_pending = transcript.RATE_SCALARS
-    then transcript.Sponge.duplex self
-    else ok self
-  let a ← Array.update self1.pending self1.n_pending (value, tag)
-  let i ← self1.n_pending + 1#usize
-  ok { self1 with pending := a, n_pending := i }
-
-/-- [verifier::transcript::DS_POW_NONCE]
-    Source: 'crates/verifier/src/transcript.rs', lines 18:0-18:39 -/
-@[global_simps, irreducible] def transcript.DS_POW_NONCE : Std.U64 := 4#u64
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::absorb_nonce]:
-    Source: 'crates/verifier/src/transcript.rs', lines 84:4-89:5 -/
-def transcript.Sponge.absorb_nonce
-  (self : transcript.Sponge) (nonce : field.E) :
-  RustM (Std.U64 × transcript.Sponge)
-  := do
-  let self1 ← transcript.Sponge.absorb self nonce transcript.DS_POW_NONCE
-  let self2 ← transcript.Sponge.duplex self1
-  let i ← Array.index_usize self2.state 0#usize
-  let i1 ← Array.index_usize self2.state 1#usize
-  let e ← field.E.new i i1
-  let i2 ← Array.index_usize self2.state 2#usize
-  ok (i2, { self2 with ground := (core.option.Option.Some e) })
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check]:
-    Source: 'crates/verifier/src/transcript.rs', lines 166:4-177:5
-    Visibility: public -/
-def transcript.Transcript.grind_check
-  (self : transcript.Transcript) (bits : Std.U32) :
-  RustM ((core.result.Result Unit VerifierError) × transcript.Transcript)
-  := do
-  if bits = 0#u32
-  then ok (core.result.Result.Ok (), self)
-  else
-    let (r, self1) ← transcript.Transcript.next self
-    let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
-    match cf with
-    | core.ops.control_flow.ControlFlow.Continue val =>
-      let (pow, s) ← transcript.Sponge.absorb_nonce self1.sponge val
-      if self1.checked
-      then
-        let o ← core.num.U64.checked_shl 1#u64 bits
-        let mask ←
-          core.option.Option.map_or
-            transcript.Transcript.grind_check.closure.Insts.CoreOpsFunctionFnOnceTupleU64U64
-            o core.num.U64.MAX ()
-        let i ← lift (pow &&& mask)
-        let r1 ← require (i = 0#u64) VerifierError.GrindingNonce
-        let cf1 ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r1
-        match cf1 with
-        | core.ops.control_flow.ControlFlow.Continue _ =>
-          ok (core.result.Result.Ok (), { self1 with sponge := s })
-        | core.ops.control_flow.ControlFlow.Break residual =>
-          let r2 ←
-            core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-              Unit (core.convert.From.Blanket VerifierError) residual
-          ok (r2, { self1 with sponge := s })
-      else ok (core.result.Result.Ok (), { self1 with sponge := s })
-    | core.ops.control_flow.ControlFlow.Break residual =>
-      let r1 ←
-        core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-          Unit (core.convert.From.Blanket VerifierError) residual
-      ok (r1, self1)
-
-/-- [verifier::transcript::DS_OBSERVE]
-    Source: 'crates/verifier/src/transcript.rs', lines 17:0-17:26 -/
-@[global_simps, irreducible] def transcript.DS_OBSERVE : Std.U64 := 1#u64
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::observe]:
-    Source: 'crates/verifier/src/transcript.rs', lines 71:4-73:5
-    Visibility: public -/
-def transcript.Sponge.observe
-  (self : transcript.Sponge) (value : field.E) : RustM transcript.Sponge := do
-  transcript.Sponge.absorb self value transcript.DS_OBSERVE
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::next_scalar]:
-    Source: 'crates/verifier/src/transcript.rs', lines 154:4-158:5
-    Visibility: public -/
-def transcript.Transcript.next_scalar
-  (self : transcript.Transcript) :
-  RustM ((core.result.Result field.E VerifierError) × transcript.Transcript)
-  := do
-  let (r, self1) ← transcript.Transcript.next self
-  let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
-  match cf with
-  | core.ops.control_flow.ControlFlow.Continue val =>
-    let s ← transcript.Sponge.observe self1.sponge val
-    ok (core.result.Result.Ok val, { self1 with sponge := s })
-  | core.ops.control_flow.ControlFlow.Break residual =>
-    let r1 ←
-      core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-        field.E (core.convert.From.Blanket VerifierError) residual
-    ok (r1, self1)
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly]:
-    Source: 'crates/verifier/src/transcript.rs', lines 216:4-237:5
-    Visibility: public -/
-def transcript.Transcript.sumcheck_round_poly
-  (self : transcript.Transcript) (count : Std.Usize) (claim : field.E)
-  (eq_factor : core.option.Option field.E) :
-  RustM ((core.result.Result (alloc.vec.Vec field.E) VerifierError) ×
-    transcript.Transcript)
-  := do
-  match eq_factor with
-  | core.option.Option.None =>
-    let (r, self1) ← transcript.Transcript.next_scalar self
-    let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
-    match cf with
-    | core.ops.control_flow.ControlFlow.Continue val =>
-      let i ← count - 2#usize
-      let (r1, self2) ← transcript.Transcript.next_scalars self1 i
-      let cf1 ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r1
-      match cf1 with
-      | core.ops.control_flow.ControlFlow.Continue val1 =>
-        let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref val1
-        let i1 ← core.slice.Slice.iter s
-        let e ← field.ZERO
-        let e1 ←
-          core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.fold
-            transcript.Transcript.sumcheck_round_poly.closure.Insts.CoreOpsFunctionFnMutPairEShared0EE
-            i1 e ()
-        let e2 ← field.E.Insts.CoreOpsArithAddEE.add claim e1
-        let y ←
-          lift (Std.Array.to_slice (Array.make 2#usize [ val, e2 ] : Array
-            field.E 2#usize))
-        let ret ← alloc.slice.Slice.into_vec y
-        let s1 ← core.array.Array.as_slice (Array.make 2#usize [ ret, val1 ])
-        let poly ←
-          alloc.slice.Slice.concat (alloc.Slice.Insts.AllocSliceConcatTVec
-            field.E.Insts.CoreCloneClone
-            (alloc.vec.Vec.Insts.CoreBorrowBorrowSlice field.E)) s1
-        let i2 ← count - 1#usize
-        let b ← core.option.Option.is_some core.option.Option.None
-        let i3 ← core.Usize.Insts.CoreConvertFromBool.from b
-        let i4 ← i2 + i3
-        let i5 ← lift (UScalar.cast .U128 i4)
-        let i6 ← transcript.grinding_bits i5
-        let (r2, self3) ← transcript.Transcript.grind_check self2 i6
-        let cf2 ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r2
-        match cf2 with
-        | core.ops.control_flow.ControlFlow.Continue _ =>
-          ok (core.result.Result.Ok poly, self3)
-        | core.ops.control_flow.ControlFlow.Break residual =>
-          let r3 ←
-            core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-              (alloc.vec.Vec field.E) (core.convert.From.Blanket VerifierError)
-              residual
-          ok (r3, self3)
-      | core.ops.control_flow.ControlFlow.Break residual =>
-        let r2 ←
-          core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-            (alloc.vec.Vec field.E) (core.convert.From.Blanket VerifierError)
-            residual
-        ok (r2, self2)
-    | core.ops.control_flow.ControlFlow.Break residual =>
-      let r1 ←
-        core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-          (alloc.vec.Vec field.E) (core.convert.From.Blanket VerifierError)
-          residual
-      ok (r1, self1)
-  | core.option.Option.Some eq_factor1 =>
-    let i ← count - 1#usize
-    let (r, self1) ← transcript.Transcript.next_scalars self i
-    let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
-    match cf with
-    | core.ops.control_flow.ControlFlow.Continue val =>
-      let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref val
-      let i1 ← core.slice.Slice.iter s
-      let e ← field.ZERO
-      let e1 ←
-        core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.fold
-          transcript.Transcript.sumcheck_round_poly.closure_1.Insts.CoreOpsFunctionFnMutPairEShared0EE
-          i1 e ()
-      let e2 ← field.E.Insts.CoreOpsArithMulEE.mul eq_factor1 e1
-      let e3 ← field.E.Insts.CoreOpsArithAddEE.add claim e2
-      let y ←
-        lift (Std.Array.to_slice (Array.make 1#usize [ e3 ] : Array field.E
-          1#usize))
-      let ret ← alloc.slice.Slice.into_vec y
-      let s1 ← core.array.Array.as_slice (Array.make 2#usize [ ret, val ])
-      let poly ←
-        alloc.slice.Slice.concat (alloc.Slice.Insts.AllocSliceConcatTVec
-          field.E.Insts.CoreCloneClone
-          (alloc.vec.Vec.Insts.CoreBorrowBorrowSlice field.E)) s1
-      let b ← core.option.Option.is_some eq_factor
-      let i2 ← core.Usize.Insts.CoreConvertFromBool.from b
-      let i3 ← i + i2
-      let i4 ← lift (UScalar.cast .U128 i3)
-      let i5 ← transcript.grinding_bits i4
-      let (r1, self2) ← transcript.Transcript.grind_check self1 i5
-      let cf1 ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r1
-      match cf1 with
-      | core.ops.control_flow.ControlFlow.Continue _ =>
-        ok (core.result.Result.Ok poly, self2)
-      | core.ops.control_flow.ControlFlow.Break residual =>
-        let r2 ←
-          core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-            (alloc.vec.Vec field.E) (core.convert.From.Blanket VerifierError)
-            residual
-        ok (r2, self2)
-    | core.ops.control_flow.ControlFlow.Break residual =>
-      let r1 ←
-        core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-          (alloc.vec.Vec field.E) (core.convert.From.Blanket VerifierError)
-          residual
-      ok (r1, self1)
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::sample::{impl core::ops::function::FnOnce<(), verifier::field::E> for verifier::transcript::{verifier::transcript::Sponge}::sample::{closure}<'_0>}::call_once]:
-    Source: 'crates/verifier/src/transcript.rs', lines 76:42-79:9 -/
-def
-  transcript.Sponge.sample.closure.Insts.CoreOpsFunctionFnOnceTupleE.call_once
-  (c : transcript.Sponge.sample.closure) (_ : Unit) :
-  RustM (field.E × transcript.Sponge.sample.closure)
-  := do
-  let s ← transcript.Sponge.duplex c
-  let i ← Array.index_usize s.state 0#usize
-  let i1 ← Array.index_usize s.state 1#usize
-  let e ← field.E.new i i1
-  ok (e, s)
-
-/-- Trait implementation: [verifier::transcript::{verifier::transcript::Sponge}::sample::{impl core::ops::function::FnOnce<(), verifier::field::E> for verifier::transcript::{verifier::transcript::Sponge}::sample::{closure}<'_0>}]
-    Source: 'crates/verifier/src/transcript.rs', lines 76:42-79:9 -/
-@[reducible]
-def transcript.Sponge.sample.closure.Insts.CoreOpsFunctionFnOnceTupleE :
-  core.ops.function.FnOnce transcript.Sponge.sample.closure Unit field.E := {
-  call_once :=
-    transcript.Sponge.sample.closure.Insts.CoreOpsFunctionFnOnceTupleE.call_once
-}
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::sample]:
-    Source: 'crates/verifier/src/transcript.rs', lines 75:4-80:5
-    Visibility: public -/
-def transcript.Sponge.sample
-  (self : transcript.Sponge) : RustM (field.E × transcript.Sponge) := do
-  let (o, o1) ← core.option.Option.take self.ground
-  let (e, c) ←
-    core.option.Option.unwrap_or_else
-      transcript.Sponge.sample.closure.Insts.CoreOpsFunctionFnOnceTupleE o
-      { self with ground := o1 }
-  ok (e, c)
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sample]:
-    Source: 'crates/verifier/src/transcript.rs', lines 131:4-133:5
-    Visibility: public -/
-def transcript.Transcript.sample
-  (self : transcript.Transcript) :
-  RustM (field.E × transcript.Transcript)
-  := do
-  let (e, s) ← transcript.Sponge.sample self.sponge
-  ok (e, { self with sponge := s })
-
-/-- [verifier::multilinear::poly_eval]: loop body 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 113:4-115:5
-    Visibility: public -/
-@[rust_loop_body]
-def multilinear.poly_eval_loop.body
-  (coefficients : Slice field.E) (point : field.E)
-  (iter : core.ops.range.Range Std.Usize) (acc : field.E) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × field.E) field.E)
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done acc)
-  | core.option.Option.Some i =>
-    let e ← field.E.Insts.CoreOpsArithMulEE.mul acc point
-    let i1 ← core.slice.Slice.len coefficients
-    let i2 ← i1 - 1#usize
-    let i3 ← i2 - i
-    let e1 ← Slice.index_usize coefficients i3
-    let acc1 ← field.E.Insts.CoreOpsArithAddEE.add e e1
-    ok (cont (iter1, acc1))
-
-/-- [verifier::multilinear::poly_eval]: loop 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 113:4-115:5
-    Visibility: public -/
-@[rust_loop]
-def multilinear.poly_eval_loop
-  (iter : core.ops.range.Range Std.Usize) (coefficients : Slice field.E)
-  (point : field.E) (acc : field.E) :
-  RustM field.E
-  := do
-  loop
-    (fun (iter1, acc1) => multilinear.poly_eval_loop.body coefficients point
-      iter1 acc1)
-    (iter, acc)
-
-/-- [verifier::multilinear::poly_eval]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 111:0-117:1
-    Visibility: public -/
-def multilinear.poly_eval
-  (coefficients : Slice field.E) (point : field.E) : RustM field.E := do
-  let acc ← field.ZERO
-  let i ← core.slice.Slice.len coefficients
-  multilinear.poly_eval_loop { start := 0#usize, «end» := i } coefficients
-    point acc
-
-/-- [verifier::transcript::sumcheck]: loop body 0:
-    Source: 'crates/verifier/src/transcript.rs', lines 259:4-266:1
-    Visibility: public -/
-@[rust_loop_body]
-def transcript.sumcheck_loop.body
-  (count : Std.Usize)
-  (iter : core.slice.iter.Iter (core.option.Option field.E))
-  (transcript1 : transcript.Transcript) (claim : field.E)
-  (point : alloc.vec.Vec field.E) :
-  RustM (ControlFlow ((core.slice.iter.Iter (core.option.Option field.E)) ×
-    transcript.Transcript × field.E × (alloc.vec.Vec field.E))
-    ((core.result.Result ((alloc.vec.Vec field.E) × field.E) VerifierError) ×
-    transcript.Transcript))
-  := do
-  let (o, iter1) ←
-    core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.next iter
-  match o with
-  | core.option.Option.None =>
-    ok (done (core.result.Result.Ok (point, claim), transcript1))
-  | core.option.Option.Some equality =>
-    let (r, transcript2) ←
-      transcript.Transcript.sumcheck_round_poly transcript1 count claim
-        equality
-    let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
-    match cf with
-    | core.ops.control_flow.ControlFlow.Continue val =>
-      let (challenge, transcript3) ← transcript.Transcript.sample transcript2
-      let point1 ← alloc.vec.Vec.push point challenge
-      let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref val
-      let claim1 ← multilinear.poly_eval s challenge
-      ok (cont (iter1, transcript3, claim1, point1))
-    | core.ops.control_flow.ControlFlow.Break residual =>
-      let r1 ←
-        core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-          ((alloc.vec.Vec field.E) × field.E) (core.convert.From.Blanket
-          VerifierError) residual
-      ok (done (r1, transcript2))
-
-/-- [verifier::transcript::sumcheck]: loop 0:
-    Source: 'crates/verifier/src/transcript.rs', lines 259:4-266:1
-    Visibility: public -/
-@[rust_loop]
-def transcript.sumcheck_loop
-  (iter : core.slice.iter.Iter (core.option.Option field.E))
-  (transcript1 : transcript.Transcript) (claim : field.E) (count : Std.Usize)
-  (point : alloc.vec.Vec field.E) :
-  RustM ((core.result.Result ((alloc.vec.Vec field.E) × field.E)
-    VerifierError) × transcript.Transcript)
-  := do
-  loop
-    (fun (iter1, transcript2, claim1, point1) => transcript.sumcheck_loop.body
-      count iter1 transcript2 claim1 point1)
-    (iter, transcript1, claim, point)
-
-/-- [verifier::transcript::sumcheck]:
-    Source: 'crates/verifier/src/transcript.rs', lines 252:0-266:1
-    Visibility: public -/
-def transcript.sumcheck
-  (transcript1 : transcript.Transcript) (claim : field.E) (count : Std.Usize)
-  (equalities : Slice (core.option.Option field.E)) :
-  RustM ((core.result.Result ((alloc.vec.Vec field.E) × field.E)
-    VerifierError) × transcript.Transcript)
-  := do
-  let i ← core.slice.Slice.len equalities
-  let point ← alloc.vec.Vec.with_capacity field.E i
-  let iter ←
-    core.SharedASlice.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
-      equalities
-  transcript.sumcheck_loop iter transcript1 claim count point
-
-/-- [verifier::multilinear::{verifier::multilinear::Scaler}::mul]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 38:4-43:5 -/
-def multilinear.Scaler.mul
-  (self : multilinear.Scaler) (value : field.E) : RustM field.E := do
-  match self with
-  | multilinear.Scaler.Table table => field.Scaled.mul table value
-  | multilinear.Scaler.Plain r => field.E.Insts.CoreOpsArithMulEE.mul value r
-
-/-- [verifier::multilinear::{verifier::multilinear::Scaler}::new]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 29:4-35:5 -/
-def multilinear.Scaler.new
-  (r : field.E) (uses : Std.Usize) : RustM multilinear.Scaler := do
-  if uses >= 256#usize
-  then let s ← field.Scaled.new r
-       ok (multilinear.Scaler.Table s)
-  else ok (multilinear.Scaler.Plain r)
-
-/-- [verifier::multilinear::eq_kernel]: loop body 1:
-    Source: 'crates/verifier/src/multilinear.rs', lines 13:8-17:9
-    Visibility: public -/
-@[rust_loop_body]
-def multilinear.eq_kernel_loop0_loop0.body
-  (half : Std.Usize) (scale : multilinear.Scaler)
-  (iter : core.ops.range.Range Std.Usize) (out : alloc.vec.Vec field.E) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (alloc.vec.Vec
-    field.E)) (alloc.vec.Vec field.E))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done out)
-  | core.option.Option.Some i =>
-    let e ←
-      alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
-        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out i
-    let h ← multilinear.Scaler.mul scale e
-    let i1 ← i + half
-    let (_, index_mut_back) ←
-      alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
-        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out i1
-    let out1 := index_mut_back h
-    let (e1, index_mut_back1) ←
-      alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
-        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out1 i
-    let e2 ← field.E.Insts.CoreOpsArithAddAssignE.add_assign e1 h
-    let out2 := index_mut_back1 e2
-    ok (cont (iter1, out2))
-
-/-- [verifier::multilinear::eq_kernel]: loop 1:
-    Source: 'crates/verifier/src/multilinear.rs', lines 13:8-17:9
-    Visibility: public -/
-@[rust_loop]
-def multilinear.eq_kernel_loop0_loop0
-  (iter : core.ops.range.Range Std.Usize) (out : alloc.vec.Vec field.E)
-  (half : Std.Usize) (scale : multilinear.Scaler) :
-  RustM (alloc.vec.Vec field.E)
-  := do
-  loop
-    (fun (iter1, out1) => multilinear.eq_kernel_loop0_loop0.body half scale
-      iter1 out1)
-    (iter, out)
-
-/-- [verifier::multilinear::eq_kernel]: loop body 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 10:4-18:5
-    Visibility: public -/
-@[rust_loop_body]
-def multilinear.eq_kernel_loop0.body
-  (point : Slice field.E) (iter : core.ops.range.Range Std.Usize)
-  (out : alloc.vec.Vec field.E) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (alloc.vec.Vec
-    field.E)) (alloc.vec.Vec field.E))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None => ok (done out)
-  | core.option.Option.Some k =>
-    let half ← 1#usize <<< k
-    let e ← Slice.index_usize point k
-    let scale ← multilinear.Scaler.new e half
-    let out1 ←
-      multilinear.eq_kernel_loop0_loop0 { start := 0#usize, «end» := half }
-        out half scale
-    ok (cont (iter1, out1))
-
-/-- [verifier::multilinear::eq_kernel]: loop 0:
-    Source: 'crates/verifier/src/multilinear.rs', lines 10:4-18:5
-    Visibility: public -/
-@[rust_loop]
-def multilinear.eq_kernel_loop0
-  (iter : core.ops.range.Range Std.Usize) (point : Slice field.E)
-  (out : alloc.vec.Vec field.E) :
-  RustM (alloc.vec.Vec field.E)
-  := do
-  loop
-    (fun (iter1, out1) => multilinear.eq_kernel_loop0.body point iter1 out1)
-    (iter, out)
-
-/-- [verifier::multilinear::eq_kernel]:
-    Source: 'crates/verifier/src/multilinear.rs', lines 7:0-20:1
-    Visibility: public -/
-def multilinear.eq_kernel
-  (point : Slice field.E) : RustM (alloc.vec.Vec field.E) := do
-  let i ← core.slice.Slice.len point
-  let i1 ← 1#usize <<< i
-  let e ← field.ZERO
-  let out ← alloc.vec.from_elem field.E.Insts.CoreCloneClone e i1
-  let (_, index_mut_back) ←
-    alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
-      (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out 0#usize
-  let e1 ← field.ONE
-  let out1 := index_mut_back e1
-  multilinear.eq_kernel_loop0 { start := 0#usize, «end» := i } point out1
-
-/-- [verifier::keccak::open]: loop body 2:
-    Source: 'crates/verifier/src/keccak.rs', lines 223:12-225:13 -/
-@[rust_loop_body]
-def keccak.open_loop0_loop0_loop0.body
-  (scale : field.E)
-  (iter : core.iter.adapters.zip.Zip (core.slice.iter.IterMut field.E)
-  (core.slice.iter.Iter field.E))
-  (back : core.iter.adapters.zip.Zip (core.slice.iter.IterMut field.E)
-  (core.slice.iter.Iter field.E) → core.iter.adapters.zip.Zip
-  (core.slice.iter.IterMut field.E) (core.slice.iter.Iter field.E)) :
-  RustM (ControlFlow ((core.iter.adapters.zip.Zip (core.slice.iter.IterMut
-    field.E) (core.slice.iter.Iter field.E)) × (core.iter.adapters.zip.Zip
-    (core.slice.iter.IterMut field.E) (core.slice.iter.Iter field.E) →
-    core.iter.adapters.zip.Zip (core.slice.iter.IterMut field.E)
-    (core.slice.iter.Iter field.E))) ((core.iter.adapters.zip.Zip
-    (core.slice.iter.IterMut field.E) (core.slice.iter.Iter field.E)) ×
-    (core.iter.adapters.zip.Zip (core.slice.iter.IterMut field.E)
-    (core.slice.iter.Iter field.E) → core.iter.adapters.zip.Zip
-    (core.slice.iter.IterMut field.E) (core.slice.iter.Iter field.E))))
-  := do
-  let (o, iter1, next_back) ←
-    core.iter.adapters.zip.Zip.Insts.CoreIterTraitsIteratorIteratorPair.next
-      (core.slice.iter.IterMut.Insts.CoreIterTraitsIteratorIteratorMutAT
-      field.E)
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      field.E) iter
-  match o with
-  | core.option.Option.None =>
-    ok (done (iter1,
-      fun z => let z1 := next_back z core.option.Option.None
-               back z1))
-  | core.option.Option.Some p =>
-    let (out, w) := p
-    let e ← field.E.Insts.CoreOpsArithMulEE.mul scale w
-    let out1 ← field.E.Insts.CoreOpsArithAddAssignE.add_assign out e
-    ok (cont (iter1,
-      fun z =>
-        let z1 := next_back z (core.option.Option.Some (out1, w))
-        back z1))
-
-/-- [verifier::keccak::open]: loop 2:
-    Source: 'crates/verifier/src/keccak.rs', lines 223:12-225:13 -/
-@[rust_loop]
-def keccak.open_loop0_loop0_loop0
-  (iter : core.iter.adapters.zip.Zip (core.slice.iter.IterMut field.E)
-  (core.slice.iter.Iter field.E))
-  (back : core.iter.adapters.zip.Zip (core.slice.iter.IterMut field.E)
-  (core.slice.iter.Iter field.E) → core.iter.adapters.zip.Zip
-  (core.slice.iter.IterMut field.E) (core.slice.iter.Iter field.E))
-  (scale : field.E) :
-  RustM ((core.iter.adapters.zip.Zip (core.slice.iter.IterMut field.E)
-    (core.slice.iter.Iter field.E)) × (core.iter.adapters.zip.Zip
-    (core.slice.iter.IterMut field.E) (core.slice.iter.Iter field.E) →
-    core.iter.adapters.zip.Zip (core.slice.iter.IterMut field.E)
-    (core.slice.iter.Iter field.E)))
-  := do
-  loop
-    (fun (iter1, back1) => keccak.open_loop0_loop0_loop0.body scale iter1
-      back1)
-    (iter, back)
-
-/-- [verifier::keccak::open]: loop body 1:
-    Source: 'crates/verifier/src/keccak.rs', lines 221:8-226:9 -/
-@[rust_loop_body]
-def keccak.open_loop0_loop0.body
-  (first : Std.Usize) (segments : alloc.vec.Vec field.E)
-  (slots : alloc.vec.Vec field.E) (segment : Std.Usize)
-  (iter : core.iter.adapters.enumerate.Enumerate (core.slice.iter.Chunks
-  field.E)) (row : Array field.E 64#usize) :
-  RustM (ControlFlow ((core.iter.adapters.enumerate.Enumerate
-    (core.slice.iter.Chunks field.E)) × (Array field.E 64#usize)) (Array
-    field.E 64#usize))
-  := do
-  let (o, iter1) ←
-    core.iter.adapters.enumerate.Enumerate.Insts.CoreIterTraitsIteratorIteratorPairUsizeClause0_Item.next
-      (core.slice.iter.Chunks.Insts.CoreIterTraitsIteratorIteratorSharedASlice
-      field.E) iter
-  match o with
-  | core.option.Option.None => ok (done row)
-  | core.option.Option.Some p =>
-    let (lane, weights) := p
-    let e ←
-      alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
-        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) segments
-        segment
-    let i ← first + segment
-    let i1 ← hash.STATE_LANES * i
-    let i2 ← i1 + lane
-    let e1 ←
-      alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
-        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) slots i2
-    let scale ← field.E.Insts.CoreOpsArithMulEE.mul e e1
-    let (s, as_mut_slice_back) ← core.array.Array.as_mut_slice row
-    let (im, iter_mut_back) ← core.slice.Slice.iter_mut s
-    let (iter2, zip_back) ←
-      core.iter.traits.iterator.Iterator.zip.default
-        (core.slice.iter.IterMut.Insts.CoreIterTraitsIteratorIteratorMutAT
-        field.E)
-        (core.SharedASlice.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter
-        field.E) im weights
-    let (z, back) ← keccak.open_loop0_loop0_loop0 iter2 (fun z1 => z1) scale
-    let z1 := back z
-    let im1 := zip_back z1
-    let s1 := iter_mut_back im1
-    let a := as_mut_slice_back s1
-    ok (cont (iter1, a))
-
-/-- [verifier::keccak::open]: loop 1:
-    Source: 'crates/verifier/src/keccak.rs', lines 221:8-226:9 -/
-@[rust_loop]
-def keccak.open_loop0_loop0
-  (iter : core.iter.adapters.enumerate.Enumerate (core.slice.iter.Chunks
-  field.E)) (first : Std.Usize) (segments : alloc.vec.Vec field.E)
-  (slots : alloc.vec.Vec field.E) (row : Array field.E 64#usize)
-  (segment : Std.Usize) :
-  RustM (Array field.E 64#usize)
-  := do
-  loop
-    (fun (iter1, row1) => keccak.open_loop0_loop0.body first segments slots
-      segment iter1 row1)
-    (iter, row)
-
-/-- [verifier::keccak::open]: loop body 0:
-    Source: 'crates/verifier/src/keccak.rs', lines 220:4-227:5 -/
-@[rust_loop_body]
-def keccak.open_loop0.body
-  (transcript1 : transcript.Transcript) (v : alloc.vec.Vec field.E)
-  (first : Std.Usize) (segments : alloc.vec.Vec field.E)
-  (slots : alloc.vec.Vec field.E) (iter : core.ops.range.Range Std.Usize)
-  (row : Array field.E 64#usize) :
-  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (Array field.E
-    64#usize)) (transcript.Proof × transcript.Sponge × Std.Usize × Std.Usize
-    × Bool × (Array field.E 64#usize)))
-  := do
-  let (o, iter1) ←
-    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-      core.Usize.Insts.CoreIterRangeStep iter
-  match o with
-  | core.option.Option.None =>
-    ok (done (transcript1.proof, transcript1.sponge, transcript1.stream_offset,
-      transcript1.opening_offset, transcript1.checked, row))
-  | core.option.Option.Some segment =>
-    let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref v
-    let c ← core.slice.Slice.chunks s 64#usize
-    let iter2 ←
-      core.iter.traits.iterator.Iterator.enumerate.default
-        (core.slice.iter.Chunks.Insts.CoreIterTraitsIteratorIteratorSharedASlice
-        field.E) c
-    let row1 ← keccak.open_loop0_loop0 iter2 first segments slots row segment
-    ok (cont (iter1, row1))
-
-/-- [verifier::keccak::open]: loop 0:
-    Source: 'crates/verifier/src/keccak.rs', lines 220:4-227:5 -/
-@[rust_loop]
-def keccak.open_loop0
-  (iter : core.ops.range.Range Std.Usize) (transcript1 : transcript.Transcript)
-  (v : alloc.vec.Vec field.E) (first : Std.Usize)
-  (segments : alloc.vec.Vec field.E) (slots : alloc.vec.Vec field.E)
-  (row : Array field.E 64#usize) :
-  RustM (transcript.Proof × transcript.Sponge × Std.Usize × Std.Usize ×
-    Bool × (Array field.E 64#usize))
-  := do
-  loop
-    (fun (iter1, row1) => keccak.open_loop0.body transcript1 v first segments
-      slots iter1 row1)
-    (iter, row)
-
-/-- [verifier::keccak::open]:
-    Source: 'crates/verifier/src/keccak.rs', lines 205:0-229:1 -/
-def keccak.open
-  (transcript1 : transcript.Transcript) (shape : keccak.KeccakShape)
-  (claim : keccak.Claim) (first : Std.Usize) (count : Std.Usize)
-  (value : field.E) :
-  RustM ((core.result.Result ((alloc.vec.Vec field.E) × (Array field.E
-    64#usize) × field.E) VerifierError) × transcript.Transcript)
-  := do
-  let i ← keccak.KeccakShape.slot_bits shape
-  let v ←
-    alloc.vec.from_elem (core.option.Option.Insts.CoreCloneClone
-      field.E.Insts.CoreCloneClone) core.option.Option.None i
-  let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref v
-  let (r, transcript2) ← transcript.sumcheck transcript1 value 3#usize s
-  let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
-  match cf with
-  | core.ops.control_flow.ControlFlow.Continue val =>
-    let (slot, value1) := val
-    let i1 ← keccak.KeccakShape.pack_bits shape
-    let s1 ←
-      alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
-        (core.ops.range.RangeFromUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
-        field.E) claim.point { start := i1 }
-    let segments ← multilinear.eq_kernel s1
-    let s2 ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref slot
-    let slots ← multilinear.eq_kernel s2
-    let e ← field.ZERO
-    let row ← core.array.repeat 64#usize field.E.Insts.CoreCloneClone e
-    let (p, s3, i2, i3, b, row1) ←
-      keccak.open_loop0 { start := 0#usize, «end» := count } transcript2
-        claim.weights first segments slots row
-    ok (core.result.Result.Ok (slot, row1, value1),
-      {
-        proof := p,
-        sponge := s3,
-        stream_offset := i2,
-        opening_offset := i3,
-        checked := b
-      })
-  | core.ops.control_flow.ControlFlow.Break residual =>
-    let r1 ←
-      core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
-        ((alloc.vec.Vec field.E) × (Array field.E 64#usize) × field.E)
-        (core.convert.From.Blanket VerifierError) residual
-    ok (r1, transcript2)
 
 /-- [verifier::layout::BUS_BITS]
     Source: 'crates/verifier/src/layout.rs', lines 12:0-12:30
@@ -4557,91 +3558,6 @@ def layout.Table.count_columns
   layout.Table.count_columns_loop { start := 0#usize, «end» := i } self
     columns
 
-/-- [verifier::layout::KECCAK_CELLS]
-    Source: 'crates/verifier/src/layout.rs', lines 416:0-416:31 -/
-@[global_simps, irreducible] def layout.KECCAK_CELLS : Std.Usize := 13#usize
-
-/-- [verifier::layout::keccak_cell_lanes]: loop body 0:
-    Source: 'crates/verifier/src/layout.rs', lines 326:4-334:5
-    Visibility: public -/
-@[rust_loop_body]
-def layout.keccak_cell_lanes_loop.body
-  (odd : Bool)
-  (lanes : Array ((core.option.Option Std.Usize) × (core.option.Option
-  Std.Usize)) 13#usize) (cell : Std.Usize) :
-  RustM (ControlFlow ((Array ((core.option.Option Std.Usize) ×
-    (core.option.Option Std.Usize)) 13#usize) × Std.Usize) (Array
-    ((core.option.Option Std.Usize) × (core.option.Option Std.Usize))
-    13#usize))
-  := do
-  if cell < layout.KECCAK_CELLS
-  then
-    let (o, o1) ←
-      if 9#usize <= cell
-      then
-        do
-        let i ← 2#usize * cell
-        let i1 ← i - 1#usize
-        ok (core.option.Option.Some i1, core.option.Option.Some i)
-      else
-        if odd
-        then
-          do
-          let (o2, i) ←
-            if 1#usize <= cell
-            then
-              do
-              let i1 ← 2#usize * cell
-              let i2 ← i1 - 1#usize
-              ok (core.option.Option.Some i2, i1)
-            else ok (core.option.Option.None, 0#usize)
-          ok (o2, core.option.Option.Some i)
-        else
-          do
-          let (i, o2) ←
-            match cell.val with
-            | 8 => ok (16#usize, core.option.Option.None)
-            | _ =>
-              do
-              let i1 ← 2#usize * cell
-              let i2 ← i1 + 1#usize
-              ok (i1, core.option.Option.Some i2)
-          ok (core.option.Option.Some i, o2)
-    let a ← Array.update lanes cell (o, o1)
-    let cell1 ← cell + 1#usize
-    ok (cont (a, cell1))
-  else ok (done lanes)
-
-/-- [verifier::layout::keccak_cell_lanes]: loop 0:
-    Source: 'crates/verifier/src/layout.rs', lines 326:4-334:5
-    Visibility: public -/
-@[rust_loop]
-def layout.keccak_cell_lanes_loop
-  (odd : Bool)
-  (lanes : Array ((core.option.Option Std.Usize) × (core.option.Option
-  Std.Usize)) 13#usize) (cell : Std.Usize) :
-  RustM (Array ((core.option.Option Std.Usize) × (core.option.Option
-    Std.Usize)) 13#usize)
-  := do
-  loop
-    (fun (lanes1, cell1) => layout.keccak_cell_lanes_loop.body odd lanes1
-      cell1)
-    (lanes, cell)
-
-/-- [verifier::layout::keccak_cell_lanes]:
-    Source: 'crates/verifier/src/layout.rs', lines 323:0-336:1
-    Visibility: public -/
-def layout.keccak_cell_lanes
-  (odd : Bool) :
-  RustM (Array ((core.option.Option Std.Usize) × (core.option.Option
-    Std.Usize)) 13#usize)
-  := do
-  let lanes ←
-    core.array.repeat 13#usize (BuiltinClone ((core.option.Option Std.Usize) ×
-      (core.option.Option Std.Usize))) (core.option.Option.None,
-      core.option.Option.None)
-  layout.keccak_cell_lanes_loop odd lanes 0#usize
-
 /-- [verifier::layout::layout_limb::{impl core::ops::function::FnOnce<(usize,), verifier::layout::Form> for verifier::layout::layout_limb::{closure}}::call_once]:
     Source: 'crates/verifier/src/layout.rs', lines 343:40-343:53 -/
 def
@@ -4780,6 +3696,10 @@ def layout.KECCAK_HEAD : RustM (Slice Str) :=
       "o_m3", toStr "o_tail", toStr "o_b8", toStr "o_cap", toStr "o_out", toStr
       "odd_in", toStr "odd_out", toStr "out_two", toStr "out_all", toStr "free"
       ])
+
+/-- [verifier::layout::KECCAK_CELLS]
+    Source: 'crates/verifier/src/layout.rs', lines 416:0-416:31 -/
+@[global_simps, irreducible] def layout.KECCAK_CELLS : Std.Usize := 13#usize
 
 /-- [verifier::layout::KECCAK_OUT]
     Source: 'crates/verifier/src/layout.rs', lines 418:0-418:54
@@ -5037,64 +3957,6 @@ def layout.keccak_shape
   let i ← Slice.index_usize table_log_heights layout.OP_KECCAK
   ok { log_steps := i, depth := layout.KECCAK_DEPTH }
 
-/-- [verifier::layout::column_kappas]: loop body 0:
-    Source: 'crates/verifier/src/layout.rs', lines 531:4-533:5 -/
-@[rust_loop_body]
-def layout.column_kappas_loop.body
-  (table_log_heights : Slice Std.Usize)
-  (iter : core.slice.iter.Iter layout.Table) (kappas : alloc.vec.Vec Std.Usize)
-  :
-  RustM (ControlFlow ((core.slice.iter.Iter layout.Table) × (alloc.vec.Vec
-    Std.Usize)) (alloc.vec.Vec Std.Usize))
-  := do
-  let (o, iter1) ←
-    core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.next iter
-  match o with
-  | core.option.Option.None => ok (done kappas)
-  | core.option.Option.Some table =>
-    let i ← Slice.index_usize table_log_heights table.opcode
-    let i1 ← layout.Table.width table
-    let v ← alloc.vec.from_elem core.Usize.Insts.CoreCloneClone i i1
-    let kappas1 ←
-      alloc.vec.Vec.Insts.CoreIterTraitsCollectExtend.extend
-        (alloc.vec.Vec.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter
-        Std.Usize alloc.alloc.Global) kappas v
-    ok (cont (iter1, kappas1))
-
-/-- [verifier::layout::column_kappas]: loop 0:
-    Source: 'crates/verifier/src/layout.rs', lines 531:4-533:5 -/
-@[rust_loop]
-def layout.column_kappas_loop
-  (iter : core.slice.iter.Iter layout.Table)
-  (table_log_heights : Slice Std.Usize) (kappas : alloc.vec.Vec Std.Usize) :
-  RustM (alloc.vec.Vec Std.Usize)
-  := do
-  loop
-    (fun (iter1, kappas1) => layout.column_kappas_loop.body table_log_heights
-      iter1 kappas1)
-    (iter, kappas)
-
-/-- [verifier::layout::column_kappas]:
-    Source: 'crates/verifier/src/layout.rs', lines 522:0-535:1 -/
-def layout.column_kappas
-  (tables : Slice layout.Table) (log_memory : Std.Usize)
-  (log_bytecode : Std.Usize) (table_log_heights : Slice Std.Usize) :
-  RustM (alloc.vec.Vec Std.Usize)
-  := do
-  let keccak1 ← layout.keccak_shape table_log_heights
-  let i ← keccak.KeccakShape.slot_bits keccak1
-  let i1 ← keccak1.log_steps + i
-  let y ←
-    lift (Std.Array.to_slice
-      (Array.make 5#usize [
-         log_memory, log_memory, log_memory, log_bytecode, i1
-         ] : Array Std.Usize 5#usize))
-  let ret ← alloc.slice.Slice.into_vec y
-  let iter ←
-    core.SharedASlice.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
-      tables
-  layout.column_kappas_loop iter table_log_heights ret
-
 /-- [verifier::layout::stacked_blocks::{impl core::ops::function::FnMut<(&'_1 usize,), bool> for verifier::layout::stacked_blocks::{closure}<'_0>}::call_mut]:
     Source: 'crates/verifier/src/layout.rs', lines 544:16-544:85 -/
 def
@@ -5167,93 +4029,6 @@ def layout.stacked_blocks
     core.Usize.Insts.CoreIterRangeStep)
     layout.stacked_blocks.closure.Insts.CoreOpsFunctionFnMutTupleShared1UsizeBool)
     (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator Std.Usize) f
-
-/-- [verifier::layout::stack::{impl core::ops::function::FnMut<(&'_1 usize,), usize> for verifier::layout::stack::{closure}<'_0>}::call_mut]:
-    Source: 'crates/verifier/src/layout.rs', lines 551:53-551:77 -/
-def
-  layout.stack.closure.Insts.CoreOpsFunctionFnMutTupleShared1UsizeUsize.call_mut
-  (c : layout.stack.closure) (tupled_args : Std.Usize) :
-  RustM (Std.Usize × layout.stack.closure)
-  := do
-  let i ← Slice.index_usize c tupled_args
-  ok (i, c)
-
-/-- [verifier::layout::stack::{impl core::ops::function::FnOnce<(&'_1 usize,), usize> for verifier::layout::stack::{closure}<'_0>}::call_once]:
-    Source: 'crates/verifier/src/layout.rs', lines 551:53-551:77 -/
-def
-  layout.stack.closure.Insts.CoreOpsFunctionFnOnceTupleShared1UsizeUsize.call_once
-  (c : layout.stack.closure) (i : Std.Usize) : RustM Std.Usize := do
-  let (i1, _) ←
-    layout.stack.closure.Insts.CoreOpsFunctionFnMutTupleShared1UsizeUsize.call_mut
-      c i
-  ok i1
-
-/-- Trait implementation: [verifier::layout::stack::{impl core::ops::function::FnOnce<(&'_1 usize,), usize> for verifier::layout::stack::{closure}<'_0>}]
-    Source: 'crates/verifier/src/layout.rs', lines 551:53-551:77 -/
-@[reducible]
-def layout.stack.closure.Insts.CoreOpsFunctionFnOnceTupleShared1UsizeUsize :
-  core.ops.function.FnOnce layout.stack.closure Std.Usize Std.Usize := {
-  call_once :=
-    layout.stack.closure.Insts.CoreOpsFunctionFnOnceTupleShared1UsizeUsize.call_once
-}
-
-/-- Trait implementation: [verifier::layout::stack::{impl core::ops::function::FnMut<(&'_1 usize,), usize> for verifier::layout::stack::{closure}<'_0>}]
-    Source: 'crates/verifier/src/layout.rs', lines 551:53-551:77 -/
-@[reducible]
-def layout.stack.closure.Insts.CoreOpsFunctionFnMutTupleShared1UsizeUsize :
-  core.ops.function.FnMut layout.stack.closure Std.Usize Std.Usize := {
-  FnOnceInst :=
-    layout.stack.closure.Insts.CoreOpsFunctionFnOnceTupleShared1UsizeUsize
-  call_mut :=
-    layout.stack.closure.Insts.CoreOpsFunctionFnMutTupleShared1UsizeUsize.call_mut
-}
-
-/-- [verifier::layout::stack]:
-    Source: 'crates/verifier/src/layout.rs', lines 549:0-557:1 -/
-def layout.stack
-  (kappas : Slice Std.Usize) :
-  RustM ((alloc.collections.btree.map.BTreeMap Std.Usize Std.U64
-    alloc.alloc.Global) × Std.Usize)
-  := do
-  let i ← core.slice.Slice.len kappas
-  let blocks ← layout.stacked_blocks i
-  let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref blocks
-  let i1 ← core.slice.Slice.iter s
-  let m ←
-    core.iter.traits.iterator.Iterator.map.default
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      Std.Usize)
-      layout.stack.closure.Insts.CoreOpsFunctionFnMutTupleShared1UsizeUsize i1
-      kappas
-  let block_kappas ←
-    core.iter.traits.iterator.Iterator.collect.default
-      (core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      Std.Usize)
-      layout.stack.closure.Insts.CoreOpsFunctionFnMutTupleShared1UsizeUsize)
-      (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator Std.Usize) m
-  let s1 ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref block_kappas
-  let (block_offsets, total_log) ← multilinear.stack_offsets s1
-  let ii ←
-    alloc.vec.Vec.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter.into_iter
-      blocks
-  let z ←
-    core.iter.traits.iterator.Iterator.zip.default
-      (alloc.vec.into_iter.IntoIter.Insts.CoreIterTraitsIteratorIterator
-      Std.Usize)
-      (alloc.vec.Vec.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter Std.U64
-      alloc.alloc.Global) ii block_offsets
-  let bm ←
-    core.iter.traits.iterator.Iterator.collect.default
-      (core.iter.adapters.zip.Zip.Insts.CoreIterTraitsIteratorIteratorPair
-      (alloc.vec.into_iter.IntoIter.Insts.CoreIterTraitsIteratorIterator
-      Std.Usize)
-      (alloc.vec.into_iter.IntoIter.Insts.CoreIterTraitsIteratorIterator
-      Std.U64))
-      (alloc.collections.btree.map.BTreeMapKVGlobal.Insts.CoreIterTraitsCollectFromIteratorPair
-      Std.U64 core.Usize.Insts.CoreCmpOrd) z
-  let i2 ← core.Usize.Insts.CoreCmpOrd.max layout.MIN_STACKED_LOG total_log
-  ok (bm, i2)
 
 /-- [verifier::layout::min_execution_stacked_log]:
     Source: 'crates/verifier/src/layout.rs', lines 561:0-569:1
@@ -5414,6 +4189,16 @@ def VerifierError.Insts.CoreErrorError : core.error.Error VerifierError := {
   fmtDisplayInst := VerifierError.Insts.CoreFmtDisplay
 }
 
+/-- [verifier::require]:
+    Source: 'crates/verifier/src/lib.rs', lines 135:0-137:1 -/
+def require
+  (condition : Bool) (error : VerifierError) :
+  RustM (core.result.Result Unit VerifierError)
+  := do
+  if condition
+  then ok (core.result.Result.Ok ())
+  else ok (core.result.Result.Err error)
+
 /-- [verifier::MAX_STACKED_CLAIMS]
     Source: 'crates/verifier/src/lib.rs', lines 141:0-141:42
     Visibility: public -/
@@ -5529,72 +4314,6 @@ def replay_unchecked
   RustM (core.result.Result Summary VerifierError)
   := do
   walk bytecode1 public_input proof false
-
-/-- [verifier::merkle::hash_leaf::{impl core::ops::function::FnMut<(&'_0 verifier::field::K,), [u8; 8usize]> for verifier::merkle::hash_leaf::{closure}}::call_mut]:
-    Source: 'crates/verifier/src/merkle.rs', lines 14:39-14:61 -/
-def
-  merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnMutTupleShared0KArrayU88.call_mut
-  (c : merkle.hash_leaf.closure) (tupled_args : field.K) :
-  RustM ((Array Std.U8 8#usize) × merkle.hash_leaf.closure)
-  := do
-  let a ← field.K.to_bytes tupled_args
-  ok (a, c)
-
-/-- [verifier::merkle::hash_leaf::{impl core::ops::function::FnOnce<(&'_0 verifier::field::K,), [u8; 8usize]> for verifier::merkle::hash_leaf::{closure}}::call_once]:
-    Source: 'crates/verifier/src/merkle.rs', lines 14:39-14:61 -/
-def
-  merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnOnceTupleShared0KArrayU88.call_once
-  (c : merkle.hash_leaf.closure) (k : field.K) :
-  RustM (Array Std.U8 8#usize)
-  := do
-  let (a, _) ←
-    merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnMutTupleShared0KArrayU88.call_mut
-      c k
-  ok a
-
-/-- Trait implementation: [verifier::merkle::hash_leaf::{impl core::ops::function::FnOnce<(&'_0 verifier::field::K,), [u8; 8usize]> for verifier::merkle::hash_leaf::{closure}}]
-    Source: 'crates/verifier/src/merkle.rs', lines 14:39-14:61 -/
-@[reducible]
-def merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnOnceTupleShared0KArrayU88 :
-  core.ops.function.FnOnce merkle.hash_leaf.closure field.K (Array Std.U8
-  8#usize) := {
-  call_once :=
-    merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnOnceTupleShared0KArrayU88.call_once
-}
-
-/-- Trait implementation: [verifier::merkle::hash_leaf::{impl core::ops::function::FnMut<(&'_0 verifier::field::K,), [u8; 8usize]> for verifier::merkle::hash_leaf::{closure}}]
-    Source: 'crates/verifier/src/merkle.rs', lines 14:39-14:61 -/
-@[reducible]
-def merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnMutTupleShared0KArrayU88 :
-  core.ops.function.FnMut merkle.hash_leaf.closure field.K (Array Std.U8
-  8#usize) := {
-  FnOnceInst :=
-    merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnOnceTupleShared0KArrayU88
-  call_mut :=
-    merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnMutTupleShared0KArrayU88.call_mut
-}
-
-/-- [verifier::merkle::hash_leaf]:
-    Source: 'crates/verifier/src/merkle.rs', lines 13:0-15:1 -/
-def merkle.hash_leaf (image : Slice field.K) : RustM hash.Digest := do
-  let i ← core.slice.Slice.iter image
-  let fm ←
-    core.iter.traits.iterator.Iterator.flat_map.default
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      field.K) (core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter
-      Std.U8 8#usize)
-      merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnMutTupleShared0KArrayU88
-      i ()
-  let v ←
-    core.iter.traits.iterator.Iterator.collect.default
-      (core.iter.adapters.flatten.FlatMap.Insts.CoreIterTraitsIteratorIterator
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      field.K) (core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter
-      Std.U8 8#usize)
-      merkle.hash_leaf.closure.Insts.CoreOpsFunctionFnMutTupleShared0KArrayU88)
-      (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator Std.U8) fm
-  let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref v
-  hash.keccak_hash s
 
 /-- [verifier::merkle::{impl core::clone::Clone for verifier::merkle::MerklePath}::clone]:
     Source: 'crates/verifier/src/merkle.rs', lines 18:9-18:14
@@ -5727,6 +4446,122 @@ def merkle.MerklePath.root (self : merkle.MerklePath) : RustM hash.Digest := do
       (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT (Array
       Std.U8 32#usize)) i
   merkle.MerklePath.root_loop iter self.leaf_index node
+
+/-- [verifier::multilinear::{verifier::multilinear::Scaler}::mul]:
+    Source: 'crates/verifier/src/multilinear.rs', lines 38:4-43:5 -/
+def multilinear.Scaler.mul
+  (self : multilinear.Scaler) (value : field.E) : RustM field.E := do
+  match self with
+  | multilinear.Scaler.Table table => field.Scaled.mul table value
+  | multilinear.Scaler.Plain r => field.E.Insts.CoreOpsArithMulEE.mul value r
+
+/-- [verifier::multilinear::{verifier::multilinear::Scaler}::new]:
+    Source: 'crates/verifier/src/multilinear.rs', lines 29:4-35:5 -/
+def multilinear.Scaler.new
+  (r : field.E) (uses : Std.Usize) : RustM multilinear.Scaler := do
+  if uses >= 256#usize
+  then let s ← field.Scaled.new r
+       ok (multilinear.Scaler.Table s)
+  else ok (multilinear.Scaler.Plain r)
+
+/-- [verifier::multilinear::eq_kernel]: loop body 1:
+    Source: 'crates/verifier/src/multilinear.rs', lines 13:8-17:9
+    Visibility: public -/
+@[rust_loop_body]
+def multilinear.eq_kernel_loop0_loop0.body
+  (half : Std.Usize) (scale : multilinear.Scaler)
+  (iter : core.ops.range.Range Std.Usize) (out : alloc.vec.Vec field.E) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (alloc.vec.Vec
+    field.E)) (alloc.vec.Vec field.E))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done out)
+  | core.option.Option.Some i =>
+    let e ←
+      alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
+        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out i
+    let h ← multilinear.Scaler.mul scale e
+    let i1 ← i + half
+    let (_, index_mut_back) ←
+      alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
+        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out i1
+    let out1 := index_mut_back h
+    let (e1, index_mut_back1) ←
+      alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
+        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out1 i
+    let e2 ← field.E.Insts.CoreOpsArithAddAssignE.add_assign e1 h
+    let out2 := index_mut_back1 e2
+    ok (cont (iter1, out2))
+
+/-- [verifier::multilinear::eq_kernel]: loop 1:
+    Source: 'crates/verifier/src/multilinear.rs', lines 13:8-17:9
+    Visibility: public -/
+@[rust_loop]
+def multilinear.eq_kernel_loop0_loop0
+  (iter : core.ops.range.Range Std.Usize) (out : alloc.vec.Vec field.E)
+  (half : Std.Usize) (scale : multilinear.Scaler) :
+  RustM (alloc.vec.Vec field.E)
+  := do
+  loop
+    (fun (iter1, out1) => multilinear.eq_kernel_loop0_loop0.body half scale
+      iter1 out1)
+    (iter, out)
+
+/-- [verifier::multilinear::eq_kernel]: loop body 0:
+    Source: 'crates/verifier/src/multilinear.rs', lines 10:4-18:5
+    Visibility: public -/
+@[rust_loop_body]
+def multilinear.eq_kernel_loop0.body
+  (point : Slice field.E) (iter : core.ops.range.Range Std.Usize)
+  (out : alloc.vec.Vec field.E) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × (alloc.vec.Vec
+    field.E)) (alloc.vec.Vec field.E))
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done out)
+  | core.option.Option.Some k =>
+    let half ← 1#usize <<< k
+    let e ← Slice.index_usize point k
+    let scale ← multilinear.Scaler.new e half
+    let out1 ←
+      multilinear.eq_kernel_loop0_loop0 { start := 0#usize, «end» := half }
+        out half scale
+    ok (cont (iter1, out1))
+
+/-- [verifier::multilinear::eq_kernel]: loop 0:
+    Source: 'crates/verifier/src/multilinear.rs', lines 10:4-18:5
+    Visibility: public -/
+@[rust_loop]
+def multilinear.eq_kernel_loop0
+  (iter : core.ops.range.Range Std.Usize) (point : Slice field.E)
+  (out : alloc.vec.Vec field.E) :
+  RustM (alloc.vec.Vec field.E)
+  := do
+  loop
+    (fun (iter1, out1) => multilinear.eq_kernel_loop0.body point iter1 out1)
+    (iter, out)
+
+/-- [verifier::multilinear::eq_kernel]:
+    Source: 'crates/verifier/src/multilinear.rs', lines 7:0-20:1
+    Visibility: public -/
+def multilinear.eq_kernel
+  (point : Slice field.E) : RustM (alloc.vec.Vec field.E) := do
+  let i ← core.slice.Slice.len point
+  let i1 ← 1#usize <<< i
+  let e ← field.ZERO
+  let out ← alloc.vec.from_elem field.E.Insts.CoreCloneClone e i1
+  let (_, index_mut_back) ←
+    alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
+      (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E) out 0#usize
+  let e1 ← field.ONE
+  let out1 := index_mut_back e1
+  multilinear.eq_kernel_loop0 { start := 0#usize, «end» := i } point out1
 
 /-- [verifier::multilinear::multilinear_eval::{impl core::ops::function::FnMut<(&'_0 T,), verifier::field::E> for verifier::multilinear::multilinear_eval::{closure}<T>}::call_mut]:
     Source: 'crates/verifier/src/multilinear.rs', lines 51:41-51:62 -/
@@ -6179,6 +5014,53 @@ def multilinear.index_mle (point : Slice field.E) : RustM field.E := do
       point
   multilinear.index_mle_loop result iter result generator_power
 
+/-- [verifier::multilinear::poly_eval]: loop body 0:
+    Source: 'crates/verifier/src/multilinear.rs', lines 113:4-115:5
+    Visibility: public -/
+@[rust_loop_body]
+def multilinear.poly_eval_loop.body
+  (coefficients : Slice field.E) (point : field.E)
+  (iter : core.ops.range.Range Std.Usize) (acc : field.E) :
+  RustM (ControlFlow ((core.ops.range.Range Std.Usize) × field.E) field.E)
+  := do
+  let (o, iter1) ←
+    core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
+      core.Usize.Insts.CoreIterRangeStep iter
+  match o with
+  | core.option.Option.None => ok (done acc)
+  | core.option.Option.Some i =>
+    let e ← field.E.Insts.CoreOpsArithMulEE.mul acc point
+    let i1 ← core.slice.Slice.len coefficients
+    let i2 ← i1 - 1#usize
+    let i3 ← i2 - i
+    let e1 ← Slice.index_usize coefficients i3
+    let acc1 ← field.E.Insts.CoreOpsArithAddEE.add e e1
+    ok (cont (iter1, acc1))
+
+/-- [verifier::multilinear::poly_eval]: loop 0:
+    Source: 'crates/verifier/src/multilinear.rs', lines 113:4-115:5
+    Visibility: public -/
+@[rust_loop]
+def multilinear.poly_eval_loop
+  (iter : core.ops.range.Range Std.Usize) (coefficients : Slice field.E)
+  (point : field.E) (acc : field.E) :
+  RustM field.E
+  := do
+  loop
+    (fun (iter1, acc1) => multilinear.poly_eval_loop.body coefficients point
+      iter1 acc1)
+    (iter, acc)
+
+/-- [verifier::multilinear::poly_eval]:
+    Source: 'crates/verifier/src/multilinear.rs', lines 111:0-117:1
+    Visibility: public -/
+def multilinear.poly_eval
+  (coefficients : Slice field.E) (point : field.E) : RustM field.E := do
+  let acc ← field.ZERO
+  let i ← core.slice.Slice.len coefficients
+  multilinear.poly_eval_loop { start := 0#usize, «end» := i } coefficients
+    point acc
+
 /-- [verifier::multilinear::{impl core::clone::Clone for verifier::multilinear::Placement}::clone]:
     Source: 'crates/verifier/src/multilinear.rs', lines 120:9-120:14
     Visibility: public -/
@@ -6622,6 +5504,198 @@ def ring_switch.ring_weight
     Visibility: public -/
 @[global_simps, irreducible] def whir.BATCH_GRINDING_BITS : Std.U32 := 13#u32
 
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{impl core::ops::function::FnOnce<(u64,), u64> for verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{closure}<'a>}::call_once]:
+    Source: 'crates/verifier/src/transcript.rs', lines 173:63-173:76 -/
+def
+  transcript.Transcript.grind_check.closure.Insts.CoreOpsFunctionFnOnceTupleU64U64.call_once
+  (c : transcript.Transcript.grind_check.closure) (tupled_args : Std.U64) :
+  RustM Std.U64
+  := do
+  tupled_args - 1#u64
+
+/-- Trait implementation: [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{impl core::ops::function::FnOnce<(u64,), u64> for verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{closure}<'a>}]
+    Source: 'crates/verifier/src/transcript.rs', lines 173:63-173:76 -/
+@[reducible]
+def
+  transcript.Transcript.grind_check.closure.Insts.CoreOpsFunctionFnOnceTupleU64U64
+  : core.ops.function.FnOnce transcript.Transcript.grind_check.closure Std.U64
+  Std.U64 := {
+  call_once :=
+    transcript.Transcript.grind_check.closure.Insts.CoreOpsFunctionFnOnceTupleU64U64.call_once
+}
+
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::next]:
+    Source: 'crates/verifier/src/transcript.rs', lines 144:4-152:5 -/
+def transcript.Transcript.next
+  (self : transcript.Transcript) :
+  RustM ((core.result.Result field.E VerifierError) × transcript.Transcript)
+  := do
+  let i ← alloc.vec.Vec.len self.proof.stream
+  let r ← require (self.stream_offset < i) VerifierError.StreamExhausted
+  let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue _ =>
+    let value ←
+      alloc.vec.Vec.Insts.CoreOpsIndexIndex.index
+        (core.Usize.Insts.CoreSliceIndexSliceIndexSliceT field.E)
+        self.proof.stream self.stream_offset
+    let i1 ← self.stream_offset + 1#usize
+    ok (core.result.Result.Ok value, { self with stream_offset := i1 })
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
+        field.E (core.convert.From.Blanket VerifierError) residual
+    ok (r1, self)
+
+/-- [verifier::transcript::{verifier::transcript::Sponge}::duplex]: loop body 0:
+    Source: 'crates/verifier/src/transcript.rs', lines 54:8-56:9 -/
+@[rust_loop_body]
+def transcript.Sponge.duplex_loop.body
+  (iter : core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter (field.E
+  × Std.U64))) (input : Array Std.U64 25#usize) :
+  RustM (ControlFlow ((core.iter.adapters.enumerate.Enumerate
+    (core.slice.iter.Iter (field.E × Std.U64))) × (Array Std.U64 25#usize))
+    (Array Std.U64 25#usize))
+  := do
+  let (o, iter1) ←
+    core.iter.adapters.enumerate.Enumerate.Insts.CoreIterTraitsIteratorIteratorPairUsizeClause0_Item.next
+      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
+      (field.E × Std.U64)) iter
+  match o with
+  | core.option.Option.None => ok (done input)
+  | core.option.Option.Some p =>
+    let (i, (value, tag)) := p
+    let i1 ← 4#usize * i
+    let i2 ← i1 + 4#usize
+    let (s, index_mut_back) ←
+      core.Array.Insts.CoreOpsIndexIndexMut.index_mut
+        (core.Slice.Insts.CoreOpsIndexIndexMut
+        (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+        Std.U64)) input { start := i1, «end» := i2 }
+    let s1 ←
+      core.array.Array.as_slice
+        (Array.make 4#usize [ value.c0, value.c1, 0#u64, tag ])
+    let s2 ←
+      core.slice.Slice.copy_from_slice core.U64.Insts.CoreMarkerCopy s s1
+    let input1 := index_mut_back s2
+    ok (cont (iter1, input1))
+
+/-- [verifier::transcript::{verifier::transcript::Sponge}::duplex]: loop 0:
+    Source: 'crates/verifier/src/transcript.rs', lines 54:8-56:9 -/
+@[rust_loop]
+def transcript.Sponge.duplex_loop
+  (iter : core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter (field.E
+  × Std.U64))) (input : Array Std.U64 25#usize) :
+  RustM (Array Std.U64 25#usize)
+  := do
+  loop
+    (fun (iter1, input1) => transcript.Sponge.duplex_loop.body iter1 input1)
+    (iter, input)
+
+/-- [verifier::transcript::{verifier::transcript::Sponge}::duplex]:
+    Source: 'crates/verifier/src/transcript.rs', lines 51:4-60:5 -/
+def transcript.Sponge.duplex
+  (self : transcript.Sponge) : RustM transcript.Sponge := do
+  let (s, index_mut_back) ←
+    core.Array.Insts.CoreOpsIndexIndexMut.index_mut
+      (core.Slice.Insts.CoreOpsIndexIndexMut
+      (core.ops.range.RangeToUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+      Std.U64)) self.state { «end» := 16#usize }
+  let s1 ← core.slice.Slice.fill core.U64.Insts.CoreCloneClone s 0#u64
+  let s2 ←
+    core.Array.Insts.CoreOpsIndexIndex.index
+      (core.Slice.Insts.CoreOpsIndexIndex
+      (core.ops.range.RangeToUsize.Insts.CoreSliceIndexSliceIndexSliceSlice
+      (field.E × Std.U64))) self.pending { «end» := self.n_pending }
+  let i ← core.slice.Slice.iter s2
+  let iter ←
+    core.iter.traits.iterator.Iterator.enumerate.default
+      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
+      (field.E × Std.U64)) i
+  let input := index_mut_back s1
+  let input1 ← transcript.Sponge.duplex_loop iter input
+  let input2 ← hash.keccak_f input1
+  ok { self with state := input2, n_pending := 0#usize }
+
+/-- [verifier::transcript::RATE_SCALARS]
+    Source: 'crates/verifier/src/transcript.rs', lines 20:0-20:34
+    Visibility: public -/
+@[global_simps, irreducible] def transcript.RATE_SCALARS : Std.Usize := 4#usize
+
+/-- [verifier::transcript::{verifier::transcript::Sponge}::absorb]:
+    Source: 'crates/verifier/src/transcript.rs', lines 62:4-69:5 -/
+def transcript.Sponge.absorb
+  (self : transcript.Sponge) (value : field.E) (tag : Std.U64) :
+  RustM transcript.Sponge
+  := do
+  let b ← core.option.Option.is_none self.ground
+  massert b
+  let self1 ←
+    if self.n_pending = transcript.RATE_SCALARS
+    then transcript.Sponge.duplex self
+    else ok self
+  let a ← Array.update self1.pending self1.n_pending (value, tag)
+  let i ← self1.n_pending + 1#usize
+  ok { self1 with pending := a, n_pending := i }
+
+/-- [verifier::transcript::DS_POW_NONCE]
+    Source: 'crates/verifier/src/transcript.rs', lines 18:0-18:39 -/
+@[global_simps, irreducible] def transcript.DS_POW_NONCE : Std.U64 := 4#u64
+
+/-- [verifier::transcript::{verifier::transcript::Sponge}::absorb_nonce]:
+    Source: 'crates/verifier/src/transcript.rs', lines 84:4-89:5 -/
+def transcript.Sponge.absorb_nonce
+  (self : transcript.Sponge) (nonce : field.E) :
+  RustM (Std.U64 × transcript.Sponge)
+  := do
+  let self1 ← transcript.Sponge.absorb self nonce transcript.DS_POW_NONCE
+  let self2 ← transcript.Sponge.duplex self1
+  let i ← Array.index_usize self2.state 0#usize
+  let i1 ← Array.index_usize self2.state 1#usize
+  let e ← field.E.new i i1
+  let i2 ← Array.index_usize self2.state 2#usize
+  ok (i2, { self2 with ground := (core.option.Option.Some e) })
+
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check]:
+    Source: 'crates/verifier/src/transcript.rs', lines 166:4-177:5
+    Visibility: public -/
+def transcript.Transcript.grind_check
+  (self : transcript.Transcript) (bits : Std.U32) :
+  RustM ((core.result.Result Unit VerifierError) × transcript.Transcript)
+  := do
+  if bits = 0#u32
+  then ok (core.result.Result.Ok (), self)
+  else
+    let (r, self1) ← transcript.Transcript.next self
+    let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue val =>
+      let (pow, s) ← transcript.Sponge.absorb_nonce self1.sponge val
+      if self1.checked
+      then
+        let o ← core.num.U64.checked_shl 1#u64 bits
+        let mask ←
+          core.option.Option.map_or
+            transcript.Transcript.grind_check.closure.Insts.CoreOpsFunctionFnOnceTupleU64U64
+            o core.num.U64.MAX ()
+        let i ← lift (pow &&& mask)
+        let r1 ← require (i = 0#u64) VerifierError.GrindingNonce
+        let cf1 ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r1
+        match cf1 with
+        | core.ops.control_flow.ControlFlow.Continue _ =>
+          ok (core.result.Result.Ok (), { self1 with sponge := s })
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          let r2 ←
+            core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
+              Unit (core.convert.From.Blanket VerifierError) residual
+          ok (r2, { self1 with sponge := s })
+      else ok (core.result.Result.Ok (), { self1 with sponge := s })
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      let r1 ←
+        core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
+          Unit (core.convert.From.Blanket VerifierError) residual
+      ok (r1, self1)
+
 /-- [verifier::ring_switch::ring_switch]:
     Source: 'crates/verifier/src/ring_switch.rs', lines 76:0-87:1
     Visibility: public -/
@@ -6734,6 +5808,10 @@ def transcript.Proof.Insts.CoreCmpEq : core.cmp.Eq transcript.Proof := {
   PartialEqInst := transcript.Proof.Insts.CoreCmpPartialEqProof
 }
 
+/-- [verifier::transcript::DS_OBSERVE]
+    Source: 'crates/verifier/src/transcript.rs', lines 17:0-17:26 -/
+@[global_simps, irreducible] def transcript.DS_OBSERVE : Std.U64 := 1#u64
+
 /-- Trait implementation: [verifier::transcript::{impl core::fmt::Debug for verifier::transcript::Sponge}]
     Source: 'crates/verifier/src/transcript.rs', lines 25:16-25:21 -/
 @[reducible]
@@ -6781,6 +5859,13 @@ def transcript.Sponge.new
       ground := core.option.Option.None
     }
 
+/-- [verifier::transcript::{verifier::transcript::Sponge}::observe]:
+    Source: 'crates/verifier/src/transcript.rs', lines 71:4-73:5
+    Visibility: public -/
+def transcript.Sponge.observe
+  (self : transcript.Sponge) (value : field.E) : RustM transcript.Sponge := do
+  transcript.Sponge.absorb self value transcript.DS_OBSERVE
+
 /-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::new]:
     Source: 'crates/verifier/src/transcript.rs', lines 115:4-123:5
     Visibility: public -/
@@ -6813,6 +5898,25 @@ def transcript.Transcript.impl.stream_offset
   (self : transcript.Transcript) : RustM Std.Usize := do
   ok self.stream_offset
 
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::next_scalar]:
+    Source: 'crates/verifier/src/transcript.rs', lines 154:4-158:5
+    Visibility: public -/
+def transcript.Transcript.next_scalar
+  (self : transcript.Transcript) :
+  RustM ((core.result.Result field.E VerifierError) × transcript.Transcript)
+  := do
+  let (r, self1) ← transcript.Transcript.next self
+  let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let s ← transcript.Sponge.observe self1.sponge val
+    ok (core.result.Result.Ok val, { self1 with sponge := s })
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
+        field.E (core.convert.From.Blanket VerifierError) residual
+    ok (r1, self1)
+
 /-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::finish]:
     Source: 'crates/verifier/src/transcript.rs', lines 240:4-249:5
     Visibility: public -/
@@ -6830,6 +5934,76 @@ def transcript.Transcript.finish
   | core.ops.control_flow.ControlFlow.Break residual =>
     core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
       Unit (core.convert.From.Blanket VerifierError) residual
+
+/-- [verifier::transcript::sumcheck]: loop body 0:
+    Source: 'crates/verifier/src/transcript.rs', lines 259:4-266:1
+    Visibility: public -/
+@[rust_loop_body]
+def transcript.sumcheck_loop.body
+  (count : Std.Usize)
+  (iter : core.slice.iter.Iter (core.option.Option field.E))
+  (transcript1 : transcript.Transcript) (claim : field.E)
+  (point : alloc.vec.Vec field.E) :
+  RustM (ControlFlow ((core.slice.iter.Iter (core.option.Option field.E)) ×
+    transcript.Transcript × field.E × (alloc.vec.Vec field.E))
+    ((core.result.Result ((alloc.vec.Vec field.E) × field.E) VerifierError) ×
+    transcript.Transcript))
+  := do
+  let (o, iter1) ←
+    core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.next iter
+  match o with
+  | core.option.Option.None =>
+    ok (done (core.result.Result.Ok (point, claim), transcript1))
+  | core.option.Option.Some equality =>
+    let (r, transcript2) ←
+      transcript.Transcript.sumcheck_round_poly transcript1 count claim
+        equality
+    let cf ← core.result.Result.Insts.CoreOpsTry_traitTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue val =>
+      let (challenge, transcript3) ← transcript.Transcript.sample transcript2
+      let point1 ← alloc.vec.Vec.push point challenge
+      let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref val
+      let claim1 ← multilinear.poly_eval s challenge
+      ok (cont (iter1, transcript3, claim1, point1))
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      let r1 ←
+        core.result.Result.Insts.CoreOpsTry_traitFromResidualResultNeverE.from_residual
+          ((alloc.vec.Vec field.E) × field.E) (core.convert.From.Blanket
+          VerifierError) residual
+      ok (done (r1, transcript2))
+
+/-- [verifier::transcript::sumcheck]: loop 0:
+    Source: 'crates/verifier/src/transcript.rs', lines 259:4-266:1
+    Visibility: public -/
+@[rust_loop]
+def transcript.sumcheck_loop
+  (iter : core.slice.iter.Iter (core.option.Option field.E))
+  (transcript1 : transcript.Transcript) (claim : field.E) (count : Std.Usize)
+  (point : alloc.vec.Vec field.E) :
+  RustM ((core.result.Result ((alloc.vec.Vec field.E) × field.E)
+    VerifierError) × transcript.Transcript)
+  := do
+  loop
+    (fun (iter1, transcript2, claim1, point1) => transcript.sumcheck_loop.body
+      count iter1 transcript2 claim1 point1)
+    (iter, transcript1, claim, point)
+
+/-- [verifier::transcript::sumcheck]:
+    Source: 'crates/verifier/src/transcript.rs', lines 252:0-266:1
+    Visibility: public -/
+def transcript.sumcheck
+  (transcript1 : transcript.Transcript) (claim : field.E) (count : Std.Usize)
+  (equalities : Slice (core.option.Option field.E)) :
+  RustM ((core.result.Result ((alloc.vec.Vec field.E) × field.E)
+    VerifierError) × transcript.Transcript)
+  := do
+  let i ← core.slice.Slice.len equalities
+  let point ← alloc.vec.Vec.with_capacity field.E i
+  let iter ←
+    core.SharedASlice.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
+      equalities
+  transcript.sumcheck_loop iter transcript1 claim count point
 
 /-- [verifier::whir::MIN_LOG_INV_RATE]
     Source: 'crates/verifier/src/whir.rs', lines 11:0-11:38
@@ -7070,67 +6244,6 @@ def whir.WHIR_QUERIES
         s45
         ]
       ])
-
-/-- [verifier::whir::ext_row::{impl core::ops::function::FnMut<(&'_0 [verifier::field::K; 2usize],), verifier::field::E> for verifier::whir::ext_row::{closure}}::call_mut]:
-    Source: 'crates/verifier/src/whir.rs', lines 84:35-84:65 -/
-def
-  whir.ext_row.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayK2E.call_mut
-  (c : whir.ext_row.closure) (tupled_args : Array field.K 2#usize) :
-  RustM (field.E × whir.ext_row.closure)
-  := do
-  let c0 ← Array.index_usize tupled_args 0#usize
-  let c1 ← Array.index_usize tupled_args 1#usize
-  let e ← field.E.new c0 c1
-  ok (e, c)
-
-/-- [verifier::whir::ext_row::{impl core::ops::function::FnOnce<(&'_0 [verifier::field::K; 2usize],), verifier::field::E> for verifier::whir::ext_row::{closure}}::call_once]:
-    Source: 'crates/verifier/src/whir.rs', lines 84:35-84:65 -/
-def
-  whir.ext_row.closure.Insts.CoreOpsFunctionFnOnceTupleShared0ArrayK2E.call_once
-  (c : whir.ext_row.closure) (a : Array field.K 2#usize) : RustM field.E := do
-  let (e, _) ←
-    whir.ext_row.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayK2E.call_mut
-      c a
-  ok e
-
-/-- Trait implementation: [verifier::whir::ext_row::{impl core::ops::function::FnOnce<(&'_0 [verifier::field::K; 2usize],), verifier::field::E> for verifier::whir::ext_row::{closure}}]
-    Source: 'crates/verifier/src/whir.rs', lines 84:35-84:65 -/
-@[reducible]
-def whir.ext_row.closure.Insts.CoreOpsFunctionFnOnceTupleShared0ArrayK2E :
-  core.ops.function.FnOnce whir.ext_row.closure (Array field.K 2#usize) field.E
-  := {
-  call_once :=
-    whir.ext_row.closure.Insts.CoreOpsFunctionFnOnceTupleShared0ArrayK2E.call_once
-}
-
-/-- Trait implementation: [verifier::whir::ext_row::{impl core::ops::function::FnMut<(&'_0 [verifier::field::K; 2usize],), verifier::field::E> for verifier::whir::ext_row::{closure}}]
-    Source: 'crates/verifier/src/whir.rs', lines 84:35-84:65 -/
-@[reducible]
-def whir.ext_row.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayK2E :
-  core.ops.function.FnMut whir.ext_row.closure (Array field.K 2#usize) field.E
-  := {
-  FnOnceInst :=
-    whir.ext_row.closure.Insts.CoreOpsFunctionFnOnceTupleShared0ArrayK2E
-  call_mut :=
-    whir.ext_row.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayK2E.call_mut
-}
-
-/-- [verifier::whir::ext_row]:
-    Source: 'crates/verifier/src/whir.rs', lines 83:0-85:1 -/
-def whir.ext_row (words : Slice field.K) : RustM (alloc.vec.Vec field.E) := do
-  let (s, _) ← core.slice.Slice.as_chunks 2#usize words
-  let i ← core.slice.Slice.iter s
-  let m ←
-    core.iter.traits.iterator.Iterator.map.default
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT (Array
-      field.K 2#usize))
-      whir.ext_row.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayK2E i ()
-  core.iter.traits.iterator.Iterator.collect.default
-    (core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator
-    (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT (Array
-    field.K 2#usize))
-    whir.ext_row.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayK2E)
-    (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator field.E) m
 
 /-- [verifier::whir::sample_queries]: loop body 1:
     Source: 'crates/verifier/src/whir.rs', lines 94:8-96:9 -/
@@ -7523,80 +6636,6 @@ def whir.Subspace.at
   whir.Subspace.at_loop { start := 0#usize, «end» := i } self.roots
     self.inverses x values
 
-/-- [verifier::whir::novel_eval::{impl core::ops::function::FnMut<((&'_0 verifier::field::E, verifier::field::K),), verifier::field::E> for verifier::whir::novel_eval::{closure}}::call_mut]:
-    Source: 'crates/verifier/src/whir.rs', lines 161:46-161:61 -/
-def
-  whir.novel_eval.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0EKE.call_mut
-  (c : whir.novel_eval.closure) (tupled_args : (field.E × field.K)) :
-  RustM (field.E × whir.novel_eval.closure)
-  := do
-  let (p, b) := tupled_args
-  let e ← field.E.Insts.CoreOpsArithMulKE.mul p b
-  ok (e, c)
-
-/-- [verifier::whir::novel_eval::{impl core::ops::function::FnOnce<((&'_0 verifier::field::E, verifier::field::K),), verifier::field::E> for verifier::whir::novel_eval::{closure}}::call_once]:
-    Source: 'crates/verifier/src/whir.rs', lines 161:46-161:61 -/
-def
-  whir.novel_eval.closure.Insts.CoreOpsFunctionFnOnceTuplePairShared0EKE.call_once
-  (c : whir.novel_eval.closure) (p : (field.E × field.K)) :
-  RustM field.E
-  := do
-  let (e, _) ←
-    whir.novel_eval.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0EKE.call_mut
-      c p
-  ok e
-
-/-- Trait implementation: [verifier::whir::novel_eval::{impl core::ops::function::FnOnce<((&'_0 verifier::field::E, verifier::field::K),), verifier::field::E> for verifier::whir::novel_eval::{closure}}]
-    Source: 'crates/verifier/src/whir.rs', lines 161:46-161:61 -/
-@[reducible]
-def whir.novel_eval.closure.Insts.CoreOpsFunctionFnOnceTuplePairShared0EKE :
-  core.ops.function.FnOnce whir.novel_eval.closure (field.E × field.K) field.E
-  := {
-  call_once :=
-    whir.novel_eval.closure.Insts.CoreOpsFunctionFnOnceTuplePairShared0EKE.call_once
-}
-
-/-- Trait implementation: [verifier::whir::novel_eval::{impl core::ops::function::FnMut<((&'_0 verifier::field::E, verifier::field::K),), verifier::field::E> for verifier::whir::novel_eval::{closure}}]
-    Source: 'crates/verifier/src/whir.rs', lines 161:46-161:61 -/
-@[reducible]
-def whir.novel_eval.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0EKE :
-  core.ops.function.FnMut whir.novel_eval.closure (field.E × field.K) field.E
-  := {
-  FnOnceInst :=
-    whir.novel_eval.closure.Insts.CoreOpsFunctionFnOnceTuplePairShared0EKE
-  call_mut :=
-    whir.novel_eval.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0EKE.call_mut
-}
-
-/-- [verifier::whir::novel_eval]:
-    Source: 'crates/verifier/src/whir.rs', lines 159:0-162:1 -/
-def whir.novel_eval
-  (coefficients : Slice field.E) (what : Slice field.K) : RustM field.E := do
-  let i ← core.slice.Slice.len coefficients
-  let basis ← whir.novel_basis what i
-  let i1 ← core.slice.Slice.iter coefficients
-  let z ←
-    core.iter.traits.iterator.Iterator.zip.default
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      field.E) (alloc.vec.Vec.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter
-      field.K alloc.alloc.Global) i1 basis
-  let m ←
-    core.iter.traits.iterator.Iterator.map.default
-      (core.iter.adapters.zip.Zip.Insts.CoreIterTraitsIteratorIteratorPair
-      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-      field.E)
-      (alloc.vec.into_iter.IntoIter.Insts.CoreIterTraitsIteratorIterator
-      field.K))
-      whir.novel_eval.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0EKE z
-      ()
-  field.E.sum (core.iter.traits.collect.IntoIterator.Blanket
-    (core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator
-    (core.iter.adapters.zip.Zip.Insts.CoreIterTraitsIteratorIteratorPair
-    (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT field.E)
-    (alloc.vec.into_iter.IntoIter.Insts.CoreIterTraitsIteratorIterator
-    field.K))
-    whir.novel_eval.closure.Insts.CoreOpsFunctionFnMutTuplePairShared0EKE)) m
-
 /-- [verifier::whir::{impl core::clone::Clone for verifier::whir::FoldRound}::clone]:
     Source: 'crates/verifier/src/whir.rs', lines 165:9-165:14
     Visibility: public -/
@@ -7741,113 +6780,6 @@ def whir.fold_row
     Visibility: public -/
 @[global_simps, irreducible] def wire.MAX_HEIGHT : Std.Usize := 32#usize
 
-/-- [verifier::wire::write_u32]:
-    Source: 'crates/verifier/src/wire.rs', lines 157:0-159:1 -/
-def wire.write_u32
-  (out : alloc.vec.Vec Std.U8) (value : Std.Usize) :
-  RustM (alloc.vec.Vec Std.U8)
-  := do
-  let r ←
-    core.U32.Insts.CoreConvertTryFromUsizeTryFromIntError.try_from value
-  let i ←
-    core.result.Result.expect core.num.error.TryFromIntError.Insts.CoreFmtDebug
-      r (toStr "fits in u32")
-  let a ← core.num.U32.to_le_bytes i
-  alloc.vec.Vec.Insts.CoreIterTraitsCollectExtend.extend
-    (core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter Std.U8
-    4#usize) out a
-
-/-- [verifier::wire::{verifier::transcript::Proof}::to_bytes]: loop body 0:
-    Source: 'crates/verifier/src/wire.rs', lines 35:8-38:9
-    Visibility: public -/
-@[rust_loop_body]
-def wire.Proof.to_bytes_loop0.body
-  (iter : core.slice.iter.Iter field.E) (out : alloc.vec.Vec Std.U8) :
-  RustM (ControlFlow ((core.slice.iter.Iter field.E) × (alloc.vec.Vec Std.U8))
-    (alloc.vec.Vec Std.U8))
-  := do
-  let (o, iter1) ←
-    core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.next iter
-  match o with
-  | core.option.Option.None => ok (done out)
-  | core.option.Option.Some element =>
-    let a ← core.num.U64.to_le_bytes element.c0
-    let out1 ←
-      alloc.vec.Vec.Insts.CoreIterTraitsCollectExtend.extend
-        (core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter Std.U8
-        8#usize) out a
-    let a1 ← core.num.U64.to_le_bytes element.c1
-    let out2 ←
-      alloc.vec.Vec.Insts.CoreIterTraitsCollectExtend.extend
-        (core.Array.Insts.CoreIterTraitsCollectIntoIteratorTIntoIter Std.U8
-        8#usize) out1 a1
-    ok (cont (iter1, out2))
-
-/-- [verifier::wire::{verifier::transcript::Proof}::to_bytes]: loop 0:
-    Source: 'crates/verifier/src/wire.rs', lines 35:8-38:9
-    Visibility: public -/
-@[rust_loop]
-def wire.Proof.to_bytes_loop0
-  (iter : core.slice.iter.Iter field.E) (out : alloc.vec.Vec Std.U8) :
-  RustM (alloc.vec.Vec Std.U8)
-  := do
-  loop
-    (fun (iter1, out1) => wire.Proof.to_bytes_loop0.body iter1 out1)
-    (iter, out)
-
-/-- [verifier::wire::{verifier::transcript::Proof}::to_bytes]: loop body 1:
-    Source: 'crates/verifier/src/wire.rs', lines 40:8-42:9
-    Visibility: public -/
-@[rust_loop_body]
-def wire.Proof.to_bytes_loop1.body
-  (iter : core.slice.iter.Iter (alloc.vec.Vec merkle.MerklePath))
-  (out : alloc.vec.Vec Std.U8) :
-  RustM (ControlFlow ((core.slice.iter.Iter (alloc.vec.Vec merkle.MerklePath))
-    × (alloc.vec.Vec Std.U8)) (alloc.vec.Vec Std.U8))
-  := do
-  let (o, iter1) ←
-    core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.next iter
-  match o with
-  | core.option.Option.None => ok (done out)
-  | core.option.Option.Some phase =>
-    let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref phase
-    let out1 ← wire.write_phase out s
-    ok (cont (iter1, out1))
-
-/-- [verifier::wire::{verifier::transcript::Proof}::to_bytes]: loop 1:
-    Source: 'crates/verifier/src/wire.rs', lines 40:8-42:9
-    Visibility: public -/
-@[rust_loop]
-def wire.Proof.to_bytes_loop1
-  (iter : core.slice.iter.Iter (alloc.vec.Vec merkle.MerklePath))
-  (out : alloc.vec.Vec Std.U8) :
-  RustM (alloc.vec.Vec Std.U8)
-  := do
-  loop
-    (fun (iter1, out1) => wire.Proof.to_bytes_loop1.body iter1 out1)
-    (iter, out)
-
-/-- [verifier::wire::{verifier::transcript::Proof}::to_bytes]:
-    Source: 'crates/verifier/src/wire.rs', lines 31:4-44:5
-    Visibility: public -/
-def wire.Proof.to_bytes
-  (self : transcript.Proof) : RustM (alloc.vec.Vec Std.U8) := do
-  let i ← alloc.vec.Vec.len self.merkle_openings
-  massert (i <= wire.MAX_PHASES)
-  let out ← alloc.vec.Vec.new Std.U8
-  let i1 ← alloc.vec.Vec.len self.stream
-  let out1 ← wire.write_u32 out i1
-  let iter ←
-    alloc.SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
-      self.stream
-  let out2 ← wire.Proof.to_bytes_loop0 iter out1
-  let i2 ← alloc.vec.Vec.len self.merkle_openings
-  let out3 ← wire.write_u32 out2 i2
-  let iter1 ←
-    alloc.SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
-      self.merkle_openings
-  wire.Proof.to_bytes_loop1 iter1 out3
-
 /-- [verifier::wire::{verifier::wire::Reader<'a>}::bytes]:
     Source: 'crates/verifier/src/wire.rs', lines 165:4-169:5 -/
 def wire.Reader.bytes
@@ -7864,144 +6796,6 @@ def wire.Reader.bytes
     let o1 ←
       core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionNever.from_residual
         (Slice Std.U8) residual
-    ok (o1, self)
-
-/-- [verifier::wire::{verifier::wire::Reader<'a>}::u32]:
-    Source: 'crates/verifier/src/wire.rs', lines 171:4-173:5 -/
-def wire.Reader.u32
-  (self : wire.Reader) :
-  RustM ((core.option.Option Std.U32) × wire.Reader)
-  := do
-  let (o, self1) ← wire.Reader.bytes self 4#usize
-  let cf ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o
-  match cf with
-  | core.ops.control_flow.ControlFlow.Continue val =>
-    let o1 ← core.slice.Slice.as_array 4#usize val
-    let cf1 ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o1
-    match cf1 with
-    | core.ops.control_flow.ControlFlow.Continue val1 =>
-      let i ← core.num.U32.from_le_bytes val1
-      ok (core.option.Option.Some i, self1)
-    | core.ops.control_flow.ControlFlow.Break residual =>
-      let o2 ←
-        core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionNever.from_residual
-          Std.U32 residual
-      ok (o2, self1)
-  | core.ops.control_flow.ControlFlow.Break residual =>
-    let o1 ←
-      core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionNever.from_residual
-        Std.U32 residual
-    ok (o1, self1)
-
-/-- [verifier::wire::{verifier::wire::Reader<'a>}::hash]:
-    Source: 'crates/verifier/src/wire.rs', lines 175:4-177:5 -/
-def wire.Reader.hash
-  (self : wire.Reader) :
-  RustM ((core.option.Option (Array Std.U8 32#usize)) × wire.Reader)
-  := do
-  let (o, self1) ← wire.Reader.bytes self 32#usize
-  let cf ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o
-  match cf with
-  | core.ops.control_flow.ControlFlow.Continue val =>
-    let o1 ← core.slice.Slice.as_array 32#usize val
-    let cf1 ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o1
-    match cf1 with
-    | core.ops.control_flow.ControlFlow.Continue val1 =>
-      ok (core.option.Option.Some val1, self1)
-    | core.ops.control_flow.ControlFlow.Break residual =>
-      let o2 ←
-        core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionNever.from_residual
-          (Array Std.U8 32#usize) residual
-      ok (o2, self1)
-  | core.ops.control_flow.ControlFlow.Break residual =>
-    let o1 ←
-      core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionNever.from_residual
-        (Array Std.U8 32#usize) residual
-    ok (o1, self1)
-
-/-- [verifier::wire::{verifier::wire::Reader<'a>}::words::{impl core::ops::function::FnMut<(&'_1 [u8; 8usize],), verifier::field::K> for verifier::wire::{verifier::wire::Reader<'a>}::words::{closure}<'a>}::call_mut]:
-    Source: 'crates/verifier/src/wire.rs', lines 186:21-186:56 -/
-def
-  wire.Reader.words.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayU88K.call_mut
-  (c : wire.Reader.words.closure) (tupled_args : Array Std.U8 8#usize) :
-  RustM (field.K × wire.Reader.words.closure)
-  := do
-  let i ← core.num.U64.from_le_bytes tupled_args
-  ok (i, ())
-
-/-- [verifier::wire::{verifier::wire::Reader<'a>}::words::{impl core::ops::function::FnOnce<(&'_1 [u8; 8usize],), verifier::field::K> for verifier::wire::{verifier::wire::Reader<'a>}::words::{closure}<'a>}::call_once]:
-    Source: 'crates/verifier/src/wire.rs', lines 186:21-186:56 -/
-def
-  wire.Reader.words.closure.Insts.CoreOpsFunctionFnOnceTupleShared0ArrayU88K.call_once
-  (c : wire.Reader.words.closure) (a : Array Std.U8 8#usize) :
-  RustM field.K
-  := do
-  let (k, _) ←
-    wire.Reader.words.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayU88K.call_mut
-      () a
-  ok k
-
-/-- Trait implementation: [verifier::wire::{verifier::wire::Reader<'a>}::words::{impl core::ops::function::FnOnce<(&'_1 [u8; 8usize],), verifier::field::K> for verifier::wire::{verifier::wire::Reader<'a>}::words::{closure}<'a>}]
-    Source: 'crates/verifier/src/wire.rs', lines 186:21-186:56 -/
-@[reducible]
-def wire.Reader.words.closure.Insts.CoreOpsFunctionFnOnceTupleShared0ArrayU88K
-  : core.ops.function.FnOnce wire.Reader.words.closure (Array Std.U8 8#usize)
-  field.K := {
-  call_once :=
-    wire.Reader.words.closure.Insts.CoreOpsFunctionFnOnceTupleShared0ArrayU88K.call_once
-}
-
-/-- Trait implementation: [verifier::wire::{verifier::wire::Reader<'a>}::words::{impl core::ops::function::FnMut<(&'_1 [u8; 8usize],), verifier::field::K> for verifier::wire::{verifier::wire::Reader<'a>}::words::{closure}<'a>}]
-    Source: 'crates/verifier/src/wire.rs', lines 186:21-186:56 -/
-@[reducible]
-def wire.Reader.words.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayU88K :
-  core.ops.function.FnMut wire.Reader.words.closure (Array Std.U8 8#usize)
-  field.K := {
-  FnOnceInst :=
-    wire.Reader.words.closure.Insts.CoreOpsFunctionFnOnceTupleShared0ArrayU88K
-  call_mut :=
-    wire.Reader.words.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayU88K.call_mut
-}
-
-/-- [verifier::wire::{verifier::wire::Reader<'a>}::words]:
-    Source: 'crates/verifier/src/wire.rs', lines 179:4-189:5 -/
-def wire.Reader.words
-  (self : wire.Reader) (count : Std.Usize) :
-  RustM ((core.option.Option (alloc.vec.Vec field.K)) × wire.Reader)
-  := do
-  let o ← core.num.Usize.checked_mul count 8#usize
-  let cf ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o
-  match cf with
-  | core.ops.control_flow.ControlFlow.Continue val =>
-    let (o1, self1) ← wire.Reader.bytes self val
-    let cf1 ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o1
-    match cf1 with
-    | core.ops.control_flow.ControlFlow.Continue val1 =>
-      let (s, _) ← core.slice.Slice.as_chunks 8#usize val1
-      let i ← core.slice.Slice.iter s
-      let m ←
-        core.iter.traits.iterator.Iterator.map.default
-          (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-          (Array Std.U8 8#usize))
-          wire.Reader.words.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayU88K
-          i ()
-      let v ←
-        core.iter.traits.iterator.Iterator.collect.default
-          (core.iter.adapters.map.Map.Insts.CoreIterTraitsIteratorIterator
-          (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
-          (Array Std.U8 8#usize))
-          wire.Reader.words.closure.Insts.CoreOpsFunctionFnMutTupleShared0ArrayU88K)
-          (alloc.vec.Vec.Insts.CoreIterTraitsCollectFromIterator field.K) m
-      ok (core.option.Option.Some v, self1)
-    | core.ops.control_flow.ControlFlow.Break residual =>
-      let o2 ←
-        core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionNever.from_residual
-          (alloc.vec.Vec field.K) residual
-      ok (o2, self1)
-  | core.ops.control_flow.ControlFlow.Break residual =>
-    let o1 ←
-      core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionNever.from_residual
-        (alloc.vec.Vec field.K) residual
     ok (o1, self)
 
 end verifier

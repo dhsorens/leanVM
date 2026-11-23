@@ -215,11 +215,6 @@ structure bus.BusResult where
   forms : alloc.vec.Vec (alloc.vec.Vec layout.Form)
   totals : alloc.vec.Vec field.E
 
-/-- [verifier::da::digest::{closure}]
-    Source: 'crates/verifier/src/da.rs', lines 39:25-42:5 -/
-@[reducible]
-def da.digest.closure := Unit
-
 /-- [verifier::field::{verifier::field::K}::inv::{closure}]
     Source: 'crates/verifier/src/field.rs', lines 70:17-75:9 -/
 @[reducible]
@@ -263,33 +258,6 @@ def keccak.instance_weights.closure.closure :=
     Source: 'crates/verifier/src/keccak.rs', lines 118:13-118:97 -/
 @[reducible]
 def keccak.instance_weights.closure := Array field.E 24#usize
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure#1}]
-    Source: 'crates/verifier/src/transcript.rs', lines 232:65-232:82 -/
-@[reducible]
-def transcript.Transcript.sumcheck_round_poly.closure_1 := Unit
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly::{closure}]
-    Source: 'crates/verifier/src/transcript.rs', lines 227:63-227:80 -/
-@[reducible]
-def transcript.Transcript.sumcheck_round_poly.closure := Unit
-
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{closure}]
-    Source: 'crates/verifier/src/transcript.rs', lines 173:63-173:76 -/
-@[reducible]
-def transcript.Transcript.grind_check.closure := Unit
-
-/-- [verifier::transcript::{verifier::transcript::Sponge}::sample::{closure}]
-    Source: 'crates/verifier/src/transcript.rs', lines 76:42-79:9 -/
-@[reducible]
-def transcript.Sponge.sample.closure := transcript.Sponge
-
-/-- [verifier::multilinear::Scaler]
-    Source: 'crates/verifier/src/multilinear.rs', lines 23:0-26:1 -/
-@[discriminant isize]
-inductive multilinear.Scaler where
-| Table : field.Scaled → multilinear.Scaler
-| Plain : field.E → multilinear.Scaler
 
 /-- [verifier::keccak::KeccakOpenings]
     Source: 'crates/verifier/src/keccak.rs', lines 233:0-236:1 -/
@@ -347,11 +315,6 @@ def layout.qkeccak_slot.closure := Std.Usize
 @[reducible]
 def layout.stacked_blocks.closure := core.ops.range.Range Std.Usize
 
-/-- [verifier::layout::stack::{closure}]
-    Source: 'crates/verifier/src/layout.rs', lines 551:53-551:77 -/
-@[reducible]
-def layout.stack.closure := Slice Std.Usize
-
 /-- [verifier::Summary]
     Source: 'crates/verifier/src/lib.rs', lines 180:0-189:1
     Visibility: public -/
@@ -362,10 +325,12 @@ structure Summary where
   bytecode_point : alloc.vec.Vec field.E
   keccak_scalars : core.ops.range.Range Std.Usize
 
-/-- [verifier::merkle::hash_leaf::{closure}]
-    Source: 'crates/verifier/src/merkle.rs', lines 14:39-14:61 -/
-@[reducible]
-def merkle.hash_leaf.closure := Unit
+/-- [verifier::multilinear::Scaler]
+    Source: 'crates/verifier/src/multilinear.rs', lines 23:0-26:1 -/
+@[discriminant isize]
+inductive multilinear.Scaler where
+| Table : field.Scaled → multilinear.Scaler
+| Plain : field.E → multilinear.Scaler
 
 /-- [verifier::multilinear::multilinear_eval::{closure}]
     Source: 'crates/verifier/src/multilinear.rs', lines 51:41-51:62 -/
@@ -397,6 +362,11 @@ def ring_switch.frobenius_8.closure := Unit
 @[reducible]
 def ring_switch.ring_target.closure := Slice field.E
 
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::grind_check::{closure}]
+    Source: 'crates/verifier/src/transcript.rs', lines 173:63-173:76 -/
+@[reducible]
+def transcript.Transcript.grind_check.closure := Unit
+
 /-- [verifier::ring_switch::ring_switch::{closure}]
     Source: 'crates/verifier/src/ring_switch.rs', lines 86:16-86:80 -/
 def ring_switch.ring_switch.closure :=
@@ -409,11 +379,6 @@ structure whir.WhirConfig where
   log_inv_rates : alloc.vec.Vec Std.Usize
   folds : alloc.vec.Vec Std.Usize
   queries : Slice Std.Usize
-
-/-- [verifier::whir::ext_row::{closure}]
-    Source: 'crates/verifier/src/whir.rs', lines 84:35-84:65 -/
-@[reducible]
-def whir.ext_row.closure := Unit
 
 /-- [verifier::whir::subspace_roots::{closure}]
     Source: 'crates/verifier/src/whir.rs', lines 104:47-104:60 -/
@@ -432,11 +397,6 @@ structure whir.Subspace where
 @[reducible]
 def whir.Subspace.new.closure := Unit
 
-/-- [verifier::whir::novel_eval::{closure}]
-    Source: 'crates/verifier/src/whir.rs', lines 161:46-161:61 -/
-@[reducible]
-def whir.novel_eval.closure := Unit
-
 /-- [verifier::whir::FoldRound]
     Source: 'crates/verifier/src/whir.rs', lines 166:0-169:1 -/
 structure whir.FoldRound where
@@ -447,10 +407,5 @@ structure whir.FoldRound where
     Source: 'crates/verifier/src/wire.rs', lines 162:0-162:28 -/
 @[reducible]
 def wire.Reader := Slice Std.U8
-
-/-- [verifier::wire::{verifier::wire::Reader<'a>}::words::{closure}]
-    Source: 'crates/verifier/src/wire.rs', lines 186:21-186:56 -/
-@[reducible]
-def wire.Reader.words.closure := Unit
 
 end verifier

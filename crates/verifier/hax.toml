@@ -60,6 +60,25 @@ opaque = [
   "crate::wire::read_phase",  # a return inside nested loops
   "crate::wire::write_phase",  # "no bottoms in the value"
   "crate::wire::_::from_bytes",  # a borrow loop Aeneas cannot end
+
+  # Translated by Aeneas, but they use a standard-library item that neither the hax Lean library
+  # nor CoreModelsExt models yet: modelling it takes the item off this list.
+  "crate::keccak::open",  # `iter_mut` in nested loops
+  "crate::layout::column_kappas",  # `Vec::extend`
+  "crate::layout::keccak_cell_lanes",  # an array's `into_iter` as an iterator
+  "crate::layout::stack",  # collecting into a `BTreeMap`
+  "crate::merkle::hash_leaf",  # `flat_map`
+  "crate::merkle::hash_pair",  # a closure over an array
+  "crate::transcript::_::sample",  # `Sponge::sample`: a closure whose `FnOnce` does not typecheck (the pattern takes `Transcript::sample` too)
+  "crate::da::digest",  # an array `map` with a fn item as its closure
+  "crate::transcript::_::sumcheck_round_poly",  # `concat`
+  "crate::whir::ext_row",  # `as_chunks`
+  "crate::whir::novel_eval",  # a `Vec`'s `into_iter` with its allocator
+  "crate::wire::_::to_bytes",  # `Vec::extend`
+  "crate::wire::write_u32",  # `Vec::extend`
+  "crate::wire::_::hash",  # `as_array`
+  "crate::wire::_::u32",  # `as_array`
+  "crate::wire::_::words",  # `as_chunks`
 ]
 exclude = [
   # `dyn Fn` claims and weights: Aeneas has no dynamic trait types, and an opaque item still

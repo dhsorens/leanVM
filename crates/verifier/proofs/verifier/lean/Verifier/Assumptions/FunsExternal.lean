@@ -95,6 +95,13 @@ axiom bytecode.is_valid_encoding_of_a_leanisa_program
     Visibility: public -/
 axiom da.membership_challenge : Array Std.U8 32#usize → RustM field.E
 
+/-- [verifier::da::digest]:
+    Source: 'crates/verifier/src/da.rs', lines 38:0-43:1
+    Visibility: public -/
+axiom da.digest
+  :
+  core.option.Option (Array Std.U8 32#usize) → RustM (Array Std.U8 32#usize)
+
 /-- [verifier::field::{impl core::fmt::Debug for verifier::field::K}::fmt]:
     Source: 'crates/verifier/src/field.rs', lines 55:22-55:27
     Visibility: public -/
@@ -135,13 +142,14 @@ axiom keccak.verify_layer
     → RustM ((core.result.Result keccak.Claim VerifierError) ×
     transcript.Transcript)
 
-/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::next_scalars]:
-    Source: 'crates/verifier/src/transcript.rs', lines 160:4-162:5
-    Visibility: public -/
-axiom transcript.Transcript.next_scalars
+/-- [verifier::keccak::open]:
+    Source: 'crates/verifier/src/keccak.rs', lines 205:0-229:1 -/
+axiom keccak.open
   :
-  transcript.Transcript → Std.Usize → RustM ((core.result.Result
-    (alloc.vec.Vec field.E) VerifierError) × transcript.Transcript)
+  transcript.Transcript → keccak.KeccakShape → keccak.Claim → Std.Usize
+    → Std.Usize → field.E → RustM ((core.result.Result ((alloc.vec.Vec
+    field.E) × (Array field.E 64#usize) × field.E) VerifierError) ×
+    transcript.Transcript)
 
 /-- [verifier::keccak::verify_keccak]:
     Source: 'crates/verifier/src/keccak.rs', lines 241:0-303:1 -/
@@ -200,6 +208,14 @@ axiom layout.flushes_deref : RustM layout.Flushes
     Source: 'crates/verifier/src/layout.rs', lines 293:0-313:1 -/
 axiom layout.flushes_jump : RustM layout.Flushes
 
+/-- [verifier::layout::keccak_cell_lanes]:
+    Source: 'crates/verifier/src/layout.rs', lines 323:0-336:1
+    Visibility: public -/
+axiom layout.keccak_cell_lanes
+  :
+  Bool → RustM (Array ((core.option.Option Std.Usize) × (core.option.Option
+    Std.Usize)) 13#usize)
+
 /-- [verifier::layout::flushes_keccak]:
     Source: 'crates/verifier/src/layout.rs', lines 356:0-394:1 -/
 axiom layout.flushes_keccak : RustM layout.Flushes
@@ -222,6 +238,20 @@ axiom layout.keccak_columns : RustM (alloc.vec.Vec alloc.string.String)
     Source: 'crates/verifier/src/layout.rs', lines 468:0-491:1
     Visibility: public -/
 axiom layout.tables : RustM (alloc.vec.Vec layout.Table)
+
+/-- [verifier::layout::column_kappas]:
+    Source: 'crates/verifier/src/layout.rs', lines 522:0-535:1 -/
+axiom layout.column_kappas
+  :
+  Slice layout.Table → Std.Usize → Std.Usize → Slice Std.Usize → RustM
+    (alloc.vec.Vec Std.Usize)
+
+/-- [verifier::layout::stack]:
+    Source: 'crates/verifier/src/layout.rs', lines 549:0-557:1 -/
+axiom layout.stack
+  :
+  Slice Std.Usize → RustM ((alloc.collections.btree.map.BTreeMap Std.Usize
+    Std.U64 alloc.alloc.Global) × Std.Usize)
 
 /-- [verifier::layout::build_layout]:
     Source: 'crates/verifier/src/layout.rs', lines 571:0-640:1
@@ -270,6 +300,15 @@ axiom verify_keccak_batch
   Array Std.U8 32#usize → Std.Usize → Std.Usize → Std.Usize →
     transcript.Proof → RustM (core.result.Result Unit VerifierError)
 
+/-- [verifier::merkle::hash_pair]:
+    Source: 'crates/verifier/src/merkle.rs', lines 6:0-11:1
+    Visibility: public -/
+axiom merkle.hash_pair : Slice Std.U8 → Slice Std.U8 → RustM hash.Digest
+
+/-- [verifier::merkle::hash_leaf]:
+    Source: 'crates/verifier/src/merkle.rs', lines 13:0-15:1 -/
+axiom merkle.hash_leaf : Slice field.K → RustM hash.Digest
+
 /-- [verifier::merkle::{impl core::fmt::Debug for verifier::merkle::MerklePath}::fmt]:
     Source: 'crates/verifier/src/merkle.rs', lines 18:16-18:21
     Visibility: public -/
@@ -315,6 +354,26 @@ axiom transcript.Sponge.Insts.CoreFmtDebug.fmt
   transcript.Sponge → core.fmt.Formatter → RustM ((core.result.Result Unit
     core.fmt.Error) × core.fmt.Formatter)
 
+/-- [verifier::transcript::{verifier::transcript::Sponge}::sample]:
+    Source: 'crates/verifier/src/transcript.rs', lines 75:4-80:5
+    Visibility: public -/
+axiom transcript.Sponge.sample
+  : transcript.Sponge → RustM (field.E × transcript.Sponge)
+
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sample]:
+    Source: 'crates/verifier/src/transcript.rs', lines 131:4-133:5
+    Visibility: public -/
+axiom transcript.Transcript.sample
+  : transcript.Transcript → RustM (field.E × transcript.Transcript)
+
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::next_scalars]:
+    Source: 'crates/verifier/src/transcript.rs', lines 160:4-162:5
+    Visibility: public -/
+axiom transcript.Transcript.next_scalars
+  :
+  transcript.Transcript → Std.Usize → RustM ((core.result.Result
+    (alloc.vec.Vec field.E) VerifierError) × transcript.Transcript)
+
 /-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::merkle]:
     Source: 'crates/verifier/src/transcript.rs', lines 183:4-212:5
     Visibility: public -/
@@ -322,6 +381,15 @@ axiom transcript.Transcript.merkle
   :
   transcript.Transcript → hash.Digest → Std.U64 → Slice Std.U64 →
     Std.Usize → RustM ((core.result.Result (alloc.vec.Vec (Slice field.K))
+    VerifierError) × transcript.Transcript)
+
+/-- [verifier::transcript::{verifier::transcript::Transcript<'a>}::sumcheck_round_poly]:
+    Source: 'crates/verifier/src/transcript.rs', lines 216:4-237:5
+    Visibility: public -/
+axiom transcript.Transcript.sumcheck_round_poly
+  :
+  transcript.Transcript → Std.Usize → field.E → core.option.Option
+    field.E → RustM ((core.result.Result (alloc.vec.Vec field.E)
     VerifierError) × transcript.Transcript)
 
 /-- [verifier::whir::whir_queries]:
@@ -338,10 +406,18 @@ axiom whir.derive_config
   Std.Usize → Std.Usize → RustM (core.result.Result whir.WhirConfig
     VerifierError)
 
+/-- [verifier::whir::ext_row]:
+    Source: 'crates/verifier/src/whir.rs', lines 83:0-85:1 -/
+axiom whir.ext_row : Slice field.K → RustM (alloc.vec.Vec field.E)
+
 /-- [verifier::whir::novel_basis]:
     Source: 'crates/verifier/src/whir.rs', lines 141:0-156:1 -/
 axiom whir.novel_basis
   : Slice field.K → Std.Usize → RustM (alloc.vec.Vec field.K)
+
+/-- [verifier::whir::novel_eval]:
+    Source: 'crates/verifier/src/whir.rs', lines 159:0-162:1 -/
+axiom whir.novel_eval : Slice field.E → Slice field.K → RustM field.E
 
 /-- [verifier::whir::induced_weight]:
     Source: 'crates/verifier/src/whir.rs', lines 190:0-203:1 -/
@@ -350,12 +426,10 @@ axiom whir.induced_weight
   Std.Usize → Slice Std.U64 → Slice field.E → Slice field.E → RustM
     (core.result.Result field.E VerifierError)
 
-/-- [verifier::wire::write_phase]:
-    Source: 'crates/verifier/src/wire.rs', lines 63:0-98:1 -/
-axiom wire.write_phase
-  :
-  alloc.vec.Vec Std.U8 → Slice merkle.MerklePath → RustM (alloc.vec.Vec
-    Std.U8)
+/-- [verifier::wire::{verifier::transcript::Proof}::to_bytes]:
+    Source: 'crates/verifier/src/wire.rs', lines 31:4-44:5
+    Visibility: public -/
+axiom wire.Proof.to_bytes : transcript.Proof → RustM (alloc.vec.Vec Std.U8)
 
 /-- [verifier::wire::{verifier::transcript::Proof}::from_bytes]:
     Source: 'crates/verifier/src/wire.rs', lines 47:4-58:5
@@ -363,11 +437,42 @@ axiom wire.write_phase
 axiom wire.Proof.from_bytes
   : Slice Std.U8 → RustM (core.option.Option transcript.Proof)
 
+/-- [verifier::wire::write_phase]:
+    Source: 'crates/verifier/src/wire.rs', lines 63:0-98:1 -/
+axiom wire.write_phase
+  :
+  alloc.vec.Vec Std.U8 → Slice merkle.MerklePath → RustM (alloc.vec.Vec
+    Std.U8)
+
 /-- [verifier::wire::read_phase]:
     Source: 'crates/verifier/src/wire.rs', lines 102:0-155:1 -/
 axiom wire.read_phase
   :
   wire.Reader → RustM ((core.option.Option (alloc.vec.Vec merkle.MerklePath))
     × wire.Reader)
+
+/-- [verifier::wire::write_u32]:
+    Source: 'crates/verifier/src/wire.rs', lines 157:0-159:1 -/
+axiom wire.write_u32
+  : alloc.vec.Vec Std.U8 → Std.Usize → RustM (alloc.vec.Vec Std.U8)
+
+/-- [verifier::wire::{verifier::wire::Reader<'a>}::u32]:
+    Source: 'crates/verifier/src/wire.rs', lines 171:4-173:5 -/
+axiom wire.Reader.u32
+  : wire.Reader → RustM ((core.option.Option Std.U32) × wire.Reader)
+
+/-- [verifier::wire::{verifier::wire::Reader<'a>}::hash]:
+    Source: 'crates/verifier/src/wire.rs', lines 175:4-177:5 -/
+axiom wire.Reader.hash
+  :
+  wire.Reader → RustM ((core.option.Option (Array Std.U8 32#usize)) ×
+    wire.Reader)
+
+/-- [verifier::wire::{verifier::wire::Reader<'a>}::words]:
+    Source: 'crates/verifier/src/wire.rs', lines 179:4-189:5 -/
+axiom wire.Reader.words
+  :
+  wire.Reader → Std.Usize → RustM ((core.option.Option (alloc.vec.Vec
+    field.K)) × wire.Reader)
 
 end verifier
