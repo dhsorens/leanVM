@@ -1,136 +1,182 @@
-//! Two commitment branches over the same cell digests.
-//!
-//! A row digest hashes its first `k/c` cell digests, covering the systematic
-//! payload. A Merkle tree over these digests gives `root_row`.
-//! A second tree has all cell digests as leaves, in column-major order; its
-//! intermediate column roots authenticate samples, and its root is `root_col`.
-//! The final commitment is `H(root_row, root_col)`.
+use keccak256::{Hash, OUT_LEN, hash, hash_many, hash_pair};
 
-use fiat_shamir::merkle::{Hash, hash_pair};
-use primitives::hash::{OUT_LEN, hash, hash_many};
+use crate::encode::encode_rows;
+use crate::{Blob, CELL_SYMBOLS, CELLS_PER_ROW, CODEWORD_SYMBOLS, Codeword, DA_MAX_ROWS, Symbol};
 
-use crate::{CELL_SYMBOLS, CELLS_PER_ROW, CODEWORD_SYMBOLS, PAYLOAD_CELLS, encode_rows, row_count};
+/// Nodes in one blob's flat Merkle tree.
+const BLOB_MERKLE_NODES: usize = 2 * CELLS_PER_ROW - 1;
 
-/// What the builder publishes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DaCommitment {
-    /// `H(root_row, root_col)`, binding the matrix including its zero padding.
-    pub root: Hash,
-    pub root_row: Hash,
-    pub root_col: Hash,
+/// Length of a Merkle path to authenticate a cell.
+pub const MERKLE_PATH_LEN: usize = (CELLS_PER_ROW.ilog2() + DA_MAX_ROWS.ilog2()) as usize;
+
+/// The encoded blobs and their Merkle trees: what a builder keeps to answer samples and to
+/// aggregate the blobs with leanVM.
+pub struct BlobMatrix {
+    /// One codeword per blob, end to end; the zero padding rows are not stored.
+    codewords: Vec<Symbol>,
+    /// Each blob's flat Merkle tree: its cell digests, then each level, its root last.
+    blob_merkle_nodes: Vec<Hash>,
+    /// The flat Merkle tree over the blob roots, padded to [`DA_MAX_ROWS`], its root last.
+    root_merkle_nodes: Vec<Hash>,
 }
 
-/// What the builder keeps, to answer samples and to feed the proof.
-pub struct DaWitness {
-    /// `n_rows · m` symbols, row-major. Padding rows are zero and not stored.
-    pub codewords: Vec<u64>,
-    /// `n_rows · ℓ` cell digests, row-major.
-    pub cell_digests: Vec<Hash>,
-    /// The flat tree over the column-major cell digests; see the module docs.
-    pub column_tree: Vec<Hash>,
-    /// The flat tree over the `n_padded` row digests.
-    pub row_tree: Vec<Hash>,
-}
+impl BlobMatrix {
+    /// Encode the blobs and commit to them.
+    ///
+    /// # Errors
+    ///
+    /// If there are not 1 to [`DA_MAX_ROWS`] blobs.
+    #[tracing::instrument(name = "Commit", skip_all)]
+    pub fn build(blobs: &[Blob]) -> Result<Self, BlobCountError> {
+        if !(1..=DA_MAX_ROWS).contains(&blobs.len()) {
+            return Err(BlobCountError { blobs: blobs.len() });
+        }
+        let codewords = tracing::info_span!("Encoding").in_scope(|| encode_rows(blobs));
+        let blob_merkle_nodes = blob_merkle_nodes(codewords.as_chunks().0);
+        let mut blob_roots: Vec<Hash> = blob_merkle_nodes
+            .as_chunks::<BLOB_MERKLE_NODES>()
+            .0
+            .iter()
+            .map(|tree| tree[BLOB_MERKLE_NODES - 1])
+            .collect();
+        blob_roots.resize(DA_MAX_ROWS, root_of_padding_blob());
+        let root_merkle_nodes = merkle_nodes_from_leaves(blob_roots);
+        Ok(Self {
+            codewords,
+            blob_merkle_nodes,
+            root_merkle_nodes,
+        })
+    }
 
-impl DaWitness {
-    /// The `ℓ` column roots `C_j`, the level at height `log n_padded`.
-    pub fn column_roots(&self) -> &[Hash] {
-        let (n_pad, cells) = (
-            row_count(self.codewords.len(), CODEWORD_SYMBOLS).next_power_of_two(),
-            CELLS_PER_ROW,
-        );
-        let offset = 2 * n_pad * cells - 2 * cells;
-        &self.column_tree[offset..offset + cells]
+    /// The number of blobs, without padding.
+    pub fn n_blobs(&self) -> usize {
+        self.codewords.len() / CODEWORD_SYMBOLS
+    }
+
+    /// Blob `blob_idx`, encoded (`None` out of range). The encoding is systematic: the first
+    /// `BLOB_SYMBOLS` symbols are the blob, and any `BLOB_SYMBOLS` of them recover it.
+    pub fn row(&self, blob_idx: usize) -> Option<&Codeword> {
+        self.codewords.as_chunks().0.get(blob_idx)
+    }
+
+    /// Cell `col_idx` of every blob (`None` out of range).
+    pub fn column(&self, col_idx: usize) -> Option<impl Iterator<Item = &[Symbol; CELL_SYMBOLS]>> {
+        (col_idx < CELLS_PER_ROW).then(|| (0..self.n_blobs()).filter_map(move |blob_idx| self.cell(blob_idx, col_idx)))
+    }
+
+    /// Cell `col_idx` of blob `blob_idx` (`None` out of range).
+    pub fn cell(&self, blob_idx: usize, col_idx: usize) -> Option<&[Symbol; CELL_SYMBOLS]> {
+        self.row(blob_idx)?.as_chunks().0.get(col_idx)
+    }
+
+    /// The commitment: the root of the tree over the blob roots, hashed with the blob count.
+    pub fn commitment(&self) -> Hash {
+        mix_in_count(&self.root_merkle_nodes[2 * DA_MAX_ROWS - 2], self.n_blobs())
+    }
+
+    /// The Merkle path of cell `col_idx` of blob `blob_idx`, which [`verify_cell`] checks (`None` out
+    /// of range).
+    pub fn merkle_path_for_cell(&self, blob_idx: usize, col_idx: usize) -> Option<[Hash; MERKLE_PATH_LEN]> {
+        (blob_idx < self.n_blobs() && col_idx < CELLS_PER_ROW).then(|| {
+            let blob_nodes = &self.blob_merkle_nodes.as_chunks::<BLOB_MERKLE_NODES>().0[blob_idx];
+            let mut path = siblings(blob_nodes, col_idx).chain(siblings(&self.root_merkle_nodes, blob_idx));
+            std::array::from_fn(|_| path.next().expect("a path has MERKLE_PATH_LEN siblings"))
+        })
     }
 }
 
-/// Commit to payload rows of little-endian 64-bit symbols and their systematic encoding.
-#[tracing::instrument(name = "Commit", skip_all)]
-pub fn commit(rows: &[u64]) -> (DaCommitment, DaWitness) {
-    let codewords = encode_rows(rows);
-    commit_codewords(codewords)
+/// The siblings of `leaf` in a flat tree, from the leaves up.
+fn siblings(tree: &[Hash], mut leaf: usize) -> impl Iterator<Item = Hash> {
+    let (mut base, mut width) = (0, tree.len().div_ceil(2));
+    std::iter::from_fn(move || {
+        (width > 1).then(|| {
+            let sibling = tree[base + (leaf ^ 1)];
+            (base, width, leaf) = (base + width, width / 2, leaf / 2);
+            sibling
+        })
+    })
 }
 
-/// [`commit`] over rows that are already encoded.
-pub fn commit_codewords(codewords: Vec<u64>) -> (DaCommitment, DaWitness) {
-    let n_rows = row_count(codewords.len(), CODEWORD_SYMBOLS);
-    let (cells, n_pad, t) = (CELLS_PER_ROW, n_rows.next_power_of_two(), PAYLOAD_CELLS);
-    let cell_digests = hash_cells(&codewords);
-    let (padding_cell, padding_row) = padding_digests();
-
-    // Row branch: hash each payload's cell digests.
-    let mut prefixes = vec![Hash::default(); n_rows * t];
-    parallel::chunks_mut(&mut prefixes, t, |i, prefix| {
-        prefix.copy_from_slice(&cell_digests[i * cells..i * cells + t]);
-    });
-    let mut row_digests = vec![padding_row; n_pad];
-    hash_many(
-        prefixes.as_flattened(),
-        t * OUT_LEN,
-        row_digests[..n_rows].as_flattened_mut(),
-    );
-    drop(prefixes);
-    let row_tree = tree_from_leaves(row_digests);
-
-    // Column branch: the same digests, column-major, one tree carrying both levels.
-    let mut column_major = vec![Hash::default(); cells * n_pad];
-    parallel::chunks_mut(&mut column_major, n_pad, |j, column| {
-        for (i, slot) in column.iter_mut().enumerate() {
-            *slot = if i < n_rows {
-                cell_digests[i * cells + j]
-            } else {
-                padding_cell
-            };
-        }
-    });
-    let column_tree = tree_from_leaves(column_major);
-
-    let (root_row, root_col) = (*row_tree.last().unwrap(), *column_tree.last().unwrap());
-    let commitment = DaCommitment {
-        root: hash_pair(&root_row, &root_col),
-        root_row,
-        root_col,
-    };
-    let witness = DaWitness {
-        codewords,
-        cell_digests,
-        column_tree,
-        row_tree,
-    };
-    (commitment, witness)
+/// Whether `path` proves `cell` is cell `col_idx` of blob `blob_idx` under the commitment `root` to `n_blobs` blobs.
+pub fn verify_cell(
+    root: &Hash,
+    n_blobs: usize,
+    blob_idx: usize,
+    col_idx: usize,
+    cell: &[Symbol; CELL_SYMBOLS],
+    path: &[Hash; MERKLE_PATH_LEN],
+) -> bool {
+    if n_blobs > DA_MAX_ROWS || blob_idx >= n_blobs || col_idx >= CELLS_PER_ROW {
+        return false;
+    }
+    let mut position = CELLS_PER_ROW * blob_idx + col_idx;
+    let mut node = hash(&as_bytes(cell));
+    for sibling in path {
+        node = if position.is_multiple_of(2) {
+            hash_pair(&node, sibling)
+        } else {
+            hash_pair(sibling, &node)
+        };
+        position /= 2;
+    }
+    mix_in_count(&node, n_blobs) == *root
 }
 
-/// Shape-dependent padding digests: the zero cell and its repeated digest for a row.
-pub fn padding_digests() -> (Hash, Hash) {
-    let cell = hash(&[0u8; CELL_SYMBOLS * size_of::<u64>()]);
-    (cell, hash([cell; PAYLOAD_CELLS].as_flattened()))
+/// `H(tree_root ‖ n_blobs)`, the count a 32-byte little-endian word.
+fn mix_in_count(tree_root: &Hash, n_blobs: usize) -> Hash {
+    let mut count = [0; OUT_LEN];
+    count[0] = n_blobs as u8;
+    hash_pair(tree_root, &count)
 }
 
-/// `e_{i,j} = H(W_{i,j})` for every cell of every real row, row-major.
-#[tracing::instrument(name = "Hashing cells", skip_all)]
-fn hash_cells(codewords: &[u64]) -> Vec<Hash> {
-    let (cells, m) = (CELLS_PER_ROW, CODEWORD_SYMBOLS);
-    let n_rows = codewords.len() / m;
-    let mut digests = vec![Hash::default(); n_rows * cells];
-    parallel::chunks_mut(&mut digests, cells, |i, row| {
+/// The number of blobs is not 1 to [`DA_MAX_ROWS`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlobCountError {
+    /// The number of blobs given.
+    pub blobs: usize,
+}
+
+impl std::fmt::Display for BlobCountError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} blobs: expected 1 to {DA_MAX_ROWS}", self.blobs)
+    }
+}
+
+impl std::error::Error for BlobCountError {}
+
+/// The root of a padding blob, the zero codeword.
+pub fn root_of_padding_blob() -> Hash {
+    blob_merkle_nodes(&[[0; CODEWORD_SYMBOLS]])[BLOB_MERKLE_NODES - 1]
+}
+
+/// Each blob's flat Merkle tree, its leaves the cell digests.
+#[tracing::instrument(name = "Hashing blobs", skip_all)]
+fn blob_merkle_nodes(codewords: &[Codeword]) -> Vec<Hash> {
+    let mut trees = vec![Hash::default(); codewords.len() * BLOB_MERKLE_NODES];
+    for (codeword, tree) in codewords.iter().zip(trees.chunks_mut(BLOB_MERKLE_NODES)) {
         hash_many(
-            as_bytes(&codewords[i * m..(i + 1) * m]),
-            CELL_SYMBOLS * size_of::<u64>(),
-            row.as_flattened_mut(),
+            &as_bytes(codeword),
+            CELL_SYMBOLS * size_of::<Symbol>(),
+            tree[..CELLS_PER_ROW].as_flattened_mut(),
         );
-    });
-    digests
+        fill_levels(tree);
+    }
+    trees
 }
 
-/// The flat Merkle tree over leaves that are already digests: `tree[..n]` is the
-/// leaves, then each level in turn, the root last. Unlike [`pcs::merkle`] the
-/// leaves are not re-hashed, since a cell digest is already the leaf.
-fn tree_from_leaves(mut tree: Vec<Hash>) -> Vec<Hash> {
-    let n = tree.len();
+/// The flat Merkle tree over `leaves`.
+fn merkle_nodes_from_leaves(mut leaves: Vec<Hash>) -> Vec<Hash> {
+    let n = leaves.len();
     assert!(n.is_power_of_two(), "leaf count must be a power of two");
-    tree.resize(2 * n - 1, Hash::default());
+    leaves.resize(2 * n - 1, Hash::default());
+    fill_levels(&mut leaves);
+    leaves
+}
 
-    let (mut base, mut width) = (0, n);
+/// Fills each level of a flat tree from its leaves, the first half, up to its root, last. Unlike a commitment's tree,
+/// the leaves are digests already and are not hashed again.
+fn fill_levels(tree: &mut [Hash]) {
+    let (mut base, mut width) = (0, tree.len().div_ceil(2));
     while width > 1 {
         let (read, write) = tree.split_at_mut(base + width);
         hash_many(
@@ -141,13 +187,11 @@ fn tree_from_leaves(mut tree: Vec<Hash>) -> Vec<Hash> {
         base += width;
         width /= 2;
     }
-    tree
 }
 
-fn as_bytes(data: &[u64]) -> &[u8] {
-    const { assert!(cfg!(target_endian = "little"), "digests use little-endian symbols") };
-    // SAFETY: u64 has no padding; the endian check fixes the byte representation.
-    unsafe { core::slice::from_raw_parts(data.as_ptr().cast::<u8>(), size_of_val(data)) }
+/// Symbols as the bytes a digest takes: each little-endian.
+fn as_bytes(data: &[Symbol]) -> Vec<u8> {
+    data.iter().flat_map(|symbol| symbol.to_le_bytes()).collect()
 }
 
 #[cfg(test)]
@@ -156,68 +200,109 @@ mod tests {
     use crate::BLOB_SYMBOLS;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
-    fn payload(n_rows: usize, seed: u64) -> Vec<u64> {
+    fn build(blobs: &[Symbol]) -> BlobMatrix {
+        BlobMatrix::build(blobs.as_chunks().0).unwrap()
+    }
+
+    fn payload(n_rows: usize, seed: u64) -> Vec<Symbol> {
         let mut rng = StdRng::seed_from_u64(seed);
         (0..n_rows * BLOB_SYMBOLS).map(|_| rng.random()).collect()
     }
 
-    /// `column_roots` indexes into the flat tree by an offset derived from the
-    /// shape, which is the easiest thing here to get wrong by a level. Each one has
-    /// to be the root of its own column's subtree, rebuilt independently.
+    /// The commitment to fixed blobs, against a value computed once: every other test checks the encoder against
+    /// itself, and the guest's tables come from the same NTT.
     #[test]
-    fn column_roots_are_their_own_subtrees() {
-        let n_rows = 5usize;
-        let (_, witness) = commit(&payload(n_rows, 1));
-        let (n_pad, cells) = (n_rows.next_power_of_two(), CELLS_PER_ROW);
-        let padding_cell = hash(&[0u8; CELL_SYMBOLS * size_of::<u64>()]);
-
-        for (j, &got) in witness.column_roots().iter().enumerate() {
-            let column: Vec<Hash> = (0..n_pad)
-                .map(|i| {
-                    if i < n_rows {
-                        witness.cell_digests[i * cells + j]
-                    } else {
-                        padding_cell
-                    }
-                })
-                .collect();
-            assert_eq!(got, *tree_from_leaves(column).last().unwrap(), "column {j}");
-        }
+    fn known_answer() {
+        let blobs: Vec<Symbol> = (0..3 * BLOB_SYMBOLS as u128)
+            .map(|i| 0x9E37_79B9_7F4A_7C15_F39C_C060_5CED_C835u128.wrapping_mul(i + 1))
+            .collect();
+        let root: String = build(&blobs).commitment().iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(root, "ffd0a16698606ff2ce06149af0eb9fbcf06166abb7ffd23ba50b2b618ed231fd");
     }
 
-    /// Both branches have to be binding, and independently so: a change inside the
-    /// first half must move `root_row`, and a change in the second half must
-    /// still move `root_col` even though no row digest covers it.
+    /// Each blob root is the root over its cells, and the commitment the root over the blob roots,
+    /// padded to `DA_MAX_ROWS` with the zero codeword's, then hashed with the blob count.
     #[test]
-    fn both_branches_bind() {
-        let n_rows = 3usize;
-        let codewords = crate::encode_rows(&payload(n_rows, 2));
-        let (base, _) = commit_codewords(codewords.clone());
+    fn commitment_is_the_tree_of_blob_trees() {
+        fn root(mut level: Vec<Hash>) -> Hash {
+            while level.len() > 1 {
+                level = level.chunks(2).map(|pair| hash_pair(&pair[0], &pair[1])).collect();
+            }
+            level[0]
+        }
+        let n_rows = 5usize;
+        let blobs = payload(n_rows, 1);
+        let matrix = build(&blobs);
+        let codewords: Vec<Codeword> = (0..n_rows).map(|i| *matrix.row(i).unwrap()).collect();
+        let trees = blob_merkle_nodes(&codewords);
+        let zero = vec![0; CODEWORD_SYMBOLS];
 
-        for &position in &[0usize, BLOB_SYMBOLS - 1, BLOB_SYMBOLS, CODEWORD_SYMBOLS - 1] {
-            let mut corrupted = codewords.clone();
-            corrupted[position] ^= 1;
-            let (moved, _) = commit_codewords(corrupted);
-            assert_ne!(moved.root, base.root, "root ignored a flip at {position}");
-            assert_ne!(moved.root_col, base.root_col, "root_col ignored a flip at {position}");
-            if position < BLOB_SYMBOLS {
-                assert_ne!(moved.root_row, base.root_row, "root_row ignored a payload flip");
+        let mut blob_roots = Vec::new();
+        for i in 0..DA_MAX_ROWS {
+            let blob = codewords.get(i).map_or(&zero[..], |codeword| &codeword[..]);
+            let cells: Vec<Hash> = blob.chunks(CELL_SYMBOLS).map(|cell| hash(&as_bytes(cell))).collect();
+            blob_roots.push(root(cells.clone()));
+            if let Some(tree) = trees.as_chunks::<BLOB_MERKLE_NODES>().0.get(i) {
+                assert_eq!(tree[..CELLS_PER_ROW], cells, "blob {i}'s leaves");
+                assert_eq!(tree[BLOB_MERKLE_NODES - 1], blob_roots[i], "blob {i}'s root");
             }
         }
+        for (i, row) in codewords.iter().enumerate() {
+            assert_eq!(
+                &row[..BLOB_SYMBOLS],
+                &blobs[i * BLOB_SYMBOLS..][..BLOB_SYMBOLS],
+                "the encoding is systematic"
+            );
+        }
+        assert!(matrix.row(n_rows).is_none());
+        for j in [0, CELLS_PER_ROW - 1] {
+            let column: Vec<&[Symbol]> = matrix.column(j).unwrap().map(|cell| &cell[..]).collect();
+            let cells: Vec<&[Symbol]> = codewords
+                .iter()
+                .map(|row| &row[j * CELL_SYMBOLS..(j + 1) * CELL_SYMBOLS])
+                .collect();
+            assert_eq!(column, cells);
+        }
+        assert!(matrix.column(CELLS_PER_ROW).is_none());
+        assert_eq!(matrix.commitment(), mix_in_count(&root(blob_roots), n_rows));
     }
 
-    /// Padding rows are zero codewords sharing one cell digest. A payload whose
-    /// real rows are unchanged must commit identically whether or not the row count
-    /// happens to be a power of two, up to the padding the shape declares.
+    /// Encoding commutes with XOR of payloads.
     #[test]
-    fn padding_rows_are_the_zero_codeword() {
-        let n_rows = 3usize;
-        let rows = payload(n_rows, 3);
+    fn encoding_is_linear() {
+        let (a, b) = (payload(2, 1), payload(2, 7));
+        let sum: Vec<Symbol> = a.iter().zip(&b).map(|(&x, &y)| x ^ y).collect();
+        let row = |blobs: &[Symbol], i| *build(blobs).row(i).unwrap();
+        for i in 0..2 {
+            let (ra, rb, rs) = (row(&a, i), row(&b, i), row(&sum, i));
+            assert!(ra.iter().zip(&rb).zip(&rs).all(|((&x, &y), &z)| x ^ y == z));
+        }
+    }
+
+    /// A trailing zero blob changes the commitment.
+    #[test]
+    fn commitment_binds_the_blob_count() {
+        let rows = payload(3, 3);
         let mut extended = rows.clone();
         extended.extend(std::iter::repeat_n(0, BLOB_SYMBOLS));
+        assert_ne!(build(&rows).commitment(), build(&extended).commitment());
+    }
 
-        let (short, _) = commit(&rows);
-        let (long, _) = commit(&extended);
-        assert_eq!(short.root, long.root);
+    /// A path proves its cell, and not another cell, position or blob count.
+    #[test]
+    fn openings_verify() {
+        let matrix = build(&payload(3, 5));
+        let root = matrix.commitment();
+        for (i, j) in [(0, 0), (1, 77), (2, CELLS_PER_ROW - 1)] {
+            let cell = *matrix.cell(i, j).unwrap();
+            let path = matrix.merkle_path_for_cell(i, j).unwrap();
+            assert!(verify_cell(&root, 3, i, j, &cell, &path));
+            let mut other = cell;
+            other[0] ^= 1;
+            assert!(!verify_cell(&root, 3, i, j, &other, &path));
+            assert!(!verify_cell(&root, 3, i, (j + 1) % CELLS_PER_ROW, &cell, &path));
+            assert!(!verify_cell(&root, 4, i, j, &cell, &path));
+        }
+        assert!(matrix.merkle_path_for_cell(3, 0).is_none());
     }
 }

@@ -1,0 +1,20 @@
+[package]
+name = "lean_sphincs"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+default = ["std"]
+std = []
+
+[lints]
+workspace = true
+
+[dependencies]
+keccak256.workspace = true
+
+[[test]]
+name = "lean_sphincs"
+path = "tests/lean_sphincs/main.rs"
+required-features = ["std"]

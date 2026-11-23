@@ -1,12 +1,11 @@
 """Posts on a PR, as one comment, what a run comparing the PR with its base found.
 
-    pr_comment.py counts HEAD_SHA counts.json    (counts.yml's artifact `counts`)
-    pr_comment.py bench HEAD_SHA ab.json...      (bench.yml's artifacts `ab-*`)
+    pr_comment.py HEAD_SHA ab.json...      (bench.yml's artifacts `ab-*`)
 
 The comment is created, edited on every run, and deleted once nothing is shown. `--dry-run`
 prints it instead and calls nothing.
 
-counts-comment.yml and bench-comment.yml run this from the default branch with a write token,
+bench-comment.yml runs this from the default branch with a write token,
 on artifacts a PR's run wrote, a fork's included, so nothing in them is trusted: the PR number
 is taken from them only to ask GitHub whether that PR's head is HEAD_SHA, the commit the run
 measured, and every name and number is checked before it reaches the comment. Never run it from
@@ -58,6 +57,11 @@ def checked(pattern, value, what):
     raise Bad(f"not {what}: {value!r}")
 
 
+def unmentioned(text):
+    """`text` with a zero-width joiner after each `@`, so the posted comment notifies no one."""
+    return text.replace("@", "@\u200d")
+
+
 def number(value):
     if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
         return value
@@ -104,42 +108,6 @@ def bold(text, on):
     return f"**{text}**" if on else text
 
 
-def counts(doc, head):
-    """The counts that changed, in the order the PR reports them."""
-    base = checked(COMMIT, doc.get("base"), "a commit")
-    sides = doc.get("counts")
-    if not isinstance(sides, dict):
-        raise Bad("no counts")
-    old, new = metrics(sides.get("base")), metrics(sides.get("head"))
-    rows = []
-    for program, measure in [*new, *(key for key in old if key not in new)]:
-        a, b = old.get((program, measure)), new.get((program, measure))
-        if a == b:
-            continue
-        if a is None or b is None:
-            change = "new" if a is None else "removed"
-        else:
-            change = bold(signed(b - a) + (f" ({percent((b - a) / a)})" if a > 0 else ""), b > a)
-        cells = ["none" if v is None else f"{v:,}" for v in (a, b)]
-        rows.append(f"| {program} | {measure} | {cells[0]} | {cells[1]} | {change} |")
-    if not rows:
-        return ""
-    return "\n".join(
-        [
-            "### Exact counts",
-            "",
-            (
-                f"`cargo leanvm bench --cycles-only`, the counts that changed: {head} merged into its base, against the base {base}. "
-                "Any increase fails the Counts check."
-            ),
-            "",
-            "| program | measure | base | this PR | change |",
-            "|---|---|---:|---:|---:|",
-            *rows,
-        ]
-    )
-
-
 @dataclass(order=True)
 class Row:
     rank: int
@@ -183,7 +151,7 @@ def family(benchmark):
         "pcs": "PCS",
         "ntt": "PCS",
         "f64": "Field and transpose kernels",
-        "f192": "Field and transpose kernels",
+        "f128": "Field and transpose kernels",
         "transpose": "Field and transpose kernels",
     }.get(prefix, "Other benchmarks")
 
@@ -268,7 +236,7 @@ def bench(docs, head):
         raise Bad(f"not one base commit: {bases}")
     rows, rounds, stages = [], 0, {}
     for doc in docs:
-        testbed, cpu = checked(NAME, doc.get("testbed"), "a name"), checked(TEXT, doc.get("cpu"), "plain text")
+        testbed, cpu = checked(NAME, doc.get("testbed"), "a name"), unmentioned(checked(TEXT, doc.get("cpu"), "plain text"))
         runs = doc.get("runs")
         if not isinstance(runs, list) or not runs:
             raise Bad("no runs")
@@ -337,7 +305,6 @@ def post(repo, pr, head, marker, body):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("kind", choices=["counts", "bench"])
     parser.add_argument("head", help="the PR's head commit, the one the run measured")
     parser.add_argument("files", nargs="+")
     parser.add_argument("--dry-run", action="store_true", help="print the comment, call nothing")
@@ -351,14 +318,14 @@ def main():
             raise Bad(f"not a run's artifact: {path}")
         docs.append(doc)
     prs = {pr_number(doc.get("pr")) for doc in docs}
-    if len(prs) != 1 or (args.kind == "counts" and len(docs) != 1):
+    if len(prs) != 1:
         raise Bad(f"not one PR's run: {prs}")
     (pr,) = prs
-    body = counts(docs[0], head) if args.kind == "counts" else bench(docs, head)
+    body = bench(docs, head)
     if args.dry_run:
         print(body)
     else:
-        post(os.environ["REPO"], pr, head, f"<!-- leanvm-{args.kind} -->", body)
+        post(os.environ["REPO"], pr, head, "<!-- leanvm-bench -->", body)
 
 
 if __name__ == "__main__":

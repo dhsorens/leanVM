@@ -1,9 +1,13 @@
-import XmssSecurity.Proof.CappedExactFirstLaneSourceCoupling
-import XmssSecurity.Proof.CappedGlobalFirstLaneExperiment
-import XmssSecurity.Proof.CappedGlobalChainHighReduction
-import XmssSecurity.Proof.CappedChain.DirectQueryAccounting
-import XmssSecurity.Proof.StateLens
-import XmssSecurity.Proof.EagerTraceInvariant
+module
+
+public import XmssSecurity.Proof.CappedExactFirstLaneSourceCoupling
+public import XmssSecurity.Proof.CappedGlobalFirstLaneExperiment
+public import XmssSecurity.Proof.CappedGlobalChainHighReduction
+public import XmssSecurity.Proof.CappedChain.DirectQueryAccounting
+public import XmssSecurity.Proof.StateLens
+public import XmssSecurity.Proof.EagerTraceInvariant
+
+@[expose] public section
 
 open OracleComp OracleSpec ENNReal
 open OracleComp.ProgramLogic.Relational
@@ -34,6 +38,16 @@ abbrev attackerTrace (state : GlobalHighDirectTracedState) :
     attackerTrace (mk causal trace) = trace := rfl
 
 end GlobalHighDirectTracedState
+
+/-- `h` at a set and element that are definitionally `t` and `b`. The kernel checks `HEq s t` on the
+arguments of `support`; matching `a ∈ s` with `b ∈ t` directly, it unfolds the `Set.Mem`
+projection and with it the computation under `support`. -/
+theorem mem_of_heq_set {α β : Type u} {s : Set α} {t : Set β} {a : α} {b : β} (h : a ∈ s)
+    (hType : α = β) (hs : HEq s t) (hab : HEq a b) : b ∈ t := by
+  subst hType
+  cases hs
+  cases hab
+  exact h
 
 @[simp] def GlobalHighDirectTracedState.initial (causalState : GlobalCausalHashState) :
     GlobalHighDirectTracedState :=
@@ -177,7 +191,7 @@ theorem globalFirstLaneErase_exactTracedLift
       ((globalExactTracedLift keyView input sourceBase).run state)
       ((globalExactTracedLift keyView input targetBase).run state) := by
   unfold globalExactTracedLift
-  simp only [StateT.run_mk]
+  simp only [StateT.run_mk, ← bind_pure_comp]
   apply hbase.bind
   intro result
   exact GlobalFirstLaneErases.pure _
@@ -254,7 +268,7 @@ theorem globalFirstLaneErase_exactTracedVerifierImpl
         state) := by
   unfold globalFirstLaneExactTracedVerifierImpl
     globalHighDirectTracedVerifierImpl
-  simp only [StateT.run_mk]
+  simp only [StateT.run_mk, ← bind_pure_comp]
   apply (globalFirstLaneOracleErasure keyView edgeHigh input
     state.causalState).bind
   intro result
@@ -313,7 +327,7 @@ theorem globalFirstLaneEncodingHashQuery_validTrace
       simp [hcache, firstLaneValidEncodingActions] at hresult ⊢
       exact hresult ▸ rfl
   | none =>
-      simp only [if_pos]
+      simp only [ite_eq_left]
       dsimp only at hresult
       simp only [hcache] at hresult
       unfold globalFirstLaneFreshEncodingQuery at hresult
@@ -321,7 +335,7 @@ theorem globalFirstLaneEncodingHashQuery_validTrace
         FirstLaneOracleSimulation.eagerTraceImpl,
         FirstLaneOracleSimulation.eagerImpl,
         FirstLaneOracleSimulation.traceFragment,
-        QueryImpl.withTraceAppend_apply, WriterT.run_tell,
+        WriterT.run_tell,
         firstLaneValidEncodingActions] at hresult ⊢
       obtain ⟨output, _houtput, rfl⟩ := hresult
       rfl
@@ -361,7 +375,7 @@ theorem globalFirstLaneEncodingHashQuery_cacheGrowth
         FirstLaneOracleSimulation.eagerTraceImpl,
         FirstLaneOracleSimulation.eagerImpl,
         FirstLaneOracleSimulation.traceFragment,
-        QueryImpl.withTraceAppend_apply, WriterT.run_tell] at hresult
+        WriterT.run_tell] at hresult
       obtain ⟨output, _houtput, rfl⟩ := hresult
       exact ⟨CacheGrowthRepresented.cacheQuery state.cache
         (message, randomness) output hcache (by simp),
@@ -399,7 +413,7 @@ theorem globalFirstLaneLiftRevealProbe_encodingProjection
         FirstLaneOracleSimulation.probeQuery,
         FirstLaneOracleSimulation.revealQuery,
         RevealProbeOracleSimulation.eagerImpl,
-        QueryImpl.withTraceAppend_apply, WriterT.run_tell]
+        WriterT.run_tell]
 
 theorem globalFirstLaneLiftRevealProbe_encodingActions_eq_nil
     (table : GlobalChainValueIndex → Digest)
@@ -560,7 +574,7 @@ theorem globalFirstLaneAttackerHashQueryAtLeafIndex_trace
         FirstLaneOracleSimulation.eagerTraceImpl,
         FirstLaneOracleSimulation.eagerImpl,
         FirstLaneOracleSimulation.traceFragment,
-        QueryImpl.withTraceAppend_apply, WriterT.run_tell] at hresult
+        WriterT.run_tell] at hresult
       obtain ⟨output, _houtput, rfl⟩ := hresult
       simp [FirstLaneOracleSimulation.ActionTrace.encodingActions]
 
@@ -602,7 +616,7 @@ theorem globalFirstLaneAttackerHashQueryAtLeafIndex_cacheGrowth
         FirstLaneOracleSimulation.eagerTraceImpl,
         FirstLaneOracleSimulation.eagerImpl,
         FirstLaneOracleSimulation.traceFragment,
-        QueryImpl.withTraceAppend_apply, WriterT.run_tell] at hresult
+        WriterT.run_tell] at hresult
       obtain ⟨output, _houtput, rfl⟩ := hresult
       constructor
       · constructor
@@ -711,7 +725,7 @@ theorem globalFirstLaneSigningAttempt_summary
       by_cases hcache : state.cache
           (Concrete.CacheView.encodingInput keyView.secretKey.parameter
             request.leafIndex (request.message, randomness)) = none
-      · simp only [hcache, if_pos]
+      · simp only [hcache, ite_eq_left]
         change List.Sublist
           (CappedEncodingMonitor.validObservedSignLeafIndices
             [.sign request.leafIndex encodedHead.1.1]) [request.leafIndex]
@@ -1032,7 +1046,7 @@ theorem globalFirstLaneOracleTraceSublist_holds
         encodingTrace result
   | inr hashInput =>
       exact globalFirstLaneHashQuery_trace_sublist table keyView edgeHigh
-        hashInput state encodingTrace result hresult
+        hashInput state encodingTrace result (mem_of_heq_set hresult rfl HEq.rfl HEq.rfl)
 
 abbrev GlobalFirstLaneExactTracedOracleTraceSublist
     (table : GlobalChainValueIndex → Digest)
@@ -1188,9 +1202,9 @@ theorem globalFirstLaneVerifierHashExecution_cache_le
         (globalFirstLaneVerifierHashExecution keyView edgeHigh hashInput
           state)).run)) :
     state.cache ≤ result.1.2.cache := by
-  unfold globalFirstLaneVerifierHashExecution at hresult
-  exact globalFirstLaneHashQuery_cache_le table keyView edgeHigh hashInput state
-    result hresult
+  exact globalFirstLaneHashQuery_cache_le table keyView edgeHigh hashInput state result
+    (mem_of_heq_set hresult rfl (by unfold globalFirstLaneVerifierHashExecution; exact HEq.rfl)
+      HEq.rfl)
 
 theorem simulateQ_eagerTrace_state_cache_le
     {spec : OracleSpec ι} {State : Type}
@@ -1240,8 +1254,9 @@ theorem globalFirstLaneVerifierHashExecution_simulateQ_cache_le
   exact simulateQ_eagerTrace_state_cache_le table
     (globalFirstLaneVerifierHashExecution keyView edgeHigh)
       (fun state : GlobalCausalHashState => state.cache)
-      (globalFirstLaneVerifierHashExecution_cache_le table keyView edgeHigh)
-      computation initialState result hresult
+      (fun hashInput state result h => globalFirstLaneVerifierHashExecution_cache_le table keyView
+        edgeHigh hashInput state result (mem_of_heq_set h rfl HEq.rfl HEq.rfl))
+      computation initialState result (mem_of_heq_set hresult rfl HEq.rfl HEq.rfl)
 
 @[irreducible]
 noncomputable def concreteVerificationAfterDigest
@@ -1364,11 +1379,44 @@ theorem globalFirstLaneEncodingHash_support_decompose
               (Concrete.encodingPayload message randomness)) initialState)).run) ∧
       result = ((truncateHash queryHead.1.1, queryHead.1.2), queryHead.2) := by
   rw [concreteEncodingHash_eq_query] at hresult
-  exact simulateQ_eagerTrace_query_pure_support_decompose table
+  obtain ⟨queryHead, hquery, hresultEq⟩ := simulateQ_eagerTrace_query_pure_support_decompose table
     (globalFirstLaneVerifierHashExecution keyView edgeHigh)
       (tweakableHashInput keyView.publicKey.parameter (.encoding leafIndex)
         (Concrete.encodingPayload message randomness)) truncateHash
-      initialState result hresult
+      initialState result (mem_of_heq_set hresult rfl HEq.rfl HEq.rfl)
+  exact ⟨queryHead, mem_of_heq_set hquery rfl HEq.rfl HEq.rfl, hresultEq⟩
+
+/-- A run of `first >>= next` splits into a run of `first` and one of `next`. -/
+theorem simulateQ_eagerTrace_bind_support_decompose
+    {spec : OracleSpec ι} {State α β : Type}
+    (table : GlobalChainValueIndex → Digest)
+    (implRun : ∀ input : spec.Domain, State →
+      OracleComp GlobalFirstLaneWorld (spec.Range input × State))
+    (first : OracleComp spec α) (next : α → OracleComp spec β) (initialState : State)
+    (result : (β × State) × FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
+    (hresult : result ∈ support
+      ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
+        ((simulateQ (fun queryInput => StateT.mk (implRun queryInput))
+          (first >>= next)).run initialState)).run)) :
+    ∃ (head : (α × State) × FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex)
+      (tail : (β × State) × FirstLaneOracleSimulation.ActionTrace GlobalChainValueIndex),
+      head ∈ support
+        ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
+          ((simulateQ (fun queryInput => StateT.mk (implRun queryInput)) first).run
+            initialState)).run) ∧
+      tail ∈ support
+        ((simulateQ (FirstLaneOracleSimulation.eagerTraceImpl table)
+          ((simulateQ (fun queryInput => StateT.mk (implRun queryInput)) (next head.1.1)).run
+            head.1.2)).run) ∧
+      result = (tail.1, head.2 ++ tail.2) := by
+  rw [simulateQ_bind, StateT.run_bind, simulateQ_bind,
+    WriterT.run_bind', mem_support_bind_iff] at hresult
+  obtain ⟨head, hhead, htail⟩ := hresult
+  rw [support_map] at htail
+  obtain ⟨tail, htail, rfl⟩ := htail
+  refine ⟨head, tail, hhead, htail, ?_⟩
+  cases tail
+  rfl
 
 theorem globalFirstLaneVerifier_support_decompose_raw
     (table : GlobalChainValueIndex → Digest)
@@ -1404,19 +1452,14 @@ theorem globalFirstLaneVerifier_support_decompose_raw
   rw [globalFirstLaneVerifier_eq_hashExecution keyView edgeHigh forgery]
     at hresult
   rw [concreteVerify_eq_encodingHash_bind_afterDigest] at hresult
-  rw [simulateQ_bind, StateT.run_bind, simulateQ_bind,
-    WriterT.run_bind', mem_support_bind_iff] at hresult
-  obtain ⟨head, hhead, htail⟩ := hresult
-  rw [support_map] at htail
-  obtain ⟨tail, htail, rfl⟩ := htail
+  obtain ⟨head, tail, hhead, htail, rfl⟩ := simulateQ_eagerTrace_bind_support_decompose table
+    (globalFirstLaneVerifierHashExecution keyView edgeHigh) _ _ initialState result
+    (mem_of_heq_set hresult rfl HEq.rfl HEq.rfl)
   obtain ⟨queryHead, hquery, rfl⟩ :=
     globalFirstLaneEncodingHash_support_decompose table keyView edgeHigh
       forgery.leafIndex forgery.message forgery.signature.randomness initialState
-        head hhead
-  refine ⟨queryHead, tail, hquery, ?_, ?_⟩
-  · simpa using htail
-  · cases tail
-    rfl
+        head (mem_of_heq_set hhead rfl HEq.rfl HEq.rfl)
+  exact ⟨queryHead, tail, hquery, mem_of_heq_set htail rfl HEq.rfl HEq.rfl, rfl⟩
 
 theorem globalFirstLaneVerifier_support_decompose
     (table : GlobalChainValueIndex → Digest)
@@ -1462,15 +1505,18 @@ theorem globalFirstLaneVerifier_support_decompose
           (Concrete.encodingPayload forgery.message
             forgery.signature.randomness) = targetInput := by
     simp [targetInput, Concrete.CacheView.encodingInput, hparameter]
-  rw [hqueryInput] at hquery
-  unfold globalFirstLaneVerifierHashExecution at hquery
   have hleafIndex : encodingInputLeafIndex? keyView.secretKey.parameter targetInput =
       some forgery.leafIndex := by
     simp [targetInput]
-  rw [globalFirstLaneAttackerHashQueryFromHighRun_eq_some _ _ _ _
-    forgery.leafIndex hleafIndex] at hquery
-  refine ⟨queryHead, tail, ?_, htail, hresultEq⟩
-  · simpa [targetInput] using hquery
+  have hexecution : globalFirstLaneVerifierHashExecution keyView edgeHigh
+      (tweakableHashInput keyView.publicKey.parameter (.encoding forgery.leafIndex)
+        (Concrete.encodingPayload forgery.message forgery.signature.randomness)) initialState =
+      globalFirstLaneAttackerHashQueryAtLeafIndex keyView.secretKey targetInput initialState
+        forgery.leafIndex := by
+    rw [hqueryInput]
+    unfold globalFirstLaneVerifierHashExecution
+    exact globalFirstLaneAttackerHashQueryFromHighRun_eq_some _ _ _ _ forgery.leafIndex hleafIndex
+  exact ⟨queryHead, tail, mem_of_heq_set hquery rfl (by rw [hexecution]) HEq.rfl, htail, hresultEq⟩
 
 theorem globalFirstLaneVerifier_freshEncoding_mem_trace
     (table : GlobalChainValueIndex → Digest)
@@ -1649,7 +1695,7 @@ theorem globalFirstLaneUniformImpl_validSignLeafIndices_eq_nil
     FirstLaneOracleSimulation.eagerTraceImpl,
     FirstLaneOracleSimulation.eagerImpl,
     FirstLaneOracleSimulation.traceFragment,
-    QueryImpl.withTraceAppend_apply, WriterT.run_tell] at hhead
+    WriterT.run_tell] at hhead
   obtain ⟨output, _houtput, rfl⟩ := hhead
   simp only [simulateQ_pure, WriterT.run_pure', map_pure, support_pure,
     Set.mem_singleton_iff, Prod.map_apply, id_eq] at htail

@@ -1,7 +1,11 @@
-import XmssSecurity.Proof.HashInputLemmas
-import XmssSecurity.Proof.StatementLemmas
-import XmssSecurity.Proof.Execution
-import XmssSecurity.Proof.RandomOracle
+module
+
+public import XmssSecurity.Proof.HashInputLemmas
+public import XmssSecurity.Proof.StatementLemmas
+public import XmssSecurity.Proof.Execution
+public import XmssSecurity.Proof.RandomOracle
+
+@[expose] public section
 
 open OracleComp ENNReal
 
@@ -9,9 +13,9 @@ namespace XmssSecurity.Rom
 
 /-- A uniform 256-bit oracle output has any fixed 128-bit truncation with probability exactly `2^-128`. -/
 theorem uniform_truncate_probability (target : Digest) :
-    Pr[fun output : HashOutput => truncateHash output = target | $ᵗ HashOutput] =
+    Pr{let output ← $ᵗ HashOutput}[truncateHash output = target] =
       ((2 ^ digestBits : Nat) : ℝ≥0∞)⁻¹ := by
-  rw [probEvent_uniformSample]
+  rw [SampleableType.prEvent_uniformSample]
   change ((matchingOutputs target).card : ℝ≥0∞) /
       (Fintype.card HashOutput : ℝ≥0∞) = _
   rw [card_matchingOutputs, card_hashOutput, hashOutputBits_eq, Nat.pow_add,
@@ -31,13 +35,15 @@ theorem uniform_truncate_probability (target : Digest) :
 
 open OracleSpec
 
-noncomputable local instance : IsUniformSpec HashSpec :=
-  IsUniformSpec.ofFintypeInhabited _
+noncomputable local instance : UniformAnswerMeasure HashSpec :=
+  UniformAnswerMeasure.ofFiniteNonempty _
 
-/-- Each fresh query may select its own target digest without adding an index-set loss. -/
+/-- Each fresh query may select its own target digest without adding an index-set loss. The outputs
+are `HashOutput`s, not `HashSpec.Range input`: a witness read off another input's cache entry then
+checks without the kernel comparing the two inputs. -/
 def AdaptiveFreshDigestCollisionWith (initialCache finalCache : QueryCache HashSpec)
     (targetInput : HashInput → HashInput) : Prop :=
-  ∃ input output targetOutput,
+  ∃ (input : HashInput) (output targetOutput : HashOutput),
     finalCache input = some output ∧ initialCache input = none ∧
       initialCache (targetInput input) = some targetOutput ∧
       Concrete.CacheView.digestAt finalCache input =

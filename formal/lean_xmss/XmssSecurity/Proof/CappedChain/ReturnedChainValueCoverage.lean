@@ -1,4 +1,8 @@
-import XmssSecurity.Proof.CappedChain.ChainRevealFiltering
+module
+
+public import XmssSecurity.Proof.CappedChain.ChainRevealFiltering
+
+@[expose] public section
 
 open OracleComp OracleSpec
 
@@ -14,7 +18,7 @@ noncomputable def ReturnedChainValueCovered
     (cache : QueryCache HashSpec) (secretKey : SecretKey)
     (log : QueryLog SigningSpec) (chain : ChainIndex) :
     Set ChainValueIndex :=
-  fun index => index ∈ returnedChainValueIndexList cache secretKey log chain
+  {index | index ∈ returnedChainValueIndexList cache secretKey log chain}
 
 theorem returnedChainValueCovered_iff
     (cache : QueryCache HashSpec) (secretKey : SecretKey)

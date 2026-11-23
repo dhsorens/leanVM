@@ -1,38 +1,23 @@
 //! Proof transport and Fiat-Shamir.
 
 use crate::field::{E, K, ZERO};
-use crate::hash::{Digest, STATE_LANES, keccak_f, keccak_hash};
-use crate::merkle::{MerkleOpenings, MerklePath};
+use crate::hash::{Digest, STATE_LANES, keccak_f};
+use crate::merkle::MerklePath;
 use crate::multilinear::{log2_strict, poly_eval};
 use crate::{VerifierError, require};
 
-/// The scalar stream, and the Merkle openings.
+/// The scalar stream, and the Merkle openings: one phase per commitment opened, each query's path in the order the
+/// verifier samples them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Proof {
     pub stream: Vec<E>,
-    pub merkle_openings: MerkleOpenings,
-}
-
-impl Proof {
-    /// From the two encodings: the stream as 24-byte little-endian field elements, and the raw Merkle openings as they are.
-    pub fn load(stream: &[u8], merkle_openings: &[u8]) -> Result<Self, VerifierError> {
-        require(stream.len().is_multiple_of(24), VerifierError::StreamNotWholeElements)?;
-        Ok(Self {
-            stream: stream
-                .as_chunks::<24>()
-                .0
-                .iter()
-                .map(|data| E::from_bytes(data))
-                .collect::<Result<_, _>>()?,
-            merkle_openings: MerkleOpenings::Raw(merkle_openings.to_vec()),
-        })
-    }
+    pub merkle_openings: Vec<Vec<MerklePath>>,
 }
 
 const DS_OBSERVE: u64 = 1;
-const DS_POW_NONCE: u64 = 4;
-/// Scalars that wait to be absorbed: four, a scalar taking four rate lanes, three limbs and a tag.
-const RATE_SCALARS: usize = 4;
+pub(crate) const DS_POW_NONCE: u64 = 4;
+/// Scalars that wait to be absorbed: four, a scalar taking four rate lanes, its two limbs, a zero lane and a tag.
+pub const RATE_SCALARS: usize = 4;
 
 /// A duplex sponge over Keccak-f\[1600\], in overwrite mode. The rate is lanes 0..16 and the capacity lanes
 /// 16..25. A permutation writes waiting scalar `i` over lanes `4i..4i+4`, zeroes the rest of the rate and keeps the
@@ -42,6 +27,8 @@ pub struct Sponge {
     state: [u64; STATE_LANES],
     pending: [(E, u64); RATE_SCALARS],
     n_pending: usize,
+    /// The challenge a grind's permutation drew, which the next [`Self::sample`] returns.
+    ground: Option<E>,
 }
 
 impl Sponge {
@@ -57,26 +44,23 @@ impl Sponge {
             },
             pending: [(ZERO, 0); RATE_SCALARS],
             n_pending: 0,
+            ground: None,
         }
-    }
-
-    /// A protocol with no public input of its own, seeded from `label` alone.
-    pub fn from_label(label: &[u8]) -> Self {
-        Self::new(keccak_hash(label), Digest([0; 32]))
     }
 
     fn duplex(&mut self) {
         let mut input = self.state;
         input[..16].fill(0);
         for (i, &(value, tag)) in self.pending[..self.n_pending].iter().enumerate() {
-            input[4 * i..4 * i + 4].copy_from_slice(&[value.c0, value.c1, value.c2, tag]);
+            input[4 * i..4 * i + 4].copy_from_slice(&[value.c0, value.c1, 0, tag]);
         }
         keccak_f(&mut input);
         self.state = input;
         self.n_pending = 0;
     }
 
-    fn absorb(&mut self, value: E, tag: u64) {
+    pub(crate) fn absorb(&mut self, value: E, tag: u64) {
+        assert!(self.ground.is_none(), "a grind is followed by a challenge");
         if self.n_pending == RATE_SCALARS {
             self.duplex();
         }
@@ -89,18 +73,42 @@ impl Sponge {
     }
 
     pub fn sample(&mut self) -> E {
-        self.duplex();
-        E::new(self.state[0], self.state[1], self.state[2])
+        self.ground.take().unwrap_or_else(|| {
+            self.duplex();
+            E::new(self.state[0], self.state[1])
+        })
     }
+
+    /// Absorb a grinding nonce and permute: the output's first two lanes are the next challenge, kept for
+    /// [`Self::sample`], and its third lane is returned, the proof of work.
+    pub(crate) fn absorb_nonce(&mut self, nonce: E) -> u64 {
+        self.absorb(nonce, DS_POW_NONCE);
+        self.duplex();
+        self.ground = Some(E::new(self.state[0], self.state[1]));
+        self.state[2]
+    }
+}
+
+/// Round-by-round target (bits): every verifier message's error, after its grind, is at most `2^-SECURITY_BITS`.
+pub const SECURITY_BITS: u32 = 125;
+
+/// The grind before a verifier message whose round-by-round error is `numerator / |E|`, `|E| = 2^128`: the fewest
+/// bits that bring it to `2^-SECURITY_BITS`. A message of degree `d` in its challenges has numerator `d`.
+pub const fn grinding_bits(numerator: u128) -> u32 {
+    let log = if numerator <= 1 {
+        0
+    } else {
+        u128::BITS - (numerator - 1).leading_zeros()
+    };
+    log.saturating_sub(128 - SECURITY_BITS)
 }
 
 pub struct Transcript<'a> {
     proof: &'a Proof,
     sponge: Sponge,
     stream_offset: usize,  // in E field elements
-    opening_offset: usize, // in bytes, or in batches of the pruned form
+    opening_offset: usize, // in phases
     checked: bool,         // false for a replay, which walks the proof and checks none of it
-    paths: Vec<MerklePath>,
 }
 
 impl<'a> Transcript<'a> {
@@ -111,11 +119,11 @@ impl<'a> Transcript<'a> {
             stream_offset: 0,
             opening_offset: 0,
             checked,
-            paths: Vec::new(),
         }
     }
 
-    /// Whether the proof's checks run. Every one a replay skips is behind this, and nothing else is.
+    /// Whether the proof's checks run. Every one a replay skips is behind this, and nothing else is but
+    /// work only a check reads.
     pub fn checked(&self) -> bool {
         self.checked
     }
@@ -153,105 +161,83 @@ impl<'a> Transcript<'a> {
         (0..count).map(|_| self.next_scalar()).collect()
     }
 
-    /// The nonce is absorbed with its own tag, and the challenge drawn next, which nothing else uses, must have its low
-    /// `bits` bits zero. With no bits to grind the nonce must be zero.
+    /// The nonce is absorbed with its own tag, and the permutation that draws the next challenge must leave its third
+    /// lane with the low `bits` bits zero. A grind of zero bits is nothing: no nonce, no permutation.
     pub fn grind_check(&mut self, bits: u32) -> Result<(), VerifierError> {
+        if bits == 0 {
+            return Ok(());
+        }
         let nonce = self.next()?;
-        self.sponge.absorb(nonce, DS_POW_NONCE);
-        let challenge = self.sample();
+        let pow = self.sponge.absorb_nonce(nonce);
         if self.checked {
             let mask = 1u64.checked_shl(bits).map_or(u64::MAX, |bit| bit - 1);
-            let valid = if bits == 0 {
-                nonce == ZERO
-            } else {
-                challenge.c0 & mask == 0
-            };
-            require(valid, VerifierError::GrindingNonce)?;
+            require(pow & mask == 0, VerifierError::GrindingNonce)?;
         }
         Ok(())
     }
 
-    fn merkle_data(&mut self, data: &'a [u8], length: usize) -> Result<&'a [u8], VerifierError> {
-        let end = self.opening_offset + length;
-        require(end <= data.len(), VerifierError::MerkleOpeningMissing)?;
-        let chunk = &data[self.opening_offset..end];
-        self.opening_offset = end;
-        Ok(chunk)
-    }
-
-    /// The leaf images at `queries`, authenticated against `root`. `row_words` is what the pruned form stores of
-    /// each, the rest of the image being a zero prefix; the raw form carries whole images.
+    /// The leaf images at `queries`, authenticated against `root`.
     ///
-    /// Each query's own path is kept for [`Self::finish`], whichever form the proof came in.
+    /// The paths' positions and sizes must be the protocol's, which is reading the proof, as the stream's length is,
+    /// so a replay refuses paths that differ too.
     pub fn merkle(
         &mut self,
         root: Digest,
         block_length: u64,
         queries: &[u64],
-        row_words: usize,
         leaf_words: usize,
-    ) -> Result<Vec<Vec<K>>, VerifierError> {
+    ) -> Result<Vec<&'a [K]>, VerifierError> {
         let height = log2_strict(block_length)?;
-        let paths = match &self.proof.merkle_openings {
-            MerkleOpenings::Raw(data) => {
-                let mut paths = Vec::with_capacity(queries.len());
-                for &leaf_index in queries {
-                    let leaf = self.merkle_data(data, 8 * leaf_words)?;
-                    let mut siblings = Vec::with_capacity(height);
-                    for _ in 0..height {
-                        let sibling = self.merkle_data(data, 32)?;
-                        siblings.push(sibling.try_into().expect("32 bytes were read"));
-                    }
-                    let leaf = leaf.as_chunks().0.iter().map(|&word| K(u64::from_le_bytes(word)));
-                    let path = MerklePath {
-                        leaf_index,
-                        leaf: leaf.collect(),
-                        siblings,
-                    };
-                    if self.checked {
-                        require(path.root() == root, VerifierError::MerkleRootMismatch)?;
-                    }
-                    paths.push(path);
-                }
-                paths
-            }
-            MerkleOpenings::Pruned(batches) => {
-                let batch = batches
-                    .get(self.opening_offset)
-                    .ok_or(VerifierError::MerkleOpeningMissing)?;
-                self.opening_offset += 1;
-                let (batch_root, paths) = batch.expand(height, queries, row_words, leaf_words)?;
-                if self.checked {
-                    require(batch_root == root, VerifierError::MerkleRootMismatch)?;
-                }
-                paths
-            }
-        };
-        let rows = paths.iter().map(|path| path.leaf.clone()).collect();
-        self.paths.extend(paths);
-        Ok(rows)
+        let paths = self
+            .proof
+            .merkle_openings
+            .get(self.opening_offset)
+            .ok_or(VerifierError::MerkleOpeningMissing)?;
+        self.opening_offset += 1;
+        require(
+            paths
+                .iter()
+                .all(|path| path.leaf.len() == leaf_words && path.siblings.len() == height),
+            VerifierError::MerkleOpeningShape,
+        )?;
+        require(
+            paths.iter().map(|path| path.leaf_index).eq(queries.iter().copied()),
+            VerifierError::MerkleOpeningPosition,
+        )?;
+        require(
+            !self.checked || paths.iter().all(|path| path.root() == root),
+            VerifierError::MerkleRootMismatch,
+        )?;
+        Ok(paths.iter().map(|path| &path.leaf[..]).collect())
     }
 
-    /// returns q(X) := c0 + c1X + c2X^2 + ...
+    /// returns q(X) := c0 + c1X + c2X^2 + ..., after the round's grind: the round's error is the degree of the whole
+    /// round polynomial, eq factor included, over `|E|`.
     pub fn sumcheck_round_poly(
         &mut self,
         count: usize,
         claim: E,
         eq_factor: Option<E>,
     ) -> Result<Vec<E>, VerifierError> {
-        let Some(eq_factor) = eq_factor else {
+        let poly = match eq_factor {
             // `q(0) + q(1) == claim`. The transcript contains c0, c2, c3 ...
-            let constant = self.next_scalar()?;
-            let tail = self.next_scalars(count - 2)?;
-            return Ok([vec![constant, claim + E::sum(tail.iter().copied())], tail].concat());
+            None => {
+                let constant = self.next_scalar()?;
+                let tail = self.next_scalars(count - 2)?;
+                [vec![constant, claim + E::sum(tail.iter().copied())], tail].concat()
+            }
+            // `(1 + r) q(0) + r q(1) == claim`. The transcript contains c1, c2, c3 ... (r := eq_factor)
+            Some(eq_factor) => {
+                let tail = self.next_scalars(count - 1)?;
+                [vec![claim + eq_factor * E::sum(tail.iter().copied())], tail].concat()
+            }
         };
-        // `(1 + r) q(0) + r q(1) == claim`. The transcript contains c1, c2, c3 ... (r := eq_factor)
-        let tail = self.next_scalars(count - 1)?;
-        Ok([vec![claim + eq_factor * E::sum(tail.iter().copied())], tail].concat())
+        self.grind_check(grinding_bits((count - 1 + usize::from(eq_factor.is_some())) as u128))?;
+        Ok(poly)
     }
 
-    /// Nothing of the proof is left unread. Returns every query's path, in the order they were opened.
-    pub fn finish(self) -> Result<Vec<MerklePath>, VerifierError> {
+    /// Nothing of the proof is left unread.
+    pub fn finish(self) -> Result<(), VerifierError> {
         require(
             self.stream_offset == self.proof.stream.len(),
             VerifierError::StreamNotConsumed,
@@ -259,8 +245,7 @@ impl<'a> Transcript<'a> {
         require(
             self.opening_offset == self.proof.merkle_openings.len(),
             VerifierError::MerkleNotConsumed,
-        )?;
-        Ok(self.paths)
+        )
     }
 }
 

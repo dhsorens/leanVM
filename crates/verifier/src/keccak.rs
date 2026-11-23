@@ -4,29 +4,34 @@
 //! A claim is a weighted sum of the bits of one state per segment: the weight of bit `j` of instance `i` of pack `y`
 //! in segment `m` is `eq(point, (y, m)) * weights[j] * mu[i]`. A pack is sixteen consecutive steps.
 
-use crate::field::{E, ONE, ZERO};
+use std::ops::{Add, AddAssign};
+
+use crate::field::{E, K, ONE, ZERO};
 use crate::hash::{KECCAK_PI, KECCAK_RC, KECCAK_RHO, ROUNDS, STATE_LANES};
 use crate::layout::K_BITS;
 use crate::multilinear::{dot, eq_kernel, log2_ceil, multilinear_eval, poly_eval};
-use crate::transcript::{Transcript, sumcheck};
+use crate::transcript::{Transcript, grinding_bits, sumcheck};
 use crate::{VerifierError, require};
 
 const PACK_BITS: usize = 4;
-const PACK: usize = 1 << PACK_BITS;
-const EMBED_BITS: usize = 24;
-const PRODUCT_BITS: usize = 2 * EMBED_BITS - 1;
-const BITS: usize = 64 * STATE_LANES;
-const LOCAL_BITS: usize = 11; // a bit position is z + 64 * lane, in a cube of 2048
-const LANE_BITS: usize = 5;
+pub const PACK: usize = 1 << PACK_BITS;
+pub const EMBED_BITS: usize = 24;
+pub const PRODUCT_BITS: usize = 2 * EMBED_BITS - 1;
+/// The state's bit positions: `j = z + 64 * (x + 5 * y)` is bit `z` of lane `x + 5 * y`.
+pub const BITS: usize = 64 * STATE_LANES;
+/// The variables of the cube a bit position embeds in, `z` low, then the lane.
+pub const LOCAL_BITS: usize = 11;
+/// The variables of a lane's index.
+pub const LANE_BITS: usize = 5;
 
 /// Sixteen bits embed in a binary polynomial of degree at most 23, and a product of two embeddings projects to the
 /// AND of what they embed: each unit vector's embedding, and per bit of the projection the product coefficients it is
-/// the parity of. Derived in `python-verifier/verifier.py`, `_rmfe`.
-const RMFE_EMBED: [u32; PACK] = [
+/// the parity of. Derived in `formal/Statement/LeanVmVerifier.lean`.
+pub const RMFE_EMBED: [u32; PACK] = [
     0x40c50b, 0x7f79f2, 0x4b4e0a, 0x72740c, 0x5357da, 0x1d1c9e, 0x04be6e, 0x785246, 0x097cdc, 0x109e7e, 0x1f1454,
     0x213cfc, 0x4cfcc8, 0x775770, 0x187386, 0x818a16,
 ];
-const RMFE_PROJECT: [u64; PACK] = [
+pub const RMFE_PROJECT: [u64; PACK] = [
     0x1,
     0x7fffffffffff,
     0x274e9d3a74e9,
@@ -75,20 +80,22 @@ struct Claim {
 }
 
 /// The position `k` columns along from `j`, in the same row and slice.
-fn along(j: usize, k: usize) -> usize {
+#[inline]
+pub fn along(j: usize, k: usize) -> usize {
     let (lane, z) = (j / 64, j % 64);
     64 * ((lane % 5 + k) % 5 + 5 * (lane / 5)) + z
 }
 
 /// The transpose of theta, rho, pi on weight vectors: `<w, L(a)> = <L^T(w), a>`.
-fn linear_transpose(w: &[E]) -> Vec<E> {
-    let mut g = vec![ZERO; BITS]; // the weight each position of theta's output carries
+pub fn linear_transpose<T: Copy + Default + Add<Output = T> + AddAssign>(w: &[T]) -> Vec<T> {
+    assert_eq!(w.len(), BITS);
+    let mut g = [T::default(); BITS]; // the weight each position of theta's output carries
     for lane in 0..STATE_LANES {
         for z in 0..64 {
             g[64 * lane + z] = w[64 * KECCAK_PI[lane] + (z + KECCAK_RHO[lane] as usize) % 64];
         }
     }
-    let mut columns = vec![ZERO; 5 * 64];
+    let mut columns = [T::default(); 5 * 64];
     for (j, &weight) in g.iter().enumerate() {
         columns[64 * (j / 64 % 5) + j % 64] += weight;
     }
@@ -143,59 +150,53 @@ fn verify_layer(
         )?;
     }
 
-    // 2] At a random point a pack is one field element, and the polynomial's value a sumcheck claim.
+    // 2] At a random point a pack is one field element, and the polynomial's value a sumcheck claim. The polynomial
+    // has degree PRODUCT_BITS - 1.
+    transcript.grind_check(grinding_bits(PRODUCT_BITS as u128 - 1))?;
     let s = transcript.sample();
     let mu = instance_weights(s);
     let kappa = E::sum(mu.iter().copied());
-    let mut value = poly_eval(&product, s);
+    let value = poly_eval(&product, s);
 
     // 3] The pack and the segment.
-    let mut scale = ONE;
-    let mut point = Vec::with_capacity(claim.point.len());
-    for &r in &claim.point {
-        let message = transcript.sumcheck_round_poly(3, value, Some(r))?;
-        let challenge = transcript.sample();
-        value = (ONE + r + challenge) * poly_eval(&message, challenge);
-        scale *= ONE + r + challenge;
-        point.push(challenge);
-    }
+    let equalities: Vec<_> = claim.point.iter().copied().map(Some).collect();
+    let (point, value) = sumcheck(transcript, value, 3, &equalities)?;
 
     // 4] The bit position: `sum_j w[j] (kappa T[j] + (kappa + T[j + 1]) T[j + 2])`, the weights one more multilinear factor.
     let (local, value) = sumcheck(transcript, value, 4, &[None; LOCAL_BITS])?;
     let t = transcript.next_scalars(3)?;
-    let eq = eq_kernel(&local);
+    // Position `j = 64 lane + z` splits the point in two, so `eq(local, j) = eq_z[z] * eq_lane[lane]`.
+    let (eq_z, eq_lane) = (eq_kernel(&local[..6]), eq_kernel(&local[6..]));
     if transcript.checked() {
+        let at_local = E::sum(
+            claim
+                .weights
+                .chunks(64)
+                .zip(&eq_lane)
+                .map(|(lane, &e)| e * dot(&eq_z, lane)),
+        );
         require(
-            scale * dot(&eq[..BITS], &claim.weights) * (kappa * t[0] + (kappa + t[1]) * t[2]) == value,
+            at_local * (kappa * t[0] + (kappa + t[1]) * t[2]) == value,
             VerifierError::KeccakLayer,
         )?;
     }
 
     // 5] `t[k] = sum_j eq[j] T[j + k]`: one claim on the state before chi, then on the round's input through the linear map.
-    // Position `j` is `k` columns along from `along(j, 5 - k)`.
+    // Position `j` is `k` columns along from `along(j, 5 - k)`, which moves the lane and keeps `z`. The next claim is
+    // quadratic in beta.
+    transcript.grind_check(grinding_bits(2))?;
     let beta = transcript.sample();
-    let weights: Vec<E> = (0..BITS)
-        .map(|j| eq[j] + beta * (eq[along(j, 4)] + beta * eq[along(j, 3)]))
-        .collect();
+    let lane_weights: [E; STATE_LANES] = std::array::from_fn(|lane| {
+        let shifted = |k| eq_lane[along(64 * lane, k) / 64];
+        eq_lane[lane] + beta * (shifted(4) + beta * shifted(3))
+    });
+    let weights: Vec<E> = (0..BITS).map(|j| lane_weights[j / 64] * eq_z[j % 64]).collect();
     Ok(Claim {
         value: t[0] + beta * (t[1] + beta * t[2]),
         mu,
         point,
         weights: linear_transpose(&weights),
     })
-}
-
-/// The weight a claim puts on each `(slot, z)`: its position weights on the slots of the states it speaks of, scaled
-/// by the segment. `first` is the state segment 0 claims, and only the first `count` segments' states are committed.
-fn slot_weights(shape: KeccakShape, claim: &Claim, first: usize, count: usize) -> Vec<[E; 64]> {
-    let segments = eq_kernel(&claim.point[shape.pack_bits()..]);
-    let mut rows = vec![[ZERO; 64]; 1 << shape.slot_bits()];
-    for segment in 0..count {
-        for j in 0..BITS {
-            rows[STATE_LANES * (first + segment) + j / 64][j % 64] = segments[segment] * claim.weights[j];
-        }
-    }
-    rows
 }
 
 /// A sumcheck over the slot: the point it ends on, the weight the claim puts on each slice there, and what is left to match.
@@ -208,19 +209,26 @@ fn open(
     value: E,
 ) -> Result<(Vec<E>, [E; 64], E), VerifierError> {
     let (slot, value) = sumcheck(transcript, value, 3, &vec![None; shape.slot_bits()])?;
-    let mut rows = slot_weights(shape, claim, first, count);
-    for &challenge in &slot {
-        rows = rows
-            .chunks(2)
-            .map(|pair| std::array::from_fn(|z| pair[0][z] + challenge * (pair[0][z] + pair[1][z])))
-            .collect();
+    // The weight on `(slot, z)` is the segment's eq times the claim's position weight, on the slots of the states
+    // the claim speaks of: segment `m` holds lane `l` at slot `STATE_LANES * (first + m) + l`.
+    // At the slot challenges, each slot's row of 64 scales by `eq(slot, s)`.
+    let segments = eq_kernel(&claim.point[shape.pack_bits()..]);
+    let slots = eq_kernel(&slot);
+    let mut row = [ZERO; 64];
+    for segment in 0..count {
+        for (lane, weights) in claim.weights.chunks(64).enumerate() {
+            let scale = segments[segment] * slots[STATE_LANES * (first + segment) + lane];
+            for (out, &w) in row.iter_mut().zip(weights) {
+                *out += scale * w;
+            }
+        }
     }
-    Ok((slot, rows[0], value))
+    Ok((slot, row, value))
 }
 
 /// What the reduction leaves: the committed segment outputs as words at one point of q_keccak, if any segment's
 /// output is committed, and the column's 64 slices at another.
-pub struct KeccakOpenings {
+pub(crate) struct KeccakOpenings {
     pub outputs: Option<(Vec<E>, E)>,
     pub inputs: (Vec<E>, Vec<E>),
 }
@@ -228,7 +236,7 @@ pub struct KeccakOpenings {
 /// The reduction: a random claim on every segment's output at `instance`, `depth` layers down to the committed inputs.
 /// The last segment's output is the permutation's, claimed by `output`, its lanes as words at `instance`; the others
 /// are committed.
-pub fn verify_keccak(
+pub(crate) fn verify_keccak(
     transcript: &mut Transcript,
     shape: KeccakShape,
     instance: &[E],
@@ -240,11 +248,14 @@ pub fn verify_keccak(
         instance.len() == shape.log_steps && output.len() == STATE_LANES && shape.log_steps >= PACK_BITS,
         VerifierError::AnnouncedTableSizes,
     )?;
-    let segment = transcript.samples(log2_ceil(shape.segments() as u64));
+    // One message, the segment then the lane: the first claim is multilinear in them.
+    let segment_bits = log2_ceil(shape.segments() as u64);
+    transcript.grind_check(grinding_bits((segment_bits + LANE_BITS) as u128))?;
+    let segment = transcript.samples(segment_bits);
     let point = [&instance[PACK_BITS..], &segment[..]].concat();
     // The first claim combines the output lanes as words: bit z of a word weighs x^z.
     let lanes = eq_kernel(&transcript.samples(LANE_BITS));
-    let weights = (0..BITS).map(|j| lanes[j / 64] * E::new(1 << (j % 64), 0, 0)).collect();
+    let weights = (0..BITS).map(|j| lanes[j / 64] * K(1 << (j % 64))).collect();
     let last = eq_kernel(&segment)[shape.segments() - 1] * dot(&lanes[..STATE_LANES], output);
     let committed = if shape.segments() > 1 {
         transcript.next_scalar()?
