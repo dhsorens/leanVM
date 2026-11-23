@@ -16,7 +16,8 @@ crates/<crate>/proofs/<scenario>/
     <Pkg>/Assumptions/                    the Rust items left opaque, as axioms, kept in step by wire.py
     <Pkg>/Verification/                   hand-written proofs about the extraction
 formal/extraction/
-  hax.sh                                  setup, extract, test, and run commands on the patched source
+  hax.sh                                  setup, extract, test, refresh the patches, run commands on the patched source
+  mechanical.py                           generates the patch of the rewrites that recur everywhere (run by hax.sh)
   wire.py                                 wires every package into this workspace (run by hax.sh)
   report.sh                               what each extraction takes on trust, as a table
   CoreModelsExt/                          models of standard-library items the hax Lean library lacks
@@ -39,7 +40,7 @@ The extraction is of the portable code: `hax.sh` switches off the hardware featu
 
 After changing an extracted crate, run `hax.sh extract` and commit what changes under `crates/<crate>/proofs`; CI fails otherwise. Most changes regenerate cleanly. The ones that need attention:
 
-- **A patch no longer applies.** `hax.sh extract` names it. Refresh it: apply the patches before it (`git apply`), apply it with `git apply --reject` or redo its rewrite by hand on the new code, then write it back with `git diff crates/<crate>/src > <patch>` and revert the source (`git checkout crates/<crate>/src`).
+- **A patch no longer applies.** `hax.sh extract` names it; run `hax.sh refresh` (below).
 - **Aeneas rejects new code.** Its errors are in `lean/aeneas-error.log`. Rewrite the construct in a patch (below), or add the item to the scenario's `opaque` list under the reason.
 - **The opaque items change.** Nothing to do: `hax.sh extract` adds the new declarations to `Assumptions/` and drops the stale ones, keeping those already there as they are.
 - **A missing standard-library model.** Lean reports an unknown `core.*` or `alloc.*` constant: model it in `CoreModelsExt`, as a definition where the Rust is short, as an `opaque` otherwise.
@@ -47,6 +48,26 @@ After changing an extracted crate, run `hax.sh extract` and commit what changes 
 ## Patches
 
 A patch in `pre/` rewrites Rust the toolchain cannot translate into Rust it can, without changing what it computes: an iterator adapter whose closure takes a reference (`filter`, `copied`) becomes a fold or a loop, a mutable iterator becomes an indexed loop, a function-pointer field becomes a method. Patches are applied in name order for the length of `hax.sh extract` and reverted after, so the committed source never carries them. Generated Lean is never edited by hand: what cannot be fixed in the Rust or in `Assumptions/` goes in a `post/` patch, applied to the output of every extraction, which is preferred only over leaving the item opaque.
+
+Before them, `hax.sh` applies a patch it generates, with `mechanical.py`, from the source as it stands: the rewrites that recur all over the crates. Tracing spans go (`#[tracing::instrument]`, span guards, `in_scope` wrappers), and each anonymous `const _: () = assert!(..)`, whose Aeneas name `__N` Lean rejects, is named `_ASSERT_<hash>` after a hash of its item (and made `pub`, so the constants it reads stay live). A scenario names such an assertion by that name, which `python3 formal/extraction/mechanical.py` prints and which changes only with the assertion's text. Code that moves under these rewrites stales no patch, which matters because spans sit in exactly the code performance work churns. A rewrite that recurs belongs in `mechanical.py`, not in another hand-written patch.
+
+### Refreshing the patches after the source changes
+
+When the source changes under a patch (a merge from upstream, a refactor), `hax.sh refresh` rebases the patches onto it with git:
+
+1. It finds the last first-parent commit every patch still applies to (`--from REV` names one), checking each in a scratch index, nothing checked out.
+2. In a scratch worktree (`target/hax-refresh`), it commits that commit's generated patch, then each hand-written patch as a commit of its own, named after its file.
+3. It commits the generated patch of `HEAD` on `HEAD`, regenerated rather than rebased, and `git rebase`s the hand-written commits onto it. The rebase follows renamed files and drops a patch whose change the source now makes.
+4. It writes each rebased commit back over its patch file, deletes the dropped ones, and removes the worktree. Nothing in the working tree changes but the patches.
+
+A conflict stops the rebase. Resolve it in `target/hax-refresh` (the files show the source's side, the original, and the patch's, in `zdiff3` style), `git add`, then `hax.sh refresh --continue`; `--abort` drops the refresh. Resolutions are recorded by `git rerere`, so a refresh retried after `--abort` replays them, and a conflict whose every file rerere resolves continues by itself. The cases that come up:
+
+- **The source deleted the code a hunk rewrites:** take the source's side, `git checkout --ours <file>`; when that is the whole patch, `hax.sh refresh --skip`.
+- **The source restyled code the patch replaces whole** (a `fold` become a `sum`): keep the patch's side.
+- **The source changed a call or a signature inside the rewritten code:** the patch's rewrite with the source's new call or signature in it.
+- **The source split a file** (a modify/delete conflict, the file gone on the source's side): `git rm` it and redo the hunks in the files the code moved to; `git grep` the function in `HEAD`.
+
+Then `hax.sh extract` and `hax.sh test`. Refreshing after every merge from upstream keeps each refresh to a few conflicts; the first after a long gap is the expensive one.
 
 `hax.sh test` holds every patched crate to two checks, in CI: clippy is clean on the patched source, and the crate's tests pass on it (`cargo test -p <crate>`, or each line of its `patches/pre/tests`, such as the verifier's checks against real proofs). They run on the portable code paths, the ones the patches rewrite. `hax.sh patched <command>` runs any command on the patched source, which is also how to inspect it.
 

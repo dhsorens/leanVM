@@ -162,13 +162,20 @@ def lean_name(package):
     return re.search(r'^name = "([^"]+)"', (package / "lakefile.toml").read_text(), re.M).group(1)
 
 
+CRATES = {}
+
+
 def crate_of(package):
-    return package.parents[2].name
+    """The Cargo package of the crate the Lean package sits beside: its directory's name, but
+    for the prover crates (`crates/stable_prover/pcs` is `stable_pcs`)."""
+    return CRATES.get(package.parents[2], package.parents[2].name)
 
 
 def dependencies(packages):
     """Each package's direct dependencies among the packages: those of the crates its crate uses."""
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version", "1", "--no-deps"], cwd=ROOT))
+    for crate in metadata["packages"]:
+        CRATES[pathlib.Path(crate["manifest_path"]).parent] = crate["name"]
     by_crate = {crate_of(package): package for package in packages}
     uses = {crate["name"]: {dep["name"] for dep in crate["dependencies"] if dep["kind"] is None} for crate in metadata["packages"]}
     return {package: sorted(by_crate[dep] for dep in uses[crate_of(package)] if dep in by_crate) for package in packages}
@@ -186,7 +193,7 @@ def closure(package, deps):
 
 
 def main():
-    packages = sorted(path for path in ROOT.glob("crates/*/proofs/*/lean") if (path / "lakefile.toml").exists())
+    packages = sorted(path for path in [*ROOT.glob("crates/*/proofs/*/lean"), *ROOT.glob("crates/*/*/proofs/*/lean")] if (path / "lakefile.toml").exists())
     names = {package: lean_name(package) for package in packages}
     deps = dependencies(packages)
 
