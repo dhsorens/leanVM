@@ -187,6 +187,93 @@ opaque = [
   # not match the hax Lean library's `Clone`.
   "{impl core::clone::Clone for crate::ast::Ast}::clone",
   "{impl core::clone::Clone for crate::lower::Scope}::clone",
+
+  # Rejected since the sync with upstream of 2026-11-23: each to be patched, modelled, or reduced to a
+  # reportable case.
+  "crate::assemble",  # Aeneas: internal error: please file an issue
+  "crate::ast::_::shape",  # Aeneas: unimplemented
+  "crate::ast::binds_through",  # Aeneas: internal error: please file an issue
+  "crate::ast::rebinds_in_block",  # Aeneas: internal error: please file an issue
+  "crate::field::_::G",  # Aeneas: internal error: please file an issue
+  "crate::field::_::ONE",  # Aeneas: internal error: please file an issue
+  "crate::field::_::ZERO",  # Aeneas: internal error: please file an issue
+  "crate::field::_::pow",  # Aeneas: internal error: please file an issue
+  "crate::field::as_base",  # Aeneas: internal error: please file an issue
+  "crate::field::g_pow",  # Aeneas: internal error: please file an issue
+  "crate::field::int",  # Aeneas: internal error: please file an issue
+  "crate::field::word",  # Aeneas: internal error: please file an issue
+  "crate::lower::FOLD_MAX",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::RET_FP",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::RET_PC",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::alias_of",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::all_inline",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::binding_cell",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::bound",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::end",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::fit",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::free_cell",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::int",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::let_binding",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::new_branch",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::range_check",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::ret",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::set_int",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::settle_loop_captures",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::stack",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::table_jump_via",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::unbound",  # Aeneas: internal error: please file an issue
+  "crate::lower::_::width",  # Aeneas: internal error: please file an issue
+  "crate::lower::builtins::BLOCK_CELLS",  # Aeneas: internal error: please file an issue
+  "crate::lower::builtins::MAX_EXPONENT_BITS",  # Aeneas: internal error: please file an issue
+  "crate::lower::builtins::RATE",  # Aeneas: internal error: please file an issue
+  "crate::lower::builtins::STATE_CELLS",  # Aeneas: internal error: please file an issue
+  "crate::lower::builtins::_::pad_tail_in_place",  # Aeneas: internal error: please file an issue
+  "crate::lower::builtins::keccak_pad_value",  # Aeneas: internal error: please file an issue
+  "crate::lower::builtins::pad_tail_in_place",  # Aeneas: internal error: please file an issue
+  "crate::lower::builtins::two_to_one_close",  # Aeneas: internal error: please file an issue
+  "crate::lower::call::_::check_returns",  # Aeneas: internal error: please file an issue
+  "crate::lower::call::_::return_into",  # Aeneas: internal error: please file an issue
+  "crate::lower::call::split_tail_return",  # Aeneas: internal error: please file an issue
+  "crate::lower::calls_or_allocates",  # Aeneas: internal error: please file an issue
+  "crate::lower::eval::_::diverging_readings",  # Aeneas: internal error: please file an issue
+  "crate::lower::eval::_::gaddr_of",  # Aeneas: internal error: please file an issue
+  "crate::lower::eval::_::try_const_int",  # Aeneas: internal error: please file an issue
+  "crate::lower::eval::_::try_field_const",  # Aeneas: internal error: please file an issue
+  "crate::lower::eval::field_pow",  # Aeneas: internal error: please file an issue
+  "crate::lower::eval::gmul",  # Aeneas: internal error: please file an issue
+  "crate::lower::eval::small_gpow",  # Aeneas: internal error: please file an issue
+  "crate::lower::has_return",  # Aeneas: internal error: please file an issue
+  "crate::lower::hoist::_::constant_exponent",  # Aeneas: internal error: please file an issue
+  "crate::lower::hoist::_::hoist_heap_bufs",  # Aeneas: internal error: please file an issue
+  "crate::lower::hoist::_::reserve",  # Aeneas: internal error: please file an issue
+  "crate::lower::hoist::_::runs_on_to",  # Aeneas: internal error: please file an issue
+  "crate::lower::hoist::_::written_in",  # Aeneas: internal error: please file an issue
+  "crate::lower::hoist::hint_writes",  # Aeneas: internal error: please file an issue
+  "crate::lower::hoist::reservation",  # Aeneas: internal error: please file an issue
+  "crate::lower::hoist::touched",  # Aeneas: internal error: please file an issue
+  "crate::lower::mem::_::check_bound",  # Aeneas: internal error: please file an issue
+  "crate::lower::mem::_::heap_addr_span",  # Aeneas: internal error: please file an issue
+  "crate::lower::param_binding",  # Aeneas: internal error: please file an issue
+  "crate::lower_all",  # Aeneas: internal error: please file an issue
+  "crate::parser::BUILTINS",  # Aeneas: internal error: please file an issue
+  "crate::parser::_::block",  # Aeneas: internal error: please file an issue
+  "crate::parser::_::func",  # Aeneas: internal error: please file an issue
+  "crate::parser::_::stmt",  # Aeneas: internal error: please file an issue
+  "crate::parser::consts::f128_literal",  # Aeneas: internal error: please file an issue
+  "crate::parser::consts::is_int_arith",  # Aeneas: internal error: please file an issue
+  "crate::parser::consts::parse_gpow_bound",  # Aeneas: internal error: please file an issue
+  "crate::parser::expr::depth0",  # Aeneas: internal error: please file an issue
+  "crate::parser::expr::not_reserved",  # Aeneas: internal error: please file an issue
+  "crate::parser::parse",  # Aeneas: internal error: please file an issue
+  "crate::parser::parse_with_constants",  # Aeneas: internal error: please file an issue
+  "crate::parser::stream_name",  # Aeneas: internal error: please file an issue
+  "crate::parser::subst::subst_all",  # Aeneas: internal error: please file an issue
+  "crate::parser::subst::subst_list",  # Aeneas: internal error: please file an issue
+  "crate::parser::subst::subst_shared",  # Aeneas: internal error: please file an issue
+  "crate::parser::subst::subst_vars",  # Aeneas: internal error: please file an issue
+  "crate::resolve",  # Aeneas: internal error: please file an issue
+  "crate::ast::binds",  # Aeneas: unexpected error
+  "crate::ast::taken_arm",  # Aeneas: unexpected error
 ]
 exclude = [
   # Signatures Aeneas does not translate, so not even opaque: an `impl Iterator` result, and
