@@ -105,14 +105,14 @@ inductive ir.KVal where
 | At : alloc.string.String → Std.U32 → ir.KVal
 
 /-- [zkdsl_compiler::ir::LoopCount]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 152:0-155:1 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 180:0-183:1 -/
 @[discriminant isize]
 inductive ir.LoopCount where
 | Constant : Std.U64 → ir.LoopCount
 | Bound : Std.U32 → Std.U64 → ir.LoopCount
 
 /-- [zkdsl_compiler::ir::Hint]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 101:0-120:1 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 107:0-133:1 -/
 @[discriminant isize]
 inductive ir.Hint where
 | NextFrameAddress : ir.Hint
@@ -120,6 +120,7 @@ inductive ir.Hint where
   Std.U32 →
   alloc.string.String →
   ir.LoopCount →
+  Std.U32 →
   ir.Hint
 | AllocFrame : Std.U32 → alloc.string.String → ir.Hint
 | AllocArm :
@@ -132,13 +133,14 @@ inductive ir.Hint where
 | Resolved : isa.RHint → ir.Hint
 
 /-- [zkdsl_compiler::ir::LOp]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 43:0-95:1 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 43:0-101:1 -/
 @[discriminant isize]
 inductive ir.LOp where
-| MulNextFrame : Std.U32 → Std.U32 → Std.U32 → ir.LOp
 | Set : Std.U32 → ir.KVal → ir.LOp
 | Xor : Std.U32 → Std.U32 → Std.U32 → ir.LOp
 | Mul : Std.U32 → Std.U32 → Std.U32 → ir.LOp
+| Solve : Std.U32 → Std.U32 → Std.U32 → ir.LOp
+| Copy : Std.U32 → Std.U32 → Std.U32 → ir.LOp
 | Deref : Std.U32 → Std.U32 → Std.U32 → isa.DerefMode → ir.LOp
 | Jump : Std.U32 → Std.U32 → Std.U32 → ir.LOp
 | Slot : Std.U32 → Std.U32 → Std.U32 → ir.LOp
@@ -161,35 +163,38 @@ structure ir.LInstr where
   hints : alloc.vec.Vec ir.Hint
 
 /-- [zkdsl_compiler::ir::Lowered]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 122:0-126:1 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 135:0-146:1 -/
 structure ir.Lowered where
   «name» : alloc.string.String
   code : alloc.vec.Vec ir.LInstr
   frame_size : Std.U32
+  keep : Std.U32
+  rets : core.ops.range.Range Std.U32
+  fixed : Bool
 
 /-- [zkdsl_compiler::ir::JumpTables]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 134:0-140:1 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 162:0-168:1 -/
 structure ir.JumpTables where
   slots : alloc.vec.Vec ir.KVal
   shared : std.collections.hash.map.HashMap (alloc.vec.Vec alloc.string.String)
     Std.Usize std.hash.random.RandomState alloc.alloc.Global
 
 /-- [zkdsl_compiler::ir::CellRun]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 146:0-149:1 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 174:0-177:1 -/
 @[discriminant isize]
 inductive ir.CellRun where
 | Stack : Std.U32 → Std.U32 → ir.CellRun
 | Heap : Std.U32 → Std.U32 → Std.U32 → ir.CellRun
 
 /-- [zkdsl_compiler::lower::ChainIn]
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 272:0-276:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 276:0-280:1 -/
 structure lower.ChainIn where
   first : Std.Usize
   join : Std.U32
   jset : Std.Usize
 
 /-- [zkdsl_compiler::lower::ChainNext]
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 265:0-268:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 269:0-272:1 -/
 structure lower.ChainNext where
   xo : Std.U32
   n : Std.Usize
@@ -247,7 +252,7 @@ structure lower.hoist.Site where
   «name» : core.option.Option alloc.string.String
 
 /-- [zkdsl_compiler::lower::FnLower]
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 190:0-262:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 190:0-266:1 -/
 structure lower.FnLower where
   scope : lower.Scope
   next : Std.U32
@@ -267,12 +272,14 @@ structure lower.FnLower where
   branches : alloc.vec.Vec Std.U32
   stmt_start : Std.Usize
   returns : alloc.vec.Vec Std.Usize
+  next_frame_copies : alloc.vec.Vec Std.Usize
   chain_next : core.option.Option lower.ChainNext
   chain_in : core.option.Option lower.ChainIn
   inline_calls : alloc.vec.Vec alloc.string.String
   tail_call : Bool
   rebound : alloc.vec.Vec alloc.string.String
   dbg_loops : alloc.vec.Vec alloc.string.String
+  addr_taken : Bool
   loop_bounds : std.collections.hash.map.HashMap alloc.string.String (Std.U64
     × (core.option.Option Std.U64)) std.hash.random.RandomState
     alloc.alloc.Global
@@ -312,6 +319,27 @@ structure lower.eval.Known where
     Source: 'crates/zkdsl_compiler/src/lower.rs', lines 55:0-55:11 -/
 @[reducible]
 def lower.Abi := Unit
+
+/-- [zkdsl_compiler::opt::Role]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 24:0-35:1 -/
+@[discriminant isize]
+inductive opt.Role where
+| Dest : opt.Role
+| Use : opt.Role
+| DerefVal : opt.Role
+| Run : Std.U32 → opt.Role
+| OutRun : Std.U32 → opt.Role
+
+/-- [zkdsl_compiler::opt::Refs]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 197:0-202:1 -/
+structure opt.Refs where
+  «at» : alloc.vec.Vec (alloc.vec.Vec (Std.Usize × opt.Role))
+  hinted : alloc.vec.Vec Bool
+
+/-- [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{closure}]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 254:20-254:114 -/
+@[reducible]
+def opt.Refs.writers.closure := Bool
 
 /-- [zkdsl_compiler::parser::Line]
     Source: 'crates/zkdsl_compiler/src/parser.rs', lines 408:0-412:1 -/

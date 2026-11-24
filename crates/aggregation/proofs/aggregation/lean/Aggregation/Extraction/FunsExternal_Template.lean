@@ -80,7 +80,7 @@ axiom child.col_group_order
     stable_primitives.field.gf2_64x2.F128)
 
 /-- [aggregation::child::merkle_hints]:
-    Source: 'crates/aggregation/src/child.rs', lines 163:0-207:1 -/
+    Source: 'crates/aggregation/src/child.rs', lines 163:0-206:1 -/
 axiom child.merkle_hints
   :
   Slice Std.Usize → Slice Std.Usize → verifier.transcript.Proof → RustM
@@ -350,54 +350,59 @@ axiom placeholders.placeholder_map
     alloc.string.String alloc.alloc.Global)
 
 /-- [aggregation::placeholders::constants]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 220:0-323:1 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 220:0-321:1 -/
 axiom placeholders.constants
   : placeholders.Placeholders → RustM placeholders.Placeholders
 
 /-- [aggregation::placeholders::claim_placeholders]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 430:0-482:1 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 435:0-487:1 -/
 axiom placeholders.claim_placeholders
   :
   placeholders.Placeholders → Slice claim_pool.ClaimSite → Std.Usize →
     RustM placeholders.Placeholders
 
 /-- [aggregation::placeholders::keccak_placeholders]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 486:0-565:1 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 491:0-570:1 -/
 axiom placeholders.keccak_placeholders
   : placeholders.Placeholders → RustM placeholders.Placeholders
 
 /-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::new]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 600:4-617:5 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 605:4-622:5 -/
 axiom placeholders.OpeningShape.new
   : Std.Usize → Std.Usize → RustM placeholders.OpeningShape
 
 /-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::levels]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 620:4-622:5 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 625:4-627:5 -/
 axiom placeholders.OpeningShape.levels
   : placeholders.OpeningShape → RustM Std.Usize
 
 /-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::folds_before]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 650:4-652:5 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 655:4-657:5 -/
 axiom placeholders.OpeningShape.folds_before
   : placeholders.OpeningShape → Std.Usize → RustM Std.Usize
 
+/-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::positions_before]:
+    Source: 'crates/aggregation/src/placeholders.rs', lines 660:4-662:5 -/
+axiom placeholders.OpeningShape.positions_before
+  : placeholders.OpeningShape → Std.Usize → RustM Std.Usize
+
 /-- [aggregation::placeholders::opening_placeholders]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 657:0-781:1 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 667:0-789:1 -/
 axiom placeholders.opening_placeholders
   : placeholders.Placeholders → Std.Usize → RustM placeholders.Placeholders
 
 /-- [aggregation::placeholders::da_placeholders]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 811:0-845:1 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 819:0-853:1 -/
 axiom placeholders.da_placeholders
   : placeholders.Placeholders → RustM placeholders.Placeholders
 
 /-- [aggregation::placeholders::_ASSERT_A1250DFF]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 848:0-848:82
+    Source: 'crates/aggregation/src/placeholders.rs', lines 856:0-856:82
     Visibility: public -/
 axiom placeholders._ASSERT_A1250DFF : RustM Unit
 
 /-- [aggregation::placeholders::signature_placeholders]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 851:0-923:1 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 859:0-931:1 -/
 axiom placeholders.signature_placeholders
   : placeholders.Placeholders → RustM placeholders.Placeholders
 

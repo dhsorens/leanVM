@@ -37,9 +37,6 @@ opaque = [
   "crate::power::_::dot_pair",  # its arrays of rows and a `chain(..).all(..)`
   "crate::open::le_bytes",
 
-  # A loop over two mutably borrowed tables, the step of a Gaussian elimination: Aeneas reports
-  # it unimplemented (basis.rs, `clear_column` of patch 05).
-  "crate::basis::clear_column",
 
   # Its NEON arm is under a bare `cfg(target_arch = "aarch64")`, so its body differs by host.
   "crate::prover::_::add",
@@ -93,10 +90,6 @@ exclude = [
   # the opaque witness writers.
   "{impl core::clone::Clone for crate::witness::Column}",
   "{impl core::marker::Copy for crate::witness::Column}",
-  # The checks that `Part` fits the vector arms, one per arm (named by patch 02).
-  "crate::prover::_PART_IN_AVX512",
-  "crate::prover::_PART_IN_AVX2",
-  "crate::prover::_PART_IN_NEON",
   "core::iter::traits::iterator::Iterator::cloned",  # its signature crashes Aeneas on the `Iterator` trait
   "core::iter::traits::iterator::Iterator::copied",  # its signature crashes Aeneas on the `Iterator` trait
   "core::iter::traits::iterator::Iterator::filter",  # its signature crashes Aeneas on the `Iterator` trait

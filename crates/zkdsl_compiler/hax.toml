@@ -274,6 +274,27 @@ opaque = [
   "crate::resolve",  # Aeneas: internal error: please file an issue
   "crate::ast::binds",  # Aeneas: unexpected error
   "crate::ast::taken_arm",  # Aeneas: unexpected error
+
+  # Rejected since the sync with upstream of 2026-11-24: each to be patched, modelled, or reduced to a
+  # reportable case.
+  "crate::lower::_::copy_next_frame",  # Aeneas: unreachable
+  "crate::lower::hoist::_::hoist_past_first_branch",  # Aeneas: internal error, please file an issue
+  "crate::lower::hoist::_::move_hints",  # Aeneas: could not match the contexts
+  "crate::lower::hoist::_::sized_by",  # Aeneas: unreachable
+  "crate::opt::_::new",  # Aeneas: higher-ranked vtables are not supported
+  "crate::opt::_::of",  # Aeneas: unimplemented
+  "crate::opt::compact",  # Aeneas: higher-ranked vtables are not supported
+  "crate::opt::copy_of",  # Aeneas: not allowed to expand enumerations with several variants
+  "crate::opt::new",  # Aeneas: higher-ranked vtables are not supported
+  "crate::opt::optimize",  # Aeneas: unimplemented
+  "crate::opt::remove_copies",  # Aeneas: could not match the contexts
+  "crate::opt::rename",  # Aeneas: higher-ranked vtables are not supported
+  "crate::opt::store_next_frame_copies",  # Aeneas: could not match the contexts
+  "crate::opt::_::hinted",  # Lean: unknown identifier `core.bool.insts.coremarkercopy`
+  "crate::opt::_::in_run",  # Lean: unknown constant `core.slice.iter.iter.insts.coreitertraitsiteratorite
+  "crate::opt::block_end",  # Lean: unknown identifier `core.slice.slice.partition_point`
+  "crate::opt::block_starts",  # Lean: unknown constant `alloc.vec.vec.insts.coreitertraitscollectextend.exte
+  "crate::opt::drop_dead",  # Lean: unknown identifier `core.mem.take`
 ]
 exclude = [
   # Signatures Aeneas does not translate, so not even opaque: an `impl Iterator` result, and
@@ -284,4 +305,7 @@ exclude = [
   # Their signatures crash Aeneas while translating the `Iterator` trait.
   "core::iter::traits::iterator::Iterator::find",
   "core::slice::iter::_::find",
+  "crate::opt::visit",  # Aeneas: unimplemented: found an occurrence of a lifetime constraint relating (in its signature)
+  "crate::opt::visit_hint",  # Aeneas: unimplemented: found an occurrence of a lifetime constraint relating (in its signature)
+  "crate::lower::hoist::_::reservation_hints",  # Lean: unknown identifier `core.iter.adapters.flatten.flatmap`
 ]

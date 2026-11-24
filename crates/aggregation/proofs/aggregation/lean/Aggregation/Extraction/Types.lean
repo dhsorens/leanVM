@@ -129,22 +129,22 @@ structure placeholders.ClaimDescriptor where
   source : (Std.Usize × Std.Usize)
 
 /-- [aggregation::placeholders::field_placeholders::{closure#1}::{closure}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:68-582:85 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:68-587:85 -/
 @[reducible]
 def placeholders.field_placeholders.closure_1.closure := Unit
 
 /-- [aggregation::placeholders::field_placeholders::{closure#1}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:19-582:92 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:19-587:92 -/
 @[reducible]
 def placeholders.field_placeholders.closure_1 := Unit
 
 /-- [aggregation::placeholders::field_placeholders::{closure}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 574:21-577:9 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 579:21-582:9 -/
 @[reducible]
 def placeholders.field_placeholders.closure := Unit
 
 /-- [aggregation::placeholders::OpeningShape]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 587:0-593:1 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 592:0-598:1 -/
 structure placeholders.OpeningShape where
   folds : alloc.vec.Vec Std.Usize
   queries : Slice Std.Usize

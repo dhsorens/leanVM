@@ -30,7 +30,7 @@ noncomputable section
 namespace claims
 
 /-- Trait implementation: [claims::{impl core::clone::Clone for claims::AggregateClaims}]
-    Source: 'crates/claims/src/lib.rs', lines 19:9-19:14 -/
+    Source: 'crates/claims/src/lib.rs', lines 18:9-18:14 -/
 @[reducible]
 impl_def AggregateClaims.Insts.CoreCloneClone : core.clone.Clone
   AggregateClaims := {
@@ -40,14 +40,14 @@ impl_def AggregateClaims.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- Trait implementation: [claims::{impl core::fmt::Debug for claims::AggregateClaims}]
-    Source: 'crates/claims/src/lib.rs', lines 19:16-19:21 -/
+    Source: 'crates/claims/src/lib.rs', lines 18:16-18:21 -/
 @[reducible]
 def AggregateClaims.Insts.CoreFmtDebug : core.fmt.Debug AggregateClaims := {
   fmt := AggregateClaims.Insts.CoreFmtDebug.fmt
 }
 
 /-- [claims::{impl core::default::Default for claims::AggregateClaims}::default]:
-    Source: 'crates/claims/src/lib.rs', lines 19:23-19:30
+    Source: 'crates/claims/src/lib.rs', lines 18:23-18:30
     Visibility: public -/
 def AggregateClaims.Insts.CoreDefaultDefault.default
   : RustM AggregateClaims := do
@@ -62,7 +62,7 @@ def AggregateClaims.Insts.CoreDefaultDefault.default
   ok { lean_xmss := v, lean_sphincs := v1, da_commitment := o }
 
 /-- Trait implementation: [claims::{impl core::default::Default for claims::AggregateClaims}]
-    Source: 'crates/claims/src/lib.rs', lines 19:23-19:30 -/
+    Source: 'crates/claims/src/lib.rs', lines 18:23-18:30 -/
 @[reducible]
 def AggregateClaims.Insts.CoreDefaultDefault : core.default.Default
   AggregateClaims := {
@@ -70,14 +70,14 @@ def AggregateClaims.Insts.CoreDefaultDefault : core.default.Default
 }
 
 /-- Trait implementation: [claims::{impl core::marker::StructuralPartialEq for claims::AggregateClaims}]
-    Source: 'crates/claims/src/lib.rs', lines 19:32-19:41 -/
+    Source: 'crates/claims/src/lib.rs', lines 18:32-18:41 -/
 @[reducible]
 def AggregateClaims.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq AggregateClaims := {
 }
 
 /-- [claims::{impl core::cmp::PartialEq<claims::AggregateClaims> for claims::AggregateClaims}::eq]:
-    Source: 'crates/claims/src/lib.rs', lines 19:32-19:41
+    Source: 'crates/claims/src/lib.rs', lines 18:32-18:41
     Visibility: public -/
 def AggregateClaims.Insts.CoreCmpPartialEqAggregateClaims.eq
   (self : AggregateClaims) (other : AggregateClaims) : RustM Bool := do
@@ -105,7 +105,7 @@ def AggregateClaims.Insts.CoreCmpPartialEqAggregateClaims.eq
   else ok false
 
 /-- Trait implementation: [claims::{impl core::cmp::PartialEq<claims::AggregateClaims> for claims::AggregateClaims}]
-    Source: 'crates/claims/src/lib.rs', lines 19:32-19:41 -/
+    Source: 'crates/claims/src/lib.rs', lines 18:32-18:41 -/
 @[reducible]
 impl_def AggregateClaims.Insts.CoreCmpPartialEqAggregateClaims :
   core.cmp.PartialEq AggregateClaims AggregateClaims := {
@@ -115,21 +115,21 @@ impl_def AggregateClaims.Insts.CoreCmpPartialEqAggregateClaims :
 }
 
 /-- Trait implementation: [claims::{impl core::cmp::Eq for claims::AggregateClaims}]
-    Source: 'crates/claims/src/lib.rs', lines 19:43-19:45 -/
+    Source: 'crates/claims/src/lib.rs', lines 18:43-18:45 -/
 @[reducible]
 def AggregateClaims.Insts.CoreCmpEq : core.cmp.Eq AggregateClaims := {
   PartialEqInst := AggregateClaims.Insts.CoreCmpPartialEqAggregateClaims
 }
 
 /-- [claims::{impl core::clone::Clone for claims::OutputClaims<'a>}::clone]:
-    Source: 'crates/claims/src/lib.rs', lines 28:9-28:14
+    Source: 'crates/claims/src/lib.rs', lines 27:9-27:14
     Visibility: public -/
 def OutputClaims.Insts.CoreCloneClone.clone
   (self : OutputClaims) : RustM OutputClaims := do
   ok self
 
 /-- Trait implementation: [claims::{impl core::clone::Clone for claims::OutputClaims<'a>}]
-    Source: 'crates/claims/src/lib.rs', lines 28:9-28:14 -/
+    Source: 'crates/claims/src/lib.rs', lines 27:9-27:14 -/
 @[reducible]
 impl_def OutputClaims.Insts.CoreCloneClone : core.clone.Clone OutputClaims := {
   clone := OutputClaims.Insts.CoreCloneClone.clone
@@ -138,21 +138,21 @@ impl_def OutputClaims.Insts.CoreCloneClone : core.clone.Clone OutputClaims := {
 }
 
 /-- Trait implementation: [claims::{impl core::marker::Copy for claims::OutputClaims<'a>}]
-    Source: 'crates/claims/src/lib.rs', lines 28:16-28:20 -/
+    Source: 'crates/claims/src/lib.rs', lines 27:16-27:20 -/
 @[reducible]
 def OutputClaims.Insts.CoreMarkerCopy : core.marker.Copy OutputClaims := {
   cloneCloneInst := OutputClaims.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [claims::{impl core::fmt::Debug for claims::OutputClaims<'a>}]
-    Source: 'crates/claims/src/lib.rs', lines 28:22-28:27 -/
+    Source: 'crates/claims/src/lib.rs', lines 27:22-27:27 -/
 @[reducible]
 def OutputClaims.Insts.CoreFmtDebug : core.fmt.Debug OutputClaims := {
   fmt := OutputClaims.Insts.CoreFmtDebug.fmt
 }
 
 /-- [claims::_ASSERT_3E4B77E5]
-    Source: 'crates/claims/src/lib.rs', lines 40:0-40:108
+    Source: 'crates/claims/src/lib.rs', lines 38:0-38:108
     Visibility: public -/
 @[global_simps, irreducible]
 def _ASSERT_3E4B77E5 : RustM Unit := do
@@ -162,7 +162,7 @@ def _ASSERT_3E4B77E5 : RustM Unit := do
   massert (i1 = 32#usize)
 
 /-- [claims::_ASSERT_4E3C1BB1]
-    Source: 'crates/claims/src/lib.rs', lines 41:0-41:106
+    Source: 'crates/claims/src/lib.rs', lines 39:0-39:106
     Visibility: public -/
 @[global_simps, irreducible]
 def _ASSERT_4E3C1BB1 : RustM Unit := do
@@ -172,7 +172,7 @@ def _ASSERT_4E3C1BB1 : RustM Unit := do
   massert (i1 = 32#usize)
 
 /-- [claims::{claims::AggregateClaims}::num_signature_claims]:
-    Source: 'crates/claims/src/lib.rs', lines 64:4-66:5
+    Source: 'crates/claims/src/lib.rs', lines 62:4-64:5
     Visibility: public -/
 def AggregateClaims.num_signature_claims
   (self : AggregateClaims) : RustM Std.Usize := do

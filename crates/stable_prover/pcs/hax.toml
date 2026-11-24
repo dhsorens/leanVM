@@ -3,7 +3,7 @@
 #
 # `opaque` items are extracted as signatures only, axioms in Assumptions/FunsExternal.lean.
 # Each is grouped by what stops it; a patch in proofs/pcs/patches/pre that rewrites the
-# construct takes the item off it.
+# construct would take the item off it (the crate has none since the sync of 2026-11-23).
 [scenario.pcs]
 backend = "lean"
 opaque = [
@@ -28,10 +28,6 @@ opaque = [
   "crate::whir::build_initial_basis",
   "crate::whir::fold_out_buf",
 
-  # Type layouts (`size_of`, `align_of`), which Aeneas renders without their type: the guards
-  # of the in-place casts above (whir_ntt_ext.rs:28, named by a patch).
-  "crate::whir_ntt_ext::_F192_IS_THREE_WORDS",
-  "crate::whir_ntt_ext::_F192_IS_WORD_ALIGNED",
 
   # Call an encode that takes a `&RowSink` (excluded below).
   "crate::ntt::additive_ntt_f64::_::encode_interleaved_in_place",

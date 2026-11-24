@@ -146,11 +146,11 @@ def child.merkle_cap_depth
   depth - i8
 
 /-- [aggregation::child::MU_CAP]
-    Source: 'crates/aggregation/src/child.rs', lines 212:0-212:36 -/
+    Source: 'crates/aggregation/src/child.rs', lines 211:0-211:36 -/
 @[global_simps, irreducible] def child.MU_CAP : Std.Usize := 40#usize
 
 /-- [aggregation::child::STREAM_CAP]
-    Source: 'crates/aggregation/src/child.rs', lines 213:0-213:42 -/
+    Source: 'crates/aggregation/src/child.rs', lines 212:0-212:42 -/
 @[global_simps, irreducible] def child.STREAM_CAP : Std.Usize := 8192#usize
 
 /-- [aggregation::coverage::take_slot]:
@@ -1080,7 +1080,7 @@ def placeholders.poly_factors
   placeholders.poly_factors_loop p factors 2#u64
 
 /-- [aggregation::placeholders::field_placeholders::{closure#1}::{impl core::ops::function::FnMut<(stable_primitives::field::gf2_64x2::F128, i32), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure#1}::{closure}}::call_mut]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:68-582:85 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:68-587:85 -/
 def
   placeholders.field_placeholders.closure_1.closure.Insts.CoreOpsFunctionFnMutPairF128I32F128.call_mut
   (c : placeholders.field_placeholders.closure_1.closure)
@@ -1093,7 +1093,7 @@ def
   ok (f, c)
 
 /-- [aggregation::placeholders::field_placeholders::{closure#1}::{impl core::ops::function::FnOnce<(stable_primitives::field::gf2_64x2::F128, i32), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure#1}::{closure}}::call_once]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:68-582:85 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:68-587:85 -/
 def
   placeholders.field_placeholders.closure_1.closure.Insts.CoreOpsFunctionFnOncePairF128I32F128.call_once
   (c : placeholders.field_placeholders.closure_1.closure)
@@ -1106,7 +1106,7 @@ def
   ok f
 
 /-- Trait implementation: [aggregation::placeholders::field_placeholders::{closure#1}::{impl core::ops::function::FnOnce<(stable_primitives::field::gf2_64x2::F128, i32), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure#1}::{closure}}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:68-582:85 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:68-587:85 -/
 @[reducible]
 def
   placeholders.field_placeholders.closure_1.closure.Insts.CoreOpsFunctionFnOncePairF128I32F128
@@ -1118,7 +1118,7 @@ def
 }
 
 /-- Trait implementation: [aggregation::placeholders::field_placeholders::{closure#1}::{impl core::ops::function::FnMut<(stable_primitives::field::gf2_64x2::F128, i32), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure#1}::{closure}}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:68-582:85 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:68-587:85 -/
 @[reducible]
 def
   placeholders.field_placeholders.closure_1.closure.Insts.CoreOpsFunctionFnMutPairF128I32F128
@@ -1132,7 +1132,7 @@ def
 }
 
 /-- [aggregation::placeholders::field_placeholders::{impl core::ops::function::FnMut<(i32,), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure#1}}::call_mut]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:19-582:92 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:19-587:92 -/
 def
   placeholders.field_placeholders.closure_1.Insts.CoreOpsFunctionFnMutTupleI32F128.call_mut
   (c : placeholders.field_placeholders.closure_1) (tupled_args : Std.I32) :
@@ -1153,7 +1153,7 @@ def
   ok (f2, c)
 
 /-- [aggregation::placeholders::field_placeholders::{impl core::ops::function::FnOnce<(i32,), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure#1}}::call_once]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:19-582:92 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:19-587:92 -/
 def
   placeholders.field_placeholders.closure_1.Insts.CoreOpsFunctionFnOnceTupleI32F128.call_once
   (c : placeholders.field_placeholders.closure_1) (i : Std.I32) :
@@ -1165,7 +1165,7 @@ def
   ok f
 
 /-- Trait implementation: [aggregation::placeholders::field_placeholders::{impl core::ops::function::FnOnce<(i32,), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure#1}}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:19-582:92 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:19-587:92 -/
 @[reducible]
 def
   placeholders.field_placeholders.closure_1.Insts.CoreOpsFunctionFnOnceTupleI32F128
@@ -1176,7 +1176,7 @@ def
 }
 
 /-- Trait implementation: [aggregation::placeholders::field_placeholders::{impl core::ops::function::FnMut<(i32,), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure#1}}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 582:19-582:92 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 587:19-587:92 -/
 @[reducible]
 def
   placeholders.field_placeholders.closure_1.Insts.CoreOpsFunctionFnMutTupleI32F128
@@ -1189,7 +1189,7 @@ def
 }
 
 /-- [aggregation::placeholders::field_placeholders::{impl core::ops::function::FnMut<(i32,), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure}}::call_mut]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 574:21-577:9 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 579:21-582:9 -/
 def
   placeholders.field_placeholders.closure.Insts.CoreOpsFunctionFnMutTupleI32F128.call_mut
   (c : placeholders.field_placeholders.closure) (tupled_args : Std.I32) :
@@ -1209,7 +1209,7 @@ def
     ok (f, c)
 
 /-- [aggregation::placeholders::field_placeholders::{impl core::ops::function::FnOnce<(i32,), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure}}::call_once]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 574:21-577:9 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 579:21-582:9 -/
 def
   placeholders.field_placeholders.closure.Insts.CoreOpsFunctionFnOnceTupleI32F128.call_once
   (c : placeholders.field_placeholders.closure) (i : Std.I32) :
@@ -1221,7 +1221,7 @@ def
   ok f
 
 /-- Trait implementation: [aggregation::placeholders::field_placeholders::{impl core::ops::function::FnOnce<(i32,), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure}}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 574:21-577:9 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 579:21-582:9 -/
 @[reducible]
 def
   placeholders.field_placeholders.closure.Insts.CoreOpsFunctionFnOnceTupleI32F128
@@ -1232,7 +1232,7 @@ def
 }
 
 /-- Trait implementation: [aggregation::placeholders::field_placeholders::{impl core::ops::function::FnMut<(i32,), stable_primitives::field::gf2_64x2::F128> for aggregation::placeholders::field_placeholders::{closure}}]
-    Source: 'crates/aggregation/src/placeholders.rs', lines 574:21-577:9 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 579:21-582:9 -/
 @[reducible]
 def
   placeholders.field_placeholders.closure.Insts.CoreOpsFunctionFnMutTupleI32F128
@@ -1245,7 +1245,7 @@ def
 }
 
 /-- [aggregation::placeholders::field_placeholders]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 568:0-584:1 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 573:0-589:1 -/
 def placeholders.field_placeholders
   (ph : placeholders.Placeholders) : RustM placeholders.Placeholders := do
   let m ←
@@ -1279,7 +1279,7 @@ def placeholders.field_placeholders
     ph1 (toStr "RING_W") m1
 
 /-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::yr_log_len]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 624:4-626:5 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 629:4-631:5 -/
 def placeholders.OpeningShape.yr_log_len
   (self : placeholders.OpeningShape) : RustM Std.Usize := do
   let i ← placeholders.OpeningShape.levels self
@@ -1289,7 +1289,7 @@ def placeholders.OpeningShape.yr_log_len
     self.log_message_columns i1
 
 /-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::row_words]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 633:4-635:5 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 638:4-640:5 -/
 def placeholders.OpeningShape.row_words
   (self : placeholders.OpeningShape) (lv : Std.Usize) : RustM Std.Usize := do
   let i ←
@@ -1298,7 +1298,7 @@ def placeholders.OpeningShape.row_words
   1#usize <<< i
 
 /-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::cap_depth]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 637:4-639:5 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 642:4-644:5 -/
 def placeholders.OpeningShape.cap_depth
   (self : placeholders.OpeningShape) (lv : Std.Usize) : RustM Std.Usize := do
   let i ← Slice.index_usize self.queries lv
@@ -1309,7 +1309,7 @@ def placeholders.OpeningShape.cap_depth
   child.merkle_cap_depth i i1
 
 /-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::positions]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 642:4-644:5 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 647:4-649:5 -/
 def placeholders.OpeningShape.positions
   (self : placeholders.OpeningShape) (lv : Std.Usize) : RustM Std.Usize := do
   let i ←
@@ -1319,7 +1319,7 @@ def placeholders.OpeningShape.positions
   128#usize / i
 
 /-- [aggregation::placeholders::{aggregation::placeholders::OpeningShape}::squeezes]:
-    Source: 'crates/aggregation/src/placeholders.rs', lines 646:4-648:5 -/
+    Source: 'crates/aggregation/src/placeholders.rs', lines 651:4-653:5 -/
 def placeholders.OpeningShape.squeezes
   (self : placeholders.OpeningShape) (lv : Std.Usize) : RustM Std.Usize := do
   let i ← Slice.index_usize self.queries lv

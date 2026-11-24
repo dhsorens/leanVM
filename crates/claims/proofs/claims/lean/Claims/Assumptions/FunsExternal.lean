@@ -29,13 +29,13 @@ set_option maxRecDepth 2048
 namespace claims
 
 /-- [claims::{impl core::clone::Clone for claims::AggregateClaims}::clone]:
-    Source: 'crates/claims/src/lib.rs', lines 19:9-19:14
+    Source: 'crates/claims/src/lib.rs', lines 18:9-18:14
     Visibility: public -/
 axiom AggregateClaims.Insts.CoreCloneClone.clone
   : AggregateClaims → RustM AggregateClaims
 
 /-- [claims::{impl core::fmt::Debug for claims::AggregateClaims}::fmt]:
-    Source: 'crates/claims/src/lib.rs', lines 19:16-19:21
+    Source: 'crates/claims/src/lib.rs', lines 18:16-18:21
     Visibility: public -/
 axiom AggregateClaims.Insts.CoreFmtDebug.fmt
   :
@@ -43,7 +43,7 @@ axiom AggregateClaims.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [claims::{impl core::fmt::Debug for claims::OutputClaims<'a>}::fmt]:
-    Source: 'crates/claims/src/lib.rs', lines 28:22-28:27
+    Source: 'crates/claims/src/lib.rs', lines 27:22-27:27
     Visibility: public -/
 axiom OutputClaims.Insts.CoreFmtDebug.fmt
   :
@@ -51,7 +51,7 @@ axiom OutputClaims.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [claims::encode_claims]:
-    Source: 'crates/claims/src/lib.rs', lines 43:0-49:1 -/
+    Source: 'crates/claims/src/lib.rs', lines 41:0-47:1 -/
 axiom encode_claims
   {K : Type _} {T1 : Type _} (coreopsfunctionFnT1TupleShared0KArrayU832Inst :
   core.ops.function.Fn T1 K (Array Std.U8 32#usize)) :
@@ -59,7 +59,7 @@ axiom encode_claims
     RustM (alloc.vec.Vec Std.U8)
 
 /-- [claims::decode_claims]:
-    Source: 'crates/claims/src/lib.rs', lines 52:0-59:1 -/
+    Source: 'crates/claims/src/lib.rs', lines 50:0-57:1 -/
 axiom decode_claims
   {K : Type _} {T1 : Type _} (coreopsfunctionFnT1TupleShared0ArrayU832KInst :
   core.ops.function.Fn T1 (Array Std.U8 32#usize) K) :
@@ -67,13 +67,13 @@ axiom decode_claims
     (Array Std.U8 32#usize)))) × (Slice Std.U8))
 
 /-- [claims::{claims::AggregateClaims}::to_bytes]:
-    Source: 'crates/claims/src/lib.rs', lines 69:4-81:5
+    Source: 'crates/claims/src/lib.rs', lines 68:4-80:5
     Visibility: public -/
 axiom AggregateClaims.to_bytes
   : AggregateClaims → RustM (alloc.vec.Vec Std.U8)
 
 /-- [claims::{claims::AggregateClaims}::from_bytes]:
-    Source: 'crates/claims/src/lib.rs', lines 84:4-97:5
+    Source: 'crates/claims/src/lib.rs', lines 83:4-96:5
     Visibility: public -/
 axiom AggregateClaims.from_bytes
   : Slice Std.U8 → RustM (core.option.Option AggregateClaims)

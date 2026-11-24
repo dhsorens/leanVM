@@ -284,7 +284,7 @@ axiom ir.LOp.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [zkdsl_compiler::ir::{impl core::fmt::Debug for zkdsl_compiler::ir::Hint}::fmt]:
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 100:16-100:21
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 106:16-106:21
     Visibility: public -/
 axiom ir.Hint.Insts.CoreFmtDebug.fmt
   :
@@ -292,7 +292,7 @@ axiom ir.Hint.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [zkdsl_compiler::ir::{impl core::fmt::Debug for zkdsl_compiler::ir::LoopCount}::fmt]:
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 151:16-151:21
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 179:16-179:21
     Visibility: public -/
 axiom ir.LoopCount.Insts.CoreFmtDebug.fmt
   :
@@ -300,27 +300,27 @@ axiom ir.LoopCount.Insts.CoreFmtDebug.fmt
     core.fmt.Error) × core.fmt.Formatter)
 
 /-- [zkdsl_compiler::compile]:
-    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 49:0-52:1
+    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 50:0-54:1
     Visibility: public -/
 axiom compile : ast.Ast → RustM isa.CompiledProgram
 
 /-- [zkdsl_compiler::lower_all]:
-    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 55:0-104:1 -/
+    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 57:0-106:1 -/
 axiom lower_all
   : ast.Ast → RustM ((alloc.vec.Vec ir.Lowered) × ir.JumpTables)
 
 /-- [zkdsl_compiler::assemble]:
-    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 107:0-224:1 -/
+    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 109:0-236:1 -/
 axiom assemble
   : alloc.vec.Vec ir.Lowered → ir.JumpTables → RustM isa.CompiledProgram
 
 /-- [zkdsl_compiler::disassemble]:
-    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 229:0-290:1
+    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 241:0-302:1
     Visibility: public -/
 axiom disassemble : Slice isa.Op → RustM alloc.string.String
 
 /-- [zkdsl_compiler::resolve]:
-    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 292:0-354:1 -/
+    Source: 'crates/zkdsl_compiler/src/lib.rs', lines 304:0-363:1 -/
 axiom resolve
   :
   ir.LOp → std.collections.hash.map.HashMap alloc.string.String Std.U32
@@ -537,7 +537,7 @@ axiom lower.call.split_tail_return
 axiom lower.call.stmt_inline_safe : ast.Stmt → RustM Bool
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::lower_call]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 61:4-198:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 61:4-187:5 -/
 axiom lower.call.FnLower.lower_call
   :
   lower.FnLower → Str → Slice ast.Expr → core.option.Option Std.U32 →
@@ -545,7 +545,7 @@ axiom lower.call.FnLower.lower_call
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::lower_dispatched_call]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 206:4-311:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 195:4-300:5 -/
 axiom lower.call.FnLower.lower_dispatched_call
   :
   lower.FnLower → Slice ast.Expr → ast.Expr → Slice alloc.string.String
@@ -553,7 +553,7 @@ axiom lower.call.FnLower.lower_dispatched_call
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::try_inline]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 320:4-401:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 309:4-390:5 -/
 axiom lower.call.FnLower.try_inline
   :
   lower.FnLower → Str → Slice ast.Expr → core.option.Option (Slice
@@ -561,21 +561,21 @@ axiom lower.call.FnLower.try_inline
     lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::return_into]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 405:4-419:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 394:4-408:5 -/
 axiom lower.call.FnLower.return_into
   :
   lower.FnLower → Slice ast.Expr → Slice Std.U32 → RustM (lower.FnLower
     × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::lower_return]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 421:4-457:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 410:4-446:5 -/
 axiom lower.call.FnLower.lower_return
   :
   lower.FnLower → Slice ast.Expr → RustM (lower.FnLower × (lower.FnLower
     → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::specialize]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 463:4-499:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 452:4-488:5 -/
 axiom lower.call.FnLower.specialize
   :
   lower.FnLower → Str → Slice ast.Expr → RustM ((alloc.string.String ×
@@ -583,7 +583,7 @@ axiom lower.call.FnLower.specialize
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::call]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 505:4-538:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 494:4-527:5 -/
 axiom lower.call.FnLower.call
   :
   lower.FnLower → Str → Slice ast.Expr → Std.Usize → RustM
@@ -591,31 +591,31 @@ axiom lower.call.FnLower.call
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::call_into]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 542:4-555:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 531:4-544:5 -/
 axiom lower.call.FnLower.call_into
   :
   lower.FnLower → Str → Slice ast.Expr → Slice Std.U32 → RustM
     (lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::check_returns]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 558:4-567:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 547:4-556:5 -/
 axiom lower.call.FnLower.check_returns
   : lower.FnLower → Str → Std.Usize → RustM Unit
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::const_substs]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 569:4-587:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 558:4-576:5 -/
 axiom lower.call.FnLower.const_substs
   :
   lower.FnLower → ast.Func → Slice ast.Expr → RustM (core.result.Result
     (alloc.vec.Vec (Str × ast.Expr)) alloc.string.String)
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::callee_def]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 590:4-595:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 579:4-584:5 -/
 axiom lower.call.FnLower.callee_def
   : lower.FnLower → Str → RustM (core.option.Option ast.Func)
 
 /-- [zkdsl_compiler::lower::call::{zkdsl_compiler::lower::FnLower<'_0>}::const_arg]:
-    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 602:4-609:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/call.rs', lines 591:4-598:5 -/
 axiom lower.call.FnLower.const_arg
   : lower.FnLower → ast.Expr → RustM (core.option.Option ast.Expr)
 
@@ -723,19 +723,41 @@ axiom lower.hoist.FnLower.reserve
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::hoist::{zkdsl_compiler::lower::FnLower<'_0>}::hoist_heap_bufs]:
-    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 45:4-127:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 45:4-115:5 -/
 axiom lower.hoist.FnLower.hoist_heap_bufs
   :
   lower.FnLower → RustM ((core.result.Result Unit alloc.string.String) ×
     lower.FnLower × (lower.FnLower → lower.FnLower))
 
+/-- [zkdsl_compiler::lower::hoist::{zkdsl_compiler::lower::FnLower<'_0>}::hoist_past_first_branch]:
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 121:4-141:5 -/
+axiom lower.hoist.FnLower.hoist_past_first_branch
+  :
+  lower.FnLower → RustM (lower.FnLower × (lower.FnLower → lower.FnLower))
+
+/-- [zkdsl_compiler::lower::hoist::{zkdsl_compiler::lower::FnLower<'_0>}::sized_by]:
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 153:4-160:5 -/
+axiom lower.hoist.FnLower.sized_by
+  :
+  lower.FnLower → Std.Usize → Std.Usize →
+    std.collections.hash.set.HashSet Std.U32 std.hash.random.RandomState
+    alloc.alloc.Global → RustM (core.option.Option ir.Hint)
+
+/-- [zkdsl_compiler::lower::hoist::{zkdsl_compiler::lower::FnLower<'_0>}::move_hints]:
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 163:4-170:5 -/
+axiom lower.hoist.FnLower.move_hints
+  :
+  lower.FnLower → alloc.vec.Vec (Std.Usize × Std.Usize × ir.Hint) →
+    (Std.Usize × Std.Usize) → RustM (lower.FnLower × (lower.FnLower →
+    lower.FnLower))
+
 /-- [zkdsl_compiler::lower::hoist::{zkdsl_compiler::lower::FnLower<'_0>}::runs_on_to]:
-    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 132:4-136:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 175:4-179:5 -/
 axiom lower.hoist.FnLower.runs_on_to
   : lower.FnLower → Std.Usize → Std.Usize → RustM Bool
 
 /-- [zkdsl_compiler::lower::hoist::{zkdsl_compiler::lower::FnLower<'_0>}::written_in]:
-    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 142:4-169:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 185:4-212:5 -/
 axiom lower.hoist.FnLower.written_in
   :
   lower.FnLower → core.ops.range.Range Std.Usize → Std.Usize → RustM
@@ -743,23 +765,23 @@ axiom lower.hoist.FnLower.written_in
     alloc.alloc.Global)
 
 /-- [zkdsl_compiler::lower::hoist::{zkdsl_compiler::lower::FnLower<'_0>}::constant_exponent]:
-    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 172:4-178:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 215:4-221:5 -/
 axiom lower.hoist.FnLower.constant_exponent
   :
   lower.FnLower → Std.U32 → Std.Usize → RustM (core.option.Option
     Std.U32)
 
 /-- [zkdsl_compiler::lower::hoist::reservation]:
-    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 182:0-190:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 225:0-233:1 -/
 axiom lower.hoist.reservation
   : ir.Hint → RustM (core.option.Option (Std.U32 × Bool))
 
 /-- [zkdsl_compiler::lower::hoist::hint_writes]:
-    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 193:0-222:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 236:0-265:1 -/
 axiom lower.hoist.hint_writes : ir.Hint → RustM (alloc.vec.Vec Std.U32)
 
 /-- [zkdsl_compiler::lower::hoist::touched]:
-    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 231:0-241:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower/hoist.rs', lines 274:0-286:1 -/
 axiom lower.hoist.touched : ir.LOp → RustM (alloc.vec.Vec Std.U32)
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::cell_run]:
@@ -793,56 +815,56 @@ axiom lower.mem.FnLower.check_heap_bound
 axiom lower.mem.FnLower.check_bound : lower.FnLower → ast.Expr → RustM Unit
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::stack_addr]:
-    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 232:4-248:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 232:4-249:5 -/
 axiom lower.mem.FnLower.stack_addr
   :
   lower.FnLower → Slice ast.Expr → RustM (lower.GAddr × lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::heap_base]:
-    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 254:4-268:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 255:4-269:5 -/
 axiom lower.mem.FnLower.heap_base
   :
   lower.FnLower → ast.Expr → Std.U128 → Std.U128 → RustM ((Std.U32 ×
     Std.U32) × lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::array_ptr]:
-    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 277:4-290:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 278:4-291:5 -/
 axiom lower.mem.FnLower.array_ptr
   :
   lower.FnLower → ast.Expr → ast.Expr → RustM ((Std.U32 × Std.U32) ×
     lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::materialize]:
-    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 295:4-330:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 296:4-331:5 -/
 axiom lower.mem.FnLower.materialize
   :
   lower.FnLower → lower.GAddr → RustM (Std.U32 × lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::stack_of]:
-    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 333:4-338:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 334:4-339:5 -/
 axiom lower.mem.FnLower.stack_of
   :
   lower.FnLower → ast.Expr → RustM (core.option.Option (Std.U32 ×
     Std.U32))
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::alloc_stack]:
-    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 342:4-348:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 343:4-349:5 -/
 axiom lower.mem.FnLower.alloc_stack
   :
   lower.FnLower → Std.U32 → RustM (Std.U32 × lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::heap_to_stack]:
-    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 351:4-355:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 352:4-356:5 -/
 axiom lower.mem.FnLower.heap_to_stack
   :
   lower.FnLower → Std.U32 → Std.U32 → Std.U32 → RustM (Std.U32 ×
     lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::mem::{zkdsl_compiler::lower::FnLower<'_0>}::deref_run]:
-    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 359:4-363:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower/mem.rs', lines 360:4-364:5 -/
 axiom lower.mem.FnLower.deref_run
   :
   lower.FnLower → Std.U32 → Std.U32 → Std.U32 → Std.U32 → RustM
@@ -920,148 +942,155 @@ axiom lower.Scope.set_int
   : lower.Scope → Str → Std.U128 → RustM lower.Scope
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::fail]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 283:4-300:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 287:4-304:5 -/
 axiom lower.FnLower.fail
   {T1 : Type _} (corefmtDisplayInst : core.fmt.Display T1) :
   lower.FnLower → T1 → RustM Never
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::fresh]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 302:4-304:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 306:4-308:5 -/
 axiom lower.FnLower.fresh
   :
   lower.FnLower → RustM (Std.U32 × lower.FnLower × (lower.FnLower →
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::emit]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 306:4-314:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 310:4-318:5 -/
 axiom lower.FnLower.emit
   :
   lower.FnLower → ir.LOp → RustM (lower.FnLower × (lower.FnLower →
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::set]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 316:4-318:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 320:4-322:5 -/
 axiom lower.FnLower.set
   :
   lower.FnLower → Std.U32 → ir.KVal → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::set_const]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 320:4-322:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 324:4-326:5 -/
 axiom lower.FnLower.set_const
   :
   lower.FnLower → Std.U32 → verifier.field.E → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::deref]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 324:4-329:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 328:4-333:5 -/
 axiom lower.FnLower.deref
   :
   lower.FnLower → Std.U32 → Std.U32 → Std.U32 → isa.DerefMode → RustM
     (lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::anchor]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 334:4-337:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 338:4-341:5 -/
 axiom lower.FnLower.anchor
   :
   lower.FnLower → RustM (lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::check_not_reserved]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 347:4-354:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 351:4-358:5 -/
 axiom lower.FnLower.check_not_reserved : lower.FnLower → Str → RustM Unit
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::rebind]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 357:4-360:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 361:4-364:5 -/
 axiom lower.FnLower.rebind
   :
   lower.FnLower → Str → lower.Binding → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::bind_targets]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 364:4-368:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 368:4-372:5 -/
 axiom lower.FnLower.bind_targets
   :
   lower.FnLower → Slice (Str × Std.U32) → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::pure]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 385:4-397:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 389:4-408:5 -/
 axiom lower.FnLower.pure
   :
   lower.FnLower → lower.PureOp → Std.U32 → Std.U32 → RustM (Std.U32 ×
     lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::frame_cell]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 405:4-412:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 416:4-423:5 -/
 axiom lower.FnLower.frame_cell
   :
   lower.FnLower → ast.Expr → ast.Expr → RustM (core.option.Option
     Std.U32)
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::one]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 415:4-417:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 426:4-428:5 -/
 axiom lower.FnLower.one
   :
   lower.FnLower → RustM (Std.U32 × lower.FnLower × (lower.FnLower →
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::const_cell]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 430:4-438:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 441:4-449:5 -/
 axiom lower.FnLower.const_cell
   :
   lower.FnLower → verifier.field.E → RustM (Std.U32 × lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::zero]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 442:4-444:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 453:4-455:5 -/
 axiom lower.FnLower.zero
   :
   lower.FnLower → RustM (Std.U32 × lower.FnLower × (lower.FnLower →
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::halt]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 450:4-459:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 461:4-470:5 -/
 axiom lower.FnLower.halt
   :
   lower.FnLower → RustM (lower.FnLower × (lower.FnLower → lower.FnLower))
 
+/-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::copy_next_frame]:
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 473:4-476:5 -/
+axiom lower.FnLower.copy_next_frame
+  :
+  lower.FnLower → Std.U32 → Std.U32 → Std.U32 → RustM (lower.FnLower ×
+    (lower.FnLower → lower.FnLower))
+
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::copy]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 462:4-465:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 479:4-482:5 -/
 axiom lower.FnLower.copy
   :
   lower.FnLower → Std.U32 → Std.U32 → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::self_fp]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 474:4-490:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 491:4-507:5 -/
 axiom lower.FnLower.self_fp
   :
   lower.FnLower → RustM (Std.U32 × lower.FnLower × (lower.FnLower →
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::patch_local]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 494:4-499:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 511:4-516:5 -/
 axiom lower.FnLower.patch_local
   :
   lower.FnLower → Std.Usize → Std.Usize → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::new_branch]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 520:4-523:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 537:4-540:5 -/
 axiom lower.FnLower.new_branch
   :
   lower.FnLower → Std.Usize → RustM (Std.U32 × lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::branch]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 526:4-532:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 543:4-549:5 -/
 axiom lower.FnLower.branch
   :
   lower.FnLower → (Std.U32 × Std.U32) → Slice ast.Stmt → RustM
     (lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::ret_targets]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 538:4-569:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 555:4-586:5 -/
 axiom lower.FnLower.ret_targets
   :
   lower.FnLower → Slice ast.Expr → RustM (((alloc.vec.Vec Std.U32) ×
@@ -1069,40 +1098,40 @@ axiom lower.FnLower.ret_targets
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::lower_match]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 576:4-649:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 593:4-666:5 -/
 axiom lower.FnLower.lower_match
   :
   lower.FnLower → Slice ast.Expr → ast.Expr → Slice ast.Expr → RustM
     (lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::free_cell]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 654:4-677:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 671:4-694:5 -/
 axiom lower.FnLower.free_cell
   :
   lower.FnLower → ast.Expr → Slice ast.Expr → RustM (core.option.Option
     Std.U32)
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::all_inline]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 681:4-684:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 698:4-701:5 -/
 axiom lower.FnLower.all_inline
   : lower.FnLower → Slice ast.Expr → RustM Bool
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::table_jump]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 688:4-691:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 705:4-708:5 -/
 axiom lower.FnLower.table_jump
   :
   lower.FnLower → Std.U32 → Std.Usize → Std.U32 → Std.U32 → RustM
     (lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::table_jump_via]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 694:4-701:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 711:4-718:5 -/
 axiom lower.FnLower.table_jump_via
   :
   lower.FnLower → Std.U32 → Std.U32 → Std.Usize → Std.U32 → Std.U32
     → RustM (lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::lower_if]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 777:4-863:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 794:4-880:5 -/
 axiom lower.FnLower.lower_if
   :
   lower.FnLower → Bool → ast.Expr → ast.Expr → Slice ast.Stmt → Slice
@@ -1110,122 +1139,122 @@ axiom lower.FnLower.lower_if
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::lower_assert_ne]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 870:4-889:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 887:4-906:5 -/
 axiom lower.FnLower.lower_assert_ne
   :
   lower.FnLower → ast.Expr → ast.Expr → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::bound_cell]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 899:4-901:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 916:4-918:5 -/
 axiom lower.FnLower.bound_cell
   :
   lower.FnLower → Std.U64 → RustM (Std.U32 × lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::lower_assert_lt]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 923:4-968:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 940:4-985:5 -/
 axiom lower.FnLower.lower_assert_lt
   :
   lower.FnLower → ast.Expr → ast.LtBound → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::range_check]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 971:4-979:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 988:4-996:5 -/
 axiom lower.FnLower.range_check
   :
   lower.FnLower → ast.Expr → Std.U32 → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::unbound]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 988:4-998:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1005:4-1015:5 -/
 axiom lower.FnLower.unbound : lower.FnLower → Str → RustM Never
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::expr]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1000:4-1138:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1017:4-1155:5 -/
 axiom lower.FnLower.expr
   :
   lower.FnLower → ast.Expr → RustM (Std.U32 × lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::pow_expr]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1142:4-1167:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1159:4-1184:5 -/
 axiom lower.FnLower.pow_expr
   :
   lower.FnLower → ast.Expr → ast.Expr → RustM (Std.U32 × lower.FnLower
     × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::expr_into]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1171:4-1222:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1188:4-1239:5 -/
 axiom lower.FnLower.expr_into
   :
   lower.FnLower → ast.Expr → Std.U32 → RustM (lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::let_binding]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1227:4-1243:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1244:4-1260:5 -/
 axiom lower.FnLower.let_binding
   :
   lower.FnLower → ast.Expr → lower.eval.Known → RustM (lower.Binding ×
     lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::alias_of]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1247:4-1252:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1264:4-1269:5 -/
 axiom lower.FnLower.alias_of
   : lower.FnLower → ast.Expr → RustM (core.option.Option lower.Binding)
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::binding_cell]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1255:4-1265:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1272:4-1282:5 -/
 axiom lower.FnLower.binding_cell
   :
   lower.FnLower → lower.Binding → RustM (Std.U32 × lower.FnLower ×
     (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::stmt]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1267:4-1442:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1284:4-1458:5 -/
 axiom lower.FnLower.stmt
   :
   lower.FnLower → ast.Stmt → RustM (lower.FnLower × (lower.FnLower →
     lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::settle_loop_captures]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1454:4-1478:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1470:4-1494:5 -/
 axiom lower.FnLower.settle_loop_captures
   :
   lower.FnLower → Slice ast.Expr → RustM (lower.FnLower × (lower.FnLower
     → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::{zkdsl_compiler::lower::FnLower<'_0>}::lower_for]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1494:4-1675:5 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1510:4-1691:5 -/
 axiom lower.FnLower.lower_for
   :
   lower.FnLower → Str → Std.U64 → ast.ForBound → Slice ast.Stmt →
     RustM (lower.FnLower × (lower.FnLower → lower.FnLower))
 
 /-- [zkdsl_compiler::lower::contains_return]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1678:0-1685:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1694:0-1701:1 -/
 axiom lower.contains_return : Slice ast.Stmt → RustM Bool
 
 /-- [zkdsl_compiler::lower::calls_or_allocates]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1689:0-1709:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1705:0-1725:1 -/
 axiom lower.calls_or_allocates : ast.Expr → RustM Bool
 
 /-- [zkdsl_compiler::lower::plus_k]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1714:0-1722:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1730:0-1738:1 -/
 axiom lower.plus_k
   : ast.Expr → ast.Expr → RustM (core.option.Option Std.U128)
 
 /-- [zkdsl_compiler::lower::has_return]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1727:0-1734:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1743:0-1750:1 -/
 axiom lower.has_return : Slice ast.Stmt → RustM Bool
 
 /-- [zkdsl_compiler::lower::param_binding]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1738:0-1744:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1754:0-1760:1 -/
 axiom lower.param_binding
   : Slice ast.Param → Std.Usize → RustM lower.Binding
 
 /-- [zkdsl_compiler::lower::lower_func]:
-    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1746:0-1875:1 -/
+    Source: 'crates/zkdsl_compiler/src/lower.rs', lines 1762:0-1905:1 -/
 axiom lower.lower_func
   :
   ast.Func → alloc.vec.Vec ast.Func → std.collections.hash.map.HashMap Str
@@ -1238,6 +1267,79 @@ axiom lower.lower_func
     (alloc.vec.Vec ast.Func) × (std.collections.hash.map.HashMap
     alloc.string.String (Std.U64 × (core.option.Option Std.U64))
     std.hash.random.RandomState alloc.alloc.Global) × ir.JumpTables)
+
+/-- [zkdsl_compiler::opt::rename]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 172:0-180:1 -/
+axiom opt.rename
+  {T0 : Type _} {Clause0_IntoIter : Type _}
+  (coreitertraitscollectIntoIteratorT0UsizeClause0_IntoIterInst :
+  core.iter.traits.collect.IntoIterator T0 Std.Usize Clause0_IntoIter) :
+  Slice ir.LInstr → T0 → Std.U32 → Std.U32 → RustM (Slice ir.LInstr)
+
+/-- [zkdsl_compiler::opt::copy_of]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 183:0-188:1 -/
+axiom opt.copy_of
+  :
+  Slice ir.LInstr → Slice Bool → Std.Usize → RustM (core.option.Option
+    (Std.U32 × Std.U32))
+
+/-- [zkdsl_compiler::opt::block_end]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 192:0-194:1 -/
+axiom opt.block_end
+  : Slice Std.Usize → Std.Usize → Std.Usize → RustM Std.Usize
+
+/-- [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::new]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 214:4-237:5 -/
+axiom opt.Refs.new
+  : Slice ir.LInstr → Slice Bool → RustM (opt.Refs × (Slice ir.LInstr))
+
+/-- [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::of]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 239:4-241:5 -/
+axiom opt.Refs.of
+  : opt.Refs → Std.U32 → RustM (Slice (Std.Usize × opt.Role))
+
+/-- [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::hinted]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 243:4-245:5 -/
+axiom opt.Refs.impl.hinted : opt.Refs → Std.U32 → RustM Bool
+
+/-- [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::in_run]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 247:4-249:5 -/
+axiom opt.Refs.in_run : opt.Refs → Std.U32 → RustM Bool
+
+/-- [zkdsl_compiler::opt::optimize]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 261:0-282:1 -/
+axiom opt.optimize
+  :
+  Slice ir.Lowered → ir.JumpTables → RustM ((Slice ir.Lowered) ×
+    ir.JumpTables)
+
+/-- [zkdsl_compiler::opt::compact]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 409:0-431:1 -/
+axiom opt.compact : ir.Lowered → RustM ir.Lowered
+
+/-- [zkdsl_compiler::opt::block_starts]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 393:0-406:1 -/
+axiom opt.block_starts
+  : Slice ir.LInstr → Slice Std.U32 → RustM (alloc.vec.Vec Std.Usize)
+
+/-- [zkdsl_compiler::opt::drop_dead]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 368:0-390:1 -/
+axiom opt.drop_dead
+  :
+  ir.Lowered → Slice Bool → RustM ((core.option.Option (alloc.vec.Vec
+    Std.U32)) × ir.Lowered)
+
+/-- [zkdsl_compiler::opt::store_next_frame_copies]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 343:0-365:1 -/
+axiom opt.store_next_frame_copies
+  : ir.Lowered → Slice Bool → RustM ir.Lowered
+
+/-- [zkdsl_compiler::opt::remove_copies]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 297:0-339:1 -/
+axiom opt.remove_copies
+  :
+  ir.Lowered → Slice Bool → Slice Std.Usize → RustM (Bool × ir.Lowered
+    × (Slice Bool))
 
 /-- [zkdsl_compiler::parser::consts::eval_const_int]:
     Source: 'crates/zkdsl_compiler/src/parser/consts.rs', lines 26:0-31:1 -/

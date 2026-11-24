@@ -458,7 +458,7 @@ def ir.KVal.Insts.CoreFmtDebug : core.fmt.Debug ir.KVal := {
 }
 
 /-- [zkdsl_compiler::ir::{impl core::clone::Clone for zkdsl_compiler::ir::LoopCount}::clone]:
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 151:9-151:14
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 179:9-179:14
     Visibility: public -/
 def ir.LoopCount.Insts.CoreCloneClone.clone
   (self : ir.LoopCount) : RustM ir.LoopCount := do
@@ -472,16 +472,17 @@ def ir.LoopCount.Insts.CoreCloneClone.clone
     ok (ir.LoopCount.Bound i i1)
 
 /-- [zkdsl_compiler::ir::{impl core::clone::Clone for zkdsl_compiler::ir::Hint}::clone]:
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 100:9-100:14
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 106:9-106:14
     Visibility: public -/
 def ir.Hint.Insts.CoreCloneClone.clone (self : ir.Hint) : RustM ir.Hint := do
   match self with
   | ir.Hint.NextFrameAddress => ok ir.Hint.NextFrameAddress
-  | ir.Hint.AllocLoopFrames __self_0 __self_1 __self_2 =>
+  | ir.Hint.AllocLoopFrames __self_0 __self_1 __self_2 __self_3 =>
     let i ← core.U32.Insts.CoreCloneClone.clone __self_0
     let s ← alloc.string.String.Insts.CoreCloneClone.clone __self_1
     let lc ← ir.LoopCount.Insts.CoreCloneClone.clone __self_2
-    ok (ir.Hint.AllocLoopFrames i s lc)
+    let i1 ← core.U32.Insts.CoreCloneClone.clone __self_3
+    ok (ir.Hint.AllocLoopFrames i s lc i1)
   | ir.Hint.AllocFrame __self_0 __self_1 =>
     let i ← core.U32.Insts.CoreCloneClone.clone __self_0
     let s ← alloc.string.String.Insts.CoreCloneClone.clone __self_1
@@ -506,7 +507,7 @@ def ir.Hint.Insts.CoreCloneClone.clone (self : ir.Hint) : RustM ir.Hint := do
     ok (ir.Hint.Resolved r)
 
 /-- Trait implementation: [zkdsl_compiler::ir::{impl core::clone::Clone for zkdsl_compiler::ir::Hint}]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 100:9-100:14 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 106:9-106:14 -/
 @[reducible]
 impl_def ir.Hint.Insts.CoreCloneClone : core.clone.Clone ir.Hint := {
   clone := ir.Hint.Insts.CoreCloneClone.clone
@@ -519,11 +520,6 @@ impl_def ir.Hint.Insts.CoreCloneClone : core.clone.Clone ir.Hint := {
     Visibility: public -/
 def ir.LOp.Insts.CoreCloneClone.clone (self : ir.LOp) : RustM ir.LOp := do
   match self with
-  | ir.LOp.MulNextFrame __self_0 __self_1 __self_2 =>
-    let i ← core.U32.Insts.CoreCloneClone.clone __self_0
-    let i1 ← core.U32.Insts.CoreCloneClone.clone __self_1
-    let i2 ← core.U32.Insts.CoreCloneClone.clone __self_2
-    ok (ir.LOp.MulNextFrame i i1 i2)
   | ir.LOp.Set __self_0 __self_1 =>
     let i ← core.U32.Insts.CoreCloneClone.clone __self_0
     let k ← ir.KVal.Insts.CoreCloneClone.clone __self_1
@@ -538,6 +534,16 @@ def ir.LOp.Insts.CoreCloneClone.clone (self : ir.LOp) : RustM ir.LOp := do
     let i1 ← core.U32.Insts.CoreCloneClone.clone __self_1
     let i2 ← core.U32.Insts.CoreCloneClone.clone __self_2
     ok (ir.LOp.Mul i i1 i2)
+  | ir.LOp.Solve __self_0 __self_1 __self_2 =>
+    let i ← core.U32.Insts.CoreCloneClone.clone __self_0
+    let i1 ← core.U32.Insts.CoreCloneClone.clone __self_1
+    let i2 ← core.U32.Insts.CoreCloneClone.clone __self_2
+    ok (ir.LOp.Solve i i1 i2)
+  | ir.LOp.Copy __self_0 __self_1 __self_2 =>
+    let i ← core.U32.Insts.CoreCloneClone.clone __self_0
+    let i1 ← core.U32.Insts.CoreCloneClone.clone __self_1
+    let i2 ← core.U32.Insts.CoreCloneClone.clone __self_2
+    ok (ir.LOp.Copy i i1 i2)
   | ir.LOp.Deref __self_0 __self_1 __self_2 __self_3 =>
     let i ← core.U32.Insts.CoreCloneClone.clone __self_0
     let i1 ← core.U32.Insts.CoreCloneClone.clone __self_1
@@ -612,14 +618,27 @@ def ir.LOp.Insts.CoreFmtDebug : core.fmt.Debug ir.LOp := {
 }
 
 /-- Trait implementation: [zkdsl_compiler::ir::{impl core::fmt::Debug for zkdsl_compiler::ir::Hint}]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 100:16-100:21 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 106:16-106:21 -/
 @[reducible]
 def ir.Hint.Insts.CoreFmtDebug : core.fmt.Debug ir.Hint := {
   fmt := ir.Hint.Insts.CoreFmtDebug.fmt
 }
 
+/-- [zkdsl_compiler::ir::{zkdsl_compiler::ir::Lowered}::caller_writes]:
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 151:4-153:5 -/
+def ir.Lowered.caller_writes
+  (self : ir.Lowered) (x : Std.U32) : RustM Bool := do
+  if x < self.keep
+  then
+    let b ←
+      core.ops.range.Range.contains core.U32.Insts.CoreCmpPartialOrdU32
+        core.U32.Insts.CoreCmpPartialOrdU32 core.U32.Insts.CoreCmpPartialOrdU32
+        self.rets x
+    ok (¬ b)
+  else ok false
+
 /-- [zkdsl_compiler::ir::{impl core::default::Default for zkdsl_compiler::ir::JumpTables}::default]:
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 133:9-133:16
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 161:9-161:16
     Visibility: public -/
 def ir.JumpTables.Insts.CoreDefaultDefault.default : RustM ir.JumpTables := do
   let v ← alloc.vec.Vec.Insts.CoreDefaultDefault.default ir.KVal
@@ -630,7 +649,7 @@ def ir.JumpTables.Insts.CoreDefaultDefault.default : RustM ir.JumpTables := do
   ok { slots := v, shared := hm }
 
 /-- Trait implementation: [zkdsl_compiler::ir::{impl core::default::Default for zkdsl_compiler::ir::JumpTables}]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 133:9-133:16 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 161:9-161:16 -/
 @[reducible]
 def ir.JumpTables.Insts.CoreDefaultDefault : core.default.Default ir.JumpTables
   := {
@@ -638,7 +657,7 @@ def ir.JumpTables.Insts.CoreDefaultDefault : core.default.Default ir.JumpTables
 }
 
 /-- Trait implementation: [zkdsl_compiler::ir::{impl core::clone::Clone for zkdsl_compiler::ir::LoopCount}]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 151:9-151:14 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 179:9-179:14 -/
 @[reducible]
 impl_def ir.LoopCount.Insts.CoreCloneClone : core.clone.Clone ir.LoopCount := {
   clone := ir.LoopCount.Insts.CoreCloneClone.clone
@@ -647,7 +666,7 @@ impl_def ir.LoopCount.Insts.CoreCloneClone : core.clone.Clone ir.LoopCount := {
 }
 
 /-- Trait implementation: [zkdsl_compiler::ir::{impl core::fmt::Debug for zkdsl_compiler::ir::LoopCount}]
-    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 151:16-151:21 -/
+    Source: 'crates/zkdsl_compiler/src/ir.rs', lines 179:16-179:21 -/
 @[reducible]
 def ir.LoopCount.Insts.CoreFmtDebug : core.fmt.Debug ir.LoopCount := {
   fmt := ir.LoopCount.Insts.CoreFmtDebug.fmt
@@ -948,5 +967,239 @@ def lower.Scope.Insts.CoreDefaultDefault : core.default.Default lower.Scope
   := {
   default := lower.Scope.Insts.CoreDefaultDefault.default
 }
+
+/-- [zkdsl_compiler::opt::{impl core::clone::Clone for zkdsl_compiler::opt::Role}::clone]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 23:9-23:14
+    Visibility: public -/
+def opt.Role.Insts.CoreCloneClone.clone
+  (self : opt.Role) : RustM opt.Role := do
+  ok self
+
+/-- Trait implementation: [zkdsl_compiler::opt::{impl core::clone::Clone for zkdsl_compiler::opt::Role}]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 23:9-23:14 -/
+@[reducible]
+impl_def opt.Role.Insts.CoreCloneClone : core.clone.Clone opt.Role := {
+  clone := opt.Role.Insts.CoreCloneClone.clone
+  clone_from := core.clone.Clone.clone_from.default
+    opt.Role.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [zkdsl_compiler::opt::{impl core::marker::Copy for zkdsl_compiler::opt::Role}]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 23:16-23:20 -/
+@[reducible]
+def opt.Role.Insts.CoreMarkerCopy : core.marker.Copy opt.Role := {
+  cloneCloneInst := opt.Role.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [zkdsl_compiler::opt::{impl core::marker::StructuralPartialEq for zkdsl_compiler::opt::Role}]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 23:22-23:31 -/
+@[reducible]
+def opt.Role.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq opt.Role := {
+}
+
+/-- [zkdsl_compiler::opt::{impl core::cmp::PartialEq<zkdsl_compiler::opt::Role> for zkdsl_compiler::opt::Role}::eq]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 23:22-23:31
+    Visibility: public -/
+def opt.Role.Insts.CoreCmpPartialEqRole.eq
+  (self : opt.Role) (other : opt.Role) : RustM Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | opt.Role.Dest => ok true
+    | opt.Role.Use => ok true
+    | opt.Role.DerefVal => ok true
+    | opt.Role.Run __self_0 =>
+      match other with
+      | opt.Role.Dest => ok true
+      | opt.Role.Use => ok true
+      | opt.Role.DerefVal => ok true
+      | opt.Role.Run __arg1_0 =>
+        core.U32.Insts.CoreCmpPartialEqU32.eq __self_0 __arg1_0
+      | opt.Role.OutRun _ => ok true
+    | opt.Role.OutRun __self_0 =>
+      match other with
+      | opt.Role.Dest => ok true
+      | opt.Role.Use => ok true
+      | opt.Role.DerefVal => ok true
+      | opt.Role.Run _ => ok true
+      | opt.Role.OutRun __arg1_0 =>
+        core.U32.Insts.CoreCmpPartialEqU32.eq __self_0 __arg1_0
+  else ok false
+
+/-- Trait implementation: [zkdsl_compiler::opt::{impl core::cmp::PartialEq<zkdsl_compiler::opt::Role> for zkdsl_compiler::opt::Role}]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 23:22-23:31 -/
+@[reducible]
+impl_def opt.Role.Insts.CoreCmpPartialEqRole : core.cmp.PartialEq opt.Role
+  opt.Role := {
+  eq := opt.Role.Insts.CoreCmpPartialEqRole.eq
+  ne := core.cmp.PartialEq.ne.default opt.Role.Insts.CoreCmpPartialEqRole
+}
+
+/-- Trait implementation: [zkdsl_compiler::opt::{impl core::cmp::Eq for zkdsl_compiler::opt::Role}]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 23:33-23:35 -/
+@[reducible]
+def opt.Role.Insts.CoreCmpEq : core.cmp.Eq opt.Role := {
+  PartialEqInst := opt.Role.Insts.CoreCmpPartialEqRole
+}
+
+/-- [zkdsl_compiler::opt::mark_grow]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 205:0-211:1 -/
+def opt.mark_grow
+  (cells : alloc.vec.Vec Bool) (x : Std.U32) (len : Std.U32) :
+  RustM (alloc.vec.Vec Bool)
+  := do
+  let i ← core.U32.Insts.CoreCmpOrd.max len 1#u32
+  let i1 ← x + i
+  let «end» ← lift (UScalar.cast .Usize i1)
+  let i2 ← alloc.vec.Vec.len cells
+  let cells1 ←
+    if i2 < «end»
+    then
+      alloc.vec.Vec.resize core.Bool.Insts.CoreCloneClone cells «end» false
+    else ok cells
+  let i3 ← lift (UScalar.cast .Usize x)
+  let (s, index_mut_back) ←
+    alloc.vec.Vec.Insts.CoreOpsIndexIndexMut.index_mut
+      (core.ops.range.RangeUsize.Insts.CoreSliceIndexSliceIndexSliceSlice Bool)
+      cells1 { start := i3, «end» }
+  let s1 ← core.slice.Slice.fill core.Bool.Insts.CoreCloneClone s true
+  ok (index_mut_back s1)
+
+/-- [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{impl core::ops::function::FnMut<(&'_1 &'_2 (usize, zkdsl_compiler::opt::Role),), bool> for zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{closure}<'_0>}::call_mut]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 254:20-254:114 -/
+def
+  opt.Refs.writers.closure.Insts.CoreOpsFunctionFnMutTupleShared1Shared2PairUsizeRoleBool.call_mut
+  (c : opt.Refs.writers.closure) (tupled_args : (Std.Usize × opt.Role)) :
+  RustM (Bool × opt.Refs.writers.closure)
+  := do
+  let (_, role) := tupled_args
+  match role with
+  | opt.Role.Dest => ok (true, c)
+  | opt.Role.Use =>
+    if c
+    then
+      let b ←
+        opt.Role.Insts.CoreCmpPartialEqRole.eq opt.Role.Use opt.Role.DerefVal
+      ok (b, c)
+    else ok (false, c)
+  | opt.Role.DerefVal =>
+    if c
+    then
+      let b ←
+        opt.Role.Insts.CoreCmpPartialEqRole.eq opt.Role.DerefVal
+          opt.Role.DerefVal
+      ok (b, c)
+    else ok (false, c)
+  | opt.Role.Run _ =>
+    if c
+    then
+      let b ← opt.Role.Insts.CoreCmpPartialEqRole.eq role opt.Role.DerefVal
+      ok (b, c)
+    else ok (false, c)
+  | opt.Role.OutRun _ => ok (true, c)
+
+/-- [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{impl core::ops::function::FnOnce<(&'_1 &'_2 (usize, zkdsl_compiler::opt::Role),), bool> for zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{closure}<'_0>}::call_once]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 254:20-254:114 -/
+def
+  opt.Refs.writers.closure.Insts.CoreOpsFunctionFnOnceTupleShared1Shared2PairUsizeRoleBool.call_once
+  (c : opt.Refs.writers.closure) (p : (Std.Usize × opt.Role)) :
+  RustM Bool
+  := do
+  let (b, _) ←
+    opt.Refs.writers.closure.Insts.CoreOpsFunctionFnMutTupleShared1Shared2PairUsizeRoleBool.call_mut
+      c p
+  ok b
+
+/-- Trait implementation: [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{impl core::ops::function::FnOnce<(&'_1 &'_2 (usize, zkdsl_compiler::opt::Role),), bool> for zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{closure}<'_0>}]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 254:20-254:114 -/
+@[reducible]
+def
+  opt.Refs.writers.closure.Insts.CoreOpsFunctionFnOnceTupleShared1Shared2PairUsizeRoleBool
+  : core.ops.function.FnOnce opt.Refs.writers.closure (Std.Usize × opt.Role)
+  Bool := {
+  call_once :=
+    opt.Refs.writers.closure.Insts.CoreOpsFunctionFnOnceTupleShared1Shared2PairUsizeRoleBool.call_once
+}
+
+/-- Trait implementation: [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{impl core::ops::function::FnMut<(&'_1 &'_2 (usize, zkdsl_compiler::opt::Role),), bool> for zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers::{closure}<'_0>}]
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 254:20-254:114 -/
+@[reducible]
+def
+  opt.Refs.writers.closure.Insts.CoreOpsFunctionFnMutTupleShared1Shared2PairUsizeRoleBool
+  : core.ops.function.FnMut opt.Refs.writers.closure (Std.Usize × opt.Role)
+  Bool := {
+  FnOnceInst :=
+    opt.Refs.writers.closure.Insts.CoreOpsFunctionFnOnceTupleShared1Shared2PairUsizeRoleBool
+  call_mut :=
+    opt.Refs.writers.closure.Insts.CoreOpsFunctionFnMutTupleShared1Shared2PairUsizeRoleBool.call_mut
+}
+
+/-- [zkdsl_compiler::opt::{zkdsl_compiler::opt::Refs}::writers]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 252:4-256:5 -/
+def opt.Refs.writers
+  (self : opt.Refs) (x : Std.U32) (deref : Bool) : RustM Std.Usize := do
+  let s ← opt.Refs.of self x
+  let i ← core.slice.Slice.iter s
+  let f ←
+    core.iter.traits.iterator.Iterator.filter.default
+      (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
+      (Std.Usize × opt.Role))
+      opt.Refs.writers.closure.Insts.CoreOpsFunctionFnMutTupleShared1Shared2PairUsizeRoleBool
+      i deref
+  core.iter.adapters.filter.Filter.Insts.CoreIterTraitsIteratorIterator.count
+    (core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT
+    (Std.Usize × opt.Role))
+    opt.Refs.writers.closure.Insts.CoreOpsFunctionFnMutTupleShared1Shared2PairUsizeRoleBool
+    f
+
+/-- [zkdsl_compiler::opt::optimize_fn]: loop body 0:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 289:4-289:49 -/
+@[rust_loop_body]
+def opt.optimize_fn_loop.body
+  (blocks : alloc.vec.Vec Std.Usize) (l : ir.Lowered)
+  (dead : alloc.vec.Vec Bool) :
+  RustM (ControlFlow (ir.Lowered × (alloc.vec.Vec Bool)) (ir.Lowered ×
+    (alloc.vec.Vec Bool)))
+  := do
+  let (s, deref_mut_back) ←
+    alloc.vec.Vec.Insts.CoreOpsDerefDerefMutSlice.deref_mut dead
+  let s1 ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref blocks
+  let (b, l1, s2) ← opt.remove_copies l s s1
+  if b
+  then let dead1 := deref_mut_back s2
+       ok (cont (l1, dead1))
+  else ok (done (l1, deref_mut_back s2))
+
+/-- [zkdsl_compiler::opt::optimize_fn]: loop 0:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 289:4-289:49 -/
+@[rust_loop]
+def opt.optimize_fn_loop
+  (l : ir.Lowered) (dead : alloc.vec.Vec Bool)
+  (blocks : alloc.vec.Vec Std.Usize) :
+  RustM (ir.Lowered × (alloc.vec.Vec Bool))
+  := do
+  loop
+    (fun (l1, dead1) => opt.optimize_fn_loop.body blocks l1 dead1)
+    (l, dead)
+
+/-- [zkdsl_compiler::opt::optimize_fn]:
+    Source: 'crates/zkdsl_compiler/src/opt.rs', lines 285:0-294:1 -/
+def opt.optimize_fn
+  (l : ir.Lowered) (at_targets : Slice Std.U32) :
+  RustM ((core.option.Option (alloc.vec.Vec Std.U32)) × ir.Lowered)
+  := do
+  let i ← alloc.vec.Vec.len l.code
+  let dead ← alloc.vec.from_elem core.Bool.Insts.CoreCloneClone false i
+  let s ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref l.code
+  let blocks ← opt.block_starts s at_targets
+  let (l1, back) ← opt.optimize_fn_loop l dead blocks
+  let s1 ← alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref back
+  let l2 ← opt.store_next_frame_copies l1 s1
+  let (remap, l3) ← opt.drop_dead l2 s1
+  let l4 ← opt.compact l3
+  ok (remap, l4)
 
 end zkdsl_compiler

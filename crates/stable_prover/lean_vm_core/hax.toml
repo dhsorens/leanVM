@@ -119,9 +119,6 @@ opaque = [
   "crate::tables::_::limbs",
   "{impl crate::tables::Table for _}::fill",
 
-  # A compile-time assertion (named by patch 01): Aeneas fails on its value ("There should be
-  # no bottoms in the value").
-  "crate::cpu::_LITTLE_ENDIAN",
 
   # Rejected since the sync with upstream of 2026-11-23: each to be patched, modelled, or reduced to a
   # reportable case.

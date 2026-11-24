@@ -1,22 +1,23 @@
 # Rust to Lean extraction
 
-Stage 1 of the [verification roadmap](../../VERIFICATION.md): the Rust crates are translated to Lean by [hax](https://hax.cryspen.com/)'s Lean backend (Charon, then Aeneas), each translation is committed beside the crate it comes from, and CI keeps it in step with the Rust. Nothing here is proved yet; what is checked is that every extraction is current and typechecks. What the extractions leave out, and why, is in [LIMITATIONS.md](LIMITATIONS.md).
+Stage 1 of the [verification roadmap](../../VERIFICATION.md): the Rust crates are translated to Lean by [hax](https://hax.cryspen.com/)'s Lean backend (Charon, then Aeneas), each translation is committed beside the crate it comes from, and CI keeps it in step with the Rust. Nothing here is proved; what is checked is that every extraction is current and typechecks. What the extractions leave out, and why, is in [LIMITATIONS.md](LIMITATIONS.md). The Rust is upstream's ([leanEthereum/leanVM](https://github.com/leanEthereum/leanVM)) and is never edited here: this fork adds the scenarios, the patches, the generated Lean and this directory, and its work is keeping them current as upstream moves ([Syncing with upstream](#syncing-with-upstream)).
 
 ## Layout
 
 ```
 hax.toml                                  pins charon, aeneas, the Lean toolchain and the hax Lean library
 crates/<crate>/hax.toml                   the crate's scenario: what is extracted, what is left opaque and why
-crates/<crate>/proofs/<scenario>/
+crates/<crate>/proofs/<scenario>/         (a crate is `crates/<name>` or `crates/stable_prover/<name>`)
   patches/pre/NN-*.patch                  Rust rewrites, applied only while extracting
   patches/pre/tests                       optional: the tests that pin what the patches touch
   patches/post/NN-*.patch                 rewrites of the generated Lean (a last resort)
   lean/                                   the Lean package hax scaffolds, e.g. `Verifier`
     <Pkg>/Extraction/                     generated: hax rewrites it on every extraction, never edit
     <Pkg>/Assumptions/                    the Rust items left opaque, as axioms, kept in step by wire.py
-    <Pkg>/Verification/                   hand-written proofs about the extraction
+    <Pkg>/Verification/                   where proofs about the extraction would go (a placeholder today)
 formal/extraction/
   hax.sh                                  setup, extract, test, refresh the patches, run commands on the patched source
+  repair.py                               after a sync: re-fits the patches, and leaves opaque what no longer translates
   mechanical.py                           generates the patch of the rewrites that recur everywhere (run by hax.sh)
   wire.py                                 wires every package into this workspace (run by hax.sh)
   report.sh                               what each extraction takes on trust, as a table
@@ -45,6 +46,31 @@ After changing an extracted crate, run `hax.sh extract` and commit what changes 
 - **The opaque items change.** Nothing to do: `hax.sh extract` adds the new declarations to `Assumptions/` and drops the stale ones, keeping those already there as they are.
 - **A missing standard-library model.** Lean reports an unknown `core.*` or `alloc.*` constant: model it in `CoreModelsExt`, as a definition where the Rust is short, as an `opaque` otherwise.
 
+## Syncing with upstream
+
+Upstream moves fast (240 commits and a reorganisation of the crates in the four weeks before the sync of November 2026), so bringing the extraction back is mostly mechanical, done by `repair.py`:
+
+```bash
+git fetch origin && git merge origin/main       # conflicts are only ever in files this fork adds
+formal/extraction/repair.py patches             # keep the hunks whose context is still there, drop the rest
+formal/extraction/repair.py extract             # every scenario, in dependency order (or name crate directories)
+formal/extraction/hax.sh extract --check        # what CI runs: the committed extraction is current
+formal/extraction/hax.sh test                   # clippy and the tests, on the patched source
+cd formal/extraction && lake build              # the whole workspace
+formal/extraction/report.sh                     # the counts, for LIMITATIONS.md
+```
+
+`repair.py extract` runs `hax.sh extract` and builds the crate's `Extraction` in Lean, round after round, until both pass. Whatever Aeneas leaves a `sorry` in, ignores the body of, or Lean rejects goes on the scenario's `opaque` list under a heading that dates it, with the error reported; an item whose signature is the problem goes on `exclude`; an entry naming an item that is gone is removed. It prints each addition, which is the record of what the sync cost. It only ever makes the extraction smaller, so its additions are the list to work back down: a patch, or a model in `CoreModelsExt`, takes an item off it.
+
+What it does not do, and a sync still needs by hand:
+
+- **A crate that is new, renamed or split** needs its `hax.toml` scenario and its `proofs/<scenario>` directory moved or written (`git mv`, so the scenario's lists survive), and the old Lean package deleted: a stale one breaks the workspace's manifest.
+- **A crash that names no item** (Aeneas stops on the whole crate) is bisected by marking modules opaque, then narrowed.
+- **A hunk that still applies can be wrong for the new code.** `repair.py patches` checks context, not meaning: after the field went from three limbs to two, a kept hunk still looped over three. `hax.sh test` is what catches it, so the patched crates' tests are not optional.
+- **`dyn Fn` and function pointers in a signature** must be excluded rather than opaque; `repair.py` moves an entry when Lean rejects its declaration, but a signature Aeneas refuses outright is named by hand.
+
+Run one extraction at a time in a checkout: `hax.sh` patches the source while it runs.
+
 ## Patches
 
 A patch in `pre/` rewrites Rust the toolchain cannot translate into Rust it can, without changing what it computes: an iterator adapter whose closure takes a reference (`filter`, `copied`) becomes a fold or a loop, a mutable iterator becomes an indexed loop, a function-pointer field becomes a method. Patches are applied in name order for the length of `hax.sh extract` and reverted after, so the committed source never carries them. Generated Lean is never edited by hand: what cannot be fixed in the Rust or in `Assumptions/` goes in a `post/` patch, applied to the output of every extraction, which is preferred only over leaving the item opaque.
@@ -53,7 +79,7 @@ Before them, `hax.sh` applies a patch it generates, with `mechanical.py`, from t
 
 ### Refreshing the patches after the source changes
 
-When the source changes under a patch (a merge from upstream, a refactor), `hax.sh refresh` rebases the patches onto it with git:
+When the source changes a little under a patch (a refactor, a small merge), `hax.sh refresh` rebases the patches onto it with git, keeping hunks `repair.py patches` would drop. After a merge that rewrote the code, `repair.py patches` is the faster start.
 
 1. It finds the last first-parent commit every patch still applies to (`--from REV` names one), checking each in a scratch index, nothing checked out.
 2. In a scratch worktree (`target/hax-refresh`), it commits that commit's generated patch, then each hand-written patch as a commit of its own, named after its file.
@@ -69,7 +95,7 @@ A conflict stops the rebase. Resolve it in `target/hax-refresh` (the files show 
 
 Then `hax.sh extract` and `hax.sh test`. Refreshing after every merge from upstream keeps each refresh to a few conflicts; the first after a long gap is the expensive one.
 
-`hax.sh test` holds every patched crate to two checks, in CI: clippy is clean on the patched source, and the crate's tests pass on it (`cargo test -p <crate>`, or each line of its `patches/pre/tests`, such as the verifier's checks against real proofs). They run on the portable code paths, the ones the patches rewrite. `hax.sh patched <command>` runs any command on the patched source, which is also how to inspect it.
+`hax.sh test` holds every patched crate to two checks, in CI: clippy is clean on the patched source, and the crate's tests pass on it (`cargo test -p <crate>`, or each line of its `patches/pre/tests`, such as the verifier's checks against real proofs, which live in `stable_lean_vm_core`). Only the verifier has patches today. They run on the portable code paths, the ones the patches rewrite. `hax.sh patched <command>` runs any command on the patched source, which is also how to inspect it.
 
 ## What the extraction trusts
 

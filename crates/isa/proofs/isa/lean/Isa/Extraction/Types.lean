@@ -34,12 +34,18 @@ inductive BitsDest where
 | Heap : Std.U32 → BitsDest
 
 /-- [isa::RHint]
-    Source: 'crates/isa/src/lib.rs', lines 182:0-252:1
+    Source: 'crates/isa/src/lib.rs', lines 182:0-253:1
     Visibility: public -/
 @[discriminant isize]
 inductive RHint where
 | FrameAddress : Std.U32 → RHint
-| AllocFrames : Std.U32 → Std.U32 → Std.U32 → verifier.field.K → RHint
+| AllocFrames :
+  Std.U32 →
+  Std.U32 →
+  Std.U32 →
+  verifier.field.K →
+  Std.U32 →
+  RHint
 | Alloc : Std.U32 → Std.U32 → RHint
 | AllocDyn : Std.U32 → Std.U32 → RHint
 | AllocArm : Std.U32 → Std.U32 → alloc.vec.Vec Std.U32 → RHint

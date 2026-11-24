@@ -332,12 +332,13 @@ def RHint.Insts.CoreCloneClone.clone (self : RHint) : RustM RHint := do
   | RHint.FrameAddress __self_0 =>
     let i ← core.U32.Insts.CoreCloneClone.clone __self_0
     ok (RHint.FrameAddress i)
-  | RHint.AllocFrames __self_0 __self_1 __self_2 __self_3 =>
+  | RHint.AllocFrames __self_0 __self_1 __self_2 __self_3 __self_4 =>
     let i ← core.U32.Insts.CoreCloneClone.clone __self_0
     let i1 ← core.U32.Insts.CoreCloneClone.clone __self_1
     let i2 ← core.U32.Insts.CoreCloneClone.clone __self_2
     let k ← verifier.field.K.Insts.CoreCloneClone.clone __self_3
-    ok (RHint.AllocFrames i i1 i2 k)
+    let i3 ← core.U32.Insts.CoreCloneClone.clone __self_4
+    ok (RHint.AllocFrames i i1 i2 k i3)
   | RHint.Alloc __self_0 __self_1 =>
     let i ← core.U32.Insts.CoreCloneClone.clone __self_0
     let i1 ← core.U32.Insts.CoreCloneClone.clone __self_1

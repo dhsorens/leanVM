@@ -125,6 +125,10 @@ opaque = [
   "crate::placeholders::da_placeholders",  # Lean: unknown identifier `core.num.usize.checked_ilog2`
   "crate::placeholders::straight_line",  # Lean: unknown constant `alloc.collections.btree.set.btreeset.insert`
   "crate::statement::claim_list_digest",  # Lean: invalid field `flatten`: the environment does not contain `core.iter.t
+
+  # Rejected since the sync with upstream of 2026-11-24: each to be patched, modelled, or reduced to a
+  # reportable case.
+  "crate::placeholders::_::positions_before",  # Aeneas: could not find: trait_impl_id: 98
 ]
 exclude = [
   # The derived `PartialEq` and `Eq` of the error type: Aeneas reaches an "unreachable" in `core::cmp`.

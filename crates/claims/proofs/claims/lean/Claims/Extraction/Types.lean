@@ -26,7 +26,7 @@ set_option maxRecDepth 2048
 namespace claims
 
 /-- [claims::AggregateClaims]
-    Source: 'crates/claims/src/lib.rs', lines 20:0-25:1
+    Source: 'crates/claims/src/lib.rs', lines 19:0-24:1
     Visibility: public -/
 structure AggregateClaims where
   lean_xmss : alloc.vec.Vec (lean_xmss.scheme.LeanXmssPublicKey × (Array
@@ -36,7 +36,7 @@ structure AggregateClaims where
   da_commitment : core.option.Option (Array Std.U8 32#usize)
 
 /-- [claims::OutputClaims]
-    Source: 'crates/claims/src/lib.rs', lines 29:0-35:1
+    Source: 'crates/claims/src/lib.rs', lines 28:0-34:1
     Visibility: public -/
 @[discriminant isize]
 inductive OutputClaims where

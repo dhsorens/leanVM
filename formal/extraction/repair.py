@@ -2,7 +2,8 @@
 """Get the extraction clean again after the Rust moved under it (a sync with upstream).
 
     repair.py patches                 re-fit every pre/ patch to the source as it stands
-    repair.py extract <crate dir>...  extract, and leave opaque what no longer translates
+    repair.py extract [crate dir]...  extract, and leave opaque what no longer translates (every crate
+                                      with a scenario, when none is named)
 
 Both say what they did, crate by crate, so that a sync's cost is on record; neither replaces
 reading the result. The crates are taken in dependency order: a crate's extraction imports
@@ -336,11 +337,17 @@ def extract(crate, date, rounds):
                     located.append((head.group(1), inside.group(1), inside.group(2)))
                 elif head and "iter/traits/iterator.rs" in block:
                     iterator_crash = True
+            block = re.search(r"(?ms)^opaque = \[\n(.*?)^\]\n", toml.read_text())
+            already_opaque = set(re.findall(r'^\s*"([^"]+)",', block.group(1), re.M)) if block else set()
             for message, file, line in located:
-                if True:
-                    found = item_at(crate, patched, file, int(line))
-                    if found:
-                        opaque.setdefault(found, "Aeneas: " + message.strip()[:70].rstrip(".").lower())
+                found = item_at(crate, patched, file, int(line))
+                why = "Aeneas: " + message.strip()[:70].rstrip(".").lower()
+                if found in already_opaque:
+                    # Rejected with no body to blame: its signature does not translate (a `dyn Fn`, a
+                    # function pointer), and an opaque item still needs one.
+                    exclude.setdefault(found, why + " (in its signature)")
+                elif found:
+                    opaque.setdefault(found, why)
         if funs.exists():
             for rust in with_sorry(funs):
                 opaque.setdefault(pattern(rust, name), "Aeneas left its body out")
@@ -398,19 +405,45 @@ def extract(crate, date, rounds):
     return False
 
 
+def in_dependency_order(crates):
+    """The named crate directories (every scenario's, when none is named), a crate after those it uses."""
+    known = scenarios()
+    chosen = [(ROOT / crate).resolve() for crate in crates] or list(known)
+    missing = [str(crate.relative_to(ROOT)) for crate in chosen if crate not in known]
+    if missing:
+        sys.exit(f"error: no scenario in {', '.join(missing)} (a crate takes part by a [scenario.<name>] in its hax.toml)")
+    metadata = json.loads(run(["cargo", "metadata", "--format-version", "1", "--no-deps"]).stdout)
+    at = {p["name"]: pathlib.Path(p["manifest_path"]).parent for p in metadata["packages"]}
+    uses = {at[p["name"]]: {at[d["name"]] for d in p["dependencies"] if d["kind"] is None and d["name"] in at} for p in metadata["packages"]}
+    ordered = []
+
+    def visit(crate):
+        if crate in ordered:
+            return
+        for used in sorted(uses.get(crate, ())):
+            if used in known and used != crate:
+                visit(used)
+        if crate in chosen:
+            ordered.append(crate)
+
+    for crate in sorted(chosen):
+        visit(crate)
+    return ordered
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("patches")
     one = commands.add_parser("extract")
-    one.add_argument("crates", nargs="+")
+    one.add_argument("crates", nargs="*")
     one.add_argument("--rounds", type=int, default=12)
     one.add_argument("--date", default=datetime.date.today().isoformat())
     args = parser.parse_args()
     if args.command == "patches":
         patches()
     else:
-        ok = [extract(crate, args.date, args.rounds) for crate in args.crates]
+        ok = [extract(crate, args.date, args.rounds) for crate in in_dependency_order(args.crates)]
         sys.exit(0 if all(ok) else 1)
 
 
