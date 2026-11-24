@@ -9,10 +9,10 @@
 module
 
 public import Statement.LeanVmGuestCompleteness
-public import LeanVM.Protocol.Compile.RunPure
-public import LeanVM.Guest.Coverage
-public import LeanVM.Guest.GuestConst
 public import LeanVM.Guest.BatchConsts
+import LeanVM.Protocol.Compile.RunPure
+import LeanVM.Guest.Coverage
+import LeanVM.Guest.GuestConst
 -- Private: `guest_const%` inserts literals, so importers need not see the guest's source.
 import LeanVM.Guest.Data.Consts
 
@@ -178,7 +178,7 @@ def HonestChild (child : Child) : Prop :=
   let input := PublicInput.ofDigest (statementDigest (deployedSeed guestProgram) child.statement)
   child.freshClaim.Holds (bytecodeWords guestProgram) ∧
     ∃ (execution : Execution guestProgram) (ρ : ℕ),
-      LeanVM.leanVmHonestProver (m := Id) keccakF1600 guestProgram input execution ρ (2 ^ 35) =
+      LeanVM.Prover.prove (m := Id) keccakF1600 guestProgram input execution ρ (2 ^ 35) =
         some child.proof
 
 /-- **A child carrying an honest proof is one the guest program accepts** under the deployed seed,

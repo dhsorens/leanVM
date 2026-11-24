@@ -17,6 +17,7 @@ public import LeanVM.Guest.ExperimentBridge
 public import LeanVM.Guest.WithHash
 public import LeanVM.Guest.AcceptableChild
 public import Common.ByteArray
+import LeanVM.Protocol.ErrorBounds
 
 @[expose] public section
 
@@ -60,8 +61,7 @@ theorem movesOK_readCount (M : ℕ) : BMoves (readChildCount M) := by
 
 theorem movesOK_readChild (nB : ℕ) : BMoves (readChild nB) := by
   unfold readChild
-  exact Moves.seq' (Moves.readN _) fun _ _ ↦ Moves.seq' (movesOK_require _ _) fun _ _ ↦
-    (Moves.liftOption _).mono (fun _ h ↦ h) id (fun _ _ ↦ trivial) fun _ h ↦ h
+  exact Moves.seq' (Moves.readN _) fun _ _ ↦ Moves.seq' (movesOK_require _ _) fun _ _ ↦ trivial
 
 theorem movesOK_readChildren (nB : ℕ) : ∀ n, BMoves (readChildren nB n)
   | 0 => trivial

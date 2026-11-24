@@ -8,20 +8,28 @@
 
 module
 
-public import LeanVM.Protocol.Keccak.Multilinear
+import LeanVM.Protocol.Keccak.Multilinear
+public import LeanVM.Protocol.Keccak.Linear
+public import ArkLib.OracleReduction.OracleInterface
+public import CompPoly.Multilinear.Basic
+public import CompPoly.Univariate.Basic
+public import VCVio.OracleComp.Constructions.SampleableType
+public import VCVio.OracleComp.Constructions.SampleableType.Measure
+public import VCVio.OracleComp.QueryTracking.LoggingOracle.Core
+public import VCVio.OracleComp.QueryTracking.RandomOracle.Simulation
+public import VCVio.OracleComp.QueryTracking.WriterCost
 
 /-!
 # The embedding
 
-`RMFE_EMBED` and `RMFE_PROJECT` (`crates/verifier/src/keccak.rs`, `rmfe`) are sixteen binary
+`RMFE_EMBED` and `RMFE_PROJECT` (`crates/verifier/src/keccak.rs`) are sixteen binary
 polynomials `emb_a` of degree at most `23` (`rmfeEmbed`) and sixteen masks over the `47`
 coefficients of a product (`rmfeProject`); the lemma of `doc/leanvm` §`keccak:rmfe-proof` is that
 the parity of `mask_i ∧ (emb(u)·emb(v))` is `u_i ∧ v_i`. By bilinearity it is enough on unit
 vectors:
 
 * `rmfeOk_lit` (kernel): for all `a, b, i < 16`, the parity of the masked coefficients of the
-  carry-less product `emb_a · emb_b` is `[i = a = b]`; `rmfe_carryless` states it with the
-  verifier's own `carryless` and `bitParity`;
+  carry-less product `emb_a · emb_b` is `[i = a = b]`;
 * `embP a`, the embedding as a polynomial over `E` with `0/1` coefficients, and `projE`, the
   projection of a polynomial with `E` coefficients (the masked sum of its coefficients);
 * `projE_embP_mul`: `projE_i (embP a · embP b) = [i = a = b]` in `E` (characteristic two:
